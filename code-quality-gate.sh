@@ -20,11 +20,11 @@ run_one() {
     fi
 }
 
-run_one run-pyright.sh ./run-pyright.sh
-run_one run-ruff.sh ./run-ruff.sh
-run_one run-semgrep.sh ./run-semgrep.sh
-run_one run-pytest.sh ./run-pytest.sh
-PACKAGE_SPEC=/src run_one run-regression-tests.sh ./run-regression-tests.sh
+run_one run-pyright.sh ./scripts/run-pyright.sh
+run_one run-ruff.sh ./scripts/run-ruff.sh
+run_one run-semgrep.sh ./scripts/run-semgrep.sh
+run_one run-pytest.sh ./scripts/run-pytest.sh
+PACKAGE_SPEC=/src run_one run-regression-tests.sh ./scripts/run-regression-tests.sh
 
 echo
 echo "Summary: $pass passed, $fail failed"

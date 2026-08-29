@@ -4,6 +4,8 @@
 # Set PACKAGE_SPEC to override the package source (default: PyPI name).
 set -e
 
+cd "$(dirname "$0")/.."
+
 PACKAGE_SPEC="${PACKAGE_SPEC:-gemini-transcribe-wrapper}"
 MOUNT=()
 if [[ "$PACKAGE_SPEC" == ./* || "$PACKAGE_SPEC" == /* ]]; then

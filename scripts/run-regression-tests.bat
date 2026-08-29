@@ -1,7 +1,10 @@
 @echo off
 rem Regression tests: verify the version command works on Python 3.10-3.13 via Docker.
 rem For each combo, print only PASS/FAIL; show captured output on error.
+rem Safe to invoke from any cwd.
 setlocal
+
+cd /d "%~dp0.."
 
 set PACKAGE_SPEC=gemini-transcribe-wrapper
 set FAILED=0
