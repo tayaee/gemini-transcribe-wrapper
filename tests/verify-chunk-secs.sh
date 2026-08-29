@@ -16,7 +16,7 @@ if [ -z "$KEY" ]; then
 fi
 export GEMINI_API_KEY="$KEY"
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 INPUT="samples/안될과학 개똥벌레.mp4"
 BASE_STD="samples/verify-std"
 BASE_CHUNK="samples/verify-chunk-len-1m"

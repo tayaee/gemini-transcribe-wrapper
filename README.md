@@ -77,9 +77,7 @@ run (`gtw -v`, `gtw --help`, or after transcription) prints today's count on
 the last line, e.g.
 `API calls today 2026-08-28 (PST-08:00): 3/25 (free tier limit: 25)`.
 
-Chunked transcription keeps the same global timeline as a single pass (word
-timestamps match within 0.5s; verified by `verify-chunk-secs.sh`). If you want
-an ffsubsync-aligned SRT for manual comparison, pass `--ffsubsync-srt` to also
+If you want an ffsubsync-aligned SRT for manual comparison, pass `--ffsubsync-srt` to also
 write `<base>.ffsubsync.srt` (aligned to the full audio via
 `uvx --python 3.13 ffsubsync <audio> -i <srt> --max-offset-seconds=120
 --gss --overwrite-input`); the main `.srt`/`.speakers.srt` always keep the
