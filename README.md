@@ -8,9 +8,10 @@ API-safe chunks and merges the results back into `.speakers.srt` / `.srt` / `.tx
 
 ## Quick Start
 
-### Get an API key
+### Prerequisites
 
-Sign up at [Google AI Studio](https://aistudio.google.com/) and create an API key.
+- Get an API key for free from https://aistudio.google.com/api-keys/.
+- Install uv (https://docs.astral.sh/uv/getting-started/installation/).
 
 ### Install the tool
 
