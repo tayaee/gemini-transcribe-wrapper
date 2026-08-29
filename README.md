@@ -1,7 +1,6 @@
 # gemini-transcribe-wrapper
 
-Zero-config wrapper for free-tier Gemini 3.5 Transcribe that breaks long audio into
-API-safe chunks and merges the results back into `.speakers.srt` / `.srt` / `.txt`.
+Transcribe hours of audio `for free` with Gemini 3.5 — auto-chunked, rate-limit handled, and exported straight to diarized SRT and TXT.
 
 - GitHub: https://github.com/tayaee/gemini-transcribe-wrapper
 - PyPI: https://pypi.org/project/gemini-transcribe-wrapper/
