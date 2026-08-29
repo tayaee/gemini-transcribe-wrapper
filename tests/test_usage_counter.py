@@ -77,6 +77,7 @@ def test_stt_increments_counter_per_api_call(cache):
     from gemini_transcribe_wrapper import stt
 
     calls = {"n": 0}
+    api_key = "fake-key-stt"
 
     class FakeUploaded:
         uri = "files/fake-uri"
@@ -103,20 +104,88 @@ def test_stt_increments_counter_per_api_call(cache):
         files = FakeFiles()
         interactions = FakeInteractions()
 
-    client = stt.TranscribeClient(api_key="fake")
+    client = stt.TranscribeClient(api_key=api_key)
     client.client = cast(Any, FakeClient())
     chunk = Path(cache) / "chunk_000.mp3"
     chunk.write_bytes(b"fake-mp3")
 
     client.transcribe_chunk(chunk, chunk_index=0)
-    assert usage_counter.count_today(cache) == 1
+    assert usage_counter.count_today(cache, api_key=api_key) == 1
     assert calls["n"] == 1  # cleanup delete happened
 
     # A second chunk -> second call -> count 2.
     chunk2 = Path(cache) / "chunk_001.mp3"
     chunk2.write_bytes(b"fake-mp3")
     client.transcribe_chunk(chunk2, chunk_index=1)
+    assert usage_counter.count_today(cache, api_key=api_key) == 2
+
+
+# --- per-key isolation ------------------------------------------------------
+
+
+def test_usage_file_uses_key_hash_in_filename(cache):
+    """Different keys must yield different per-key usage files."""
+    from gemini_transcribe_wrapper.usage_counter import _usage_file
+
+    a = _usage_file(cache, api_key="key-A")
+    b = _usage_file(cache, api_key="key-B")
+    none = _usage_file(cache)
+
+    assert a != b
+    assert none.name == usage_counter.USAGE_FILE
+    assert a.name.startswith("usage-") and a.name.endswith(".json")
+    assert b.name.startswith("usage-") and b.name.endswith(".json")
+    assert a.name != b.name
+
+
+def test_usage_file_is_stable_for_same_key(cache):
+    """Same key must always resolve to the same file (stable hash)."""
+    from gemini_transcribe_wrapper.usage_counter import _usage_file
+
+    assert _usage_file(cache, api_key="same-key") == _usage_file(cache, api_key="same-key")
+
+
+def test_keys_have_independent_daily_counts(cache):
+    """Incrementing key-A must not bump the count for key-B."""
+    usage_counter.increment_today(cache, api_key="key-A")
+    usage_counter.increment_today(cache, api_key="key-A")
+    usage_counter.increment_today(cache, api_key="key-B")
+
+    assert usage_counter.count_today(cache, api_key="key-A") == 2
+    assert usage_counter.count_today(cache, api_key="key-B") == 1
+    # Unscoped (no key) is independent of either.
+    assert usage_counter.count_today(cache) == 0
+
+
+def test_no_key_falls_back_to_legacy_usage_json(cache):
+    """When no key is provided, the counter uses the legacy usage.json file."""
+    usage_counter.increment_today(cache)
+    usage_counter.increment_today(cache)
     assert usage_counter.count_today(cache) == 2
+    legacy = cache / usage_counter.USAGE_FILE
+    assert legacy.exists()
+
+
+def test_per_key_files_coexist_with_legacy(cache):
+    """Legacy usage.json and per-key files must not collide."""
+    usage_counter.increment_today(cache)  # legacy
+    usage_counter.increment_today(cache, api_key="key-A")
+    usage_counter.increment_today(cache, api_key="key-A")
+    assert usage_counter.count_today(cache) == 1
+    assert usage_counter.count_today(cache, api_key="key-A") == 2
+    # The legacy file holds 1 (date-only, no key).
+    legacy = cache / usage_counter.USAGE_FILE
+    data = json.loads(legacy.read_text(encoding="utf-8"))
+    assert data[usage_counter.pst_date()] == 1
+
+
+def test_key_hash_is_non_reversible(cache):
+    """The hash must not leak the raw key."""
+    from gemini_transcribe_wrapper.usage_counter import _key_hash
+
+    h = _key_hash("super-secret-key-value")
+    assert "super-secret-key-value" not in h
+    assert len(h) <= 12  # truncated hex
 
 
 if __name__ == "__main__":

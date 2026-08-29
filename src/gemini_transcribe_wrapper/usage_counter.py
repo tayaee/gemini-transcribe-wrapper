@@ -6,6 +6,7 @@ midnight Pacific Standard Time (UTC-08:00, no DST).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 FREE_TIER_DAILY_LIMIT = 25
 PST = timezone(timedelta(hours=-8))
 USAGE_FILE = "usage.json"
+_KEY_HASH_LEN = 12  # hex chars of SHA-256 used in per-key usage filenames.
 
 
 def cache_dir() -> Path:
@@ -41,6 +43,18 @@ def pst_date(now: datetime | None = None) -> str:
     return (now or pst_now()).strftime("%Y-%m-%d")
 
 
+def _key_hash(api_key: str | None) -> str:
+    """Return a short, stable, non-reversible hash of an API key.
+
+    Used to scope daily usage counts per key, so different Gemini API keys
+    do not share a quota counter. Empty string when no key is provided
+    (the unscoped legacy file ``usage.json``).
+    """
+    if not api_key:
+        return ""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:_KEY_HASH_LEN]
+
+
 def _load(path: Path) -> dict[str, int]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -58,22 +72,32 @@ def _save(path: Path, data: dict[str, int]) -> None:
     os.replace(tmp, path)
 
 
-def _usage_file(cache: Path | None = None) -> Path:
-    return (cache or cache_dir()) / USAGE_FILE
+def _usage_file(cache: Path | None = None, api_key: str | None = None) -> Path:
+    """Return the counter file for ``api_key`` under ``cache``.
+
+    Without a key, the unscoped legacy ``usage.json`` is returned. With a
+    key, a per-key ``usage-<sha256[:12]>.json`` is used so two different
+    keys cannot share a daily quota.
+    """
+    base = (cache or cache_dir()) / USAGE_FILE
+    h = _key_hash(api_key)
+    if not h:
+        return base
+    return base.parent / f"usage-{h}.json"
 
 
-def count_today(cache: Path | None = None) -> int:
-    """API calls made so far today (PST). 0 when no counter file exists yet."""
-    return _load(_usage_file(cache)).get(pst_date(), 0)
+def count_today(cache: Path | None = None, api_key: str | None = None) -> int:
+    """API calls made so far today (PST) for ``api_key``. 0 when no counter file exists yet."""
+    return _load(_usage_file(cache, api_key)).get(pst_date(), 0)
 
 
-def increment_today(cache: Path | None = None) -> int:
-    """Increment today's (PST) API call count and return the new count.
+def increment_today(cache: Path | None = None, api_key: str | None = None) -> int:
+    """Increment today's (PST) API call count for ``api_key`` and return the new count.
 
     Best-effort: a counter write failure must never break transcription, so
     it is logged and swallowed (the count returned may then be stale).
     """
-    path = _usage_file(cache)
+    path = _usage_file(cache, api_key)
     try:
         lock = FileLock(str(path) + ".lock")
         with lock:
@@ -84,12 +108,12 @@ def increment_today(cache: Path | None = None) -> int:
         return data[day]
     except Exception:  # counter must never break transcription
         logger.exception("Failed to update usage counter at %s", path)
-        return count_today(path)
+        return count_today(path, api_key)
 
 
-def usage_summary_line(cache: Path | None = None) -> str:
+def usage_summary_line(cache: Path | None = None, api_key: str | None = None) -> str:
     """One-line usage summary ending with today's count and the free tier limit."""
-    used = count_today(cache)
+    used = count_today(cache, api_key)
     day = pst_date()
     return (
         f"API calls today {day} (PST-08:00): {used}/{FREE_TIER_DAILY_LIMIT} "

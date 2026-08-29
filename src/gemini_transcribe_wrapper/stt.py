@@ -154,6 +154,7 @@ class TranscribeClient:
         max_retries: int = 5,
         free_tier_wait_on_429: bool = False,
     ) -> None:
+        self.api_key = api_key
         self.client = genai.Client(api_key=api_key) if api_key else genai.Client()
         self.language = language
         self.enable_diarization = enable_diarization
@@ -207,7 +208,7 @@ class TranscribeClient:
                 try:
                     from .usage_counter import increment_today
 
-                    increment_today()
+                    increment_today(api_key=self.api_key)
                     interaction = self.client.interactions.create(
                         model=MODEL_ID,
                         input=[

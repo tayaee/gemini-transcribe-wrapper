@@ -21,7 +21,8 @@ class _HelpAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         parser.print_help()
         print()
-        print(usage_summary_line())
+        # --help is processed before args parse, so only env-var keys are in scope.
+        print(usage_summary_line(api_key=_resolve_api_key(None)))
         parser.exit()
 
 
@@ -87,6 +88,11 @@ def parse_speakers(spec: str) -> dict[str, str]:
     return mapping
 
 
+def _resolve_api_key(cli_key: str | None) -> str | None:
+    """Resolve the effective Gemini API key: --gemini-api-key > $GEMINI_API_KEY > $GOOGLE_API_KEY."""
+    return cli_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+
+
 def main(argv: list[str] | None = None) -> int:
     # Load .env (GEMINI_API_KEY etc.) if present in cwd
     try:
@@ -100,20 +106,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     prog = Path(sys.argv[0]).name or "gemini-transcribe"
+    effective_key = _resolve_api_key(args.gemini_api_key)
 
     if args.version:
         print(f"{prog} {__version__}")
-        if not (
-            args.gemini_api_key
-            or os.environ.get("GEMINI_API_KEY")
-            or os.environ.get("GOOGLE_API_KEY")
-        ):
+        if not effective_key:
             print(
                 "Warning: GEMINI_API_KEY is not set. Set it or pass "
                 "--gemini-api-key to transcribe."
             )
         print()
-        print(usage_summary_line())
+        print(usage_summary_line(api_key=effective_key))
         return 0
 
     logging.basicConfig(
@@ -180,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         "Total elapsed time: %.1fs", elapsed
     )
 
-    print(usage_summary_line())
+    print(usage_summary_line(api_key=effective_key))
 
     if failed:
         return 1
