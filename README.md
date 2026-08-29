@@ -19,14 +19,6 @@ uv tool install --python 3.13 gemini-transcribe-wrapper@latest
 gtw -v
 ```
 
-Windows (PowerShell):
-
-```powershell
-$env:GEMINI_API_KEY = "your_key_here"
-uv tool install --python 3.13 gemini-transcribe-wrapper@latest
-gtw -v
-```
-
 Windows (Command Prompt):
 
 ```cmd
