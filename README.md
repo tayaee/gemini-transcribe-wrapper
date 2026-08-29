@@ -38,7 +38,7 @@ gtw --gemini-api-key YOUR_API_KEY sample.mp4
 Output:
 
 ```bash
-sample.speakers.srt
+sample.diarized.srt
 sample.srt
 sample.txt
 ```
@@ -49,7 +49,7 @@ This wrapper automatically overcomes Google Gemini API's free tier limits and co
 - Audio Length Limit (Max 30m/call): Automatically splits long audio into 29m50s optimal chunks, transcribes them, and merges them seamlessly with correct timestamps.
 - Rate Limit (Max 2 RPM): Applies a built-in delay (default 30s) between sequential requests to prevent rate-limit errors.
 - Daily Quota (Max 25 RPD): Tracks daily Pacific-time API usage locally (~/.cache/.../usage.json) and warns clearly before or upon hitting HTTP 429 quota limits.
-- Raw Response to Ready-to-Use Subtitles: Converts AI transcription output directly into speaker-diarized .speakers.srt, standard .srt, and clean .txt files in a single run.
+- Raw Response to Ready-to-Use Subtitles: Converts AI transcription output directly into speaker-diarized .diarized.srt, standard .srt, and clean .txt files in a single run.
 - Multi-day Batch Wait (--free-tier-wait-on-429): On 429 or when 25 free-tier calls/day (PST) are reached, sleep until PST midnight in 1-hour chunks (logging the remaining time) and resume. Designed for unattended multi-day batch runs on the free tier.
 
 ## Relevant Repositories

@@ -121,7 +121,7 @@ def format_srt(cues: list[Cue]) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-def format_speakers_srt(
+def format_diarized_srt(
     cues: list[Cue], speaker_map: dict[str, str] | None = None
 ) -> str:
     """Format speaker-diarized subtitles as an .srt (media-player compatible).

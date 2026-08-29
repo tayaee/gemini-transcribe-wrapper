@@ -266,7 +266,7 @@ def checkpoint_path(chunk_mp3: Path) -> Path:
 # --- transcript.json serialization -----------------------------------------
 #
 # <input>.transcript.json stores the full transcription result (per-chunk text
-# plus word-level timestamps/speakers) so .speakers.srt/.srt/.txt can be re-rendered
+# plus word-level timestamps/speakers) so .diarized.srt/.srt/.txt can be re-rendered
 # without calling the Gemini API again (e.g. for format fine-tuning).
 
 TRANSCRIPT_SCHEMA_VERSION = 2

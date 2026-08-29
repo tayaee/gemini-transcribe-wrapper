@@ -56,7 +56,7 @@ def run():
         # 2) Targets newer than source -> skip
         base_ts = time.time()
         set_mtime(src, base_ts - 100)  # source old
-        for p in (td / "input.speakers.srt", td / "input.srt", td / "input.txt"):
+        for p in (td / "input.diarized.srt", td / "input.srt", td / "input.txt"):
             set_mtime(p, base_ts)  # targets new
         calls_before = CALLS["n"]
         r = api.gemini_transcribe(str(src), gemini_api_key="fake")

@@ -56,7 +56,7 @@ def run():
         finally:
             api.TranscribeClient = orig
 
-        spk_text = (td / "input.speakers.srt").read_text(encoding="utf-8")
+        spk_text = (td / "input.diarized.srt").read_text(encoding="utf-8")
         print("speaker tags:", sorted({l[1:-1] for l in spk_text.splitlines() if l.startswith("[") and l.endswith("]")}))
         assert "[궤도]" in spk_text and "[가람]" in spk_text
         assert "[spk:2]" in spk_text, "unmapped speaker should keep raw id"
@@ -72,7 +72,7 @@ def run():
         finally:
             api.TranscribeClient = orig
 
-        spk_text2 = (td / "input.speakers.srt").read_text(encoding="utf-8")
+        spk_text2 = (td / "input.diarized.srt").read_text(encoding="utf-8")
         assert "[황가람]" in spk_text2 and "[spk:2]" not in spk_text2
         print("PASS: speaker mapping works")
 

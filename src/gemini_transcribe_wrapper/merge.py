@@ -14,7 +14,7 @@ from .format import (
     Cue,
     atomic_write,
     build_txt,
-    format_speakers_srt,
+    format_diarized_srt,
     format_srt,
     group_words_to_cues,
 )
@@ -121,7 +121,7 @@ def align_and_build(
     full_mp3: Path,
     out_base: Path,
     srt_tmp: Path,
-    speakers_srt_tmp: Path,
+    diarized_srt_tmp: Path,
     txt_tmp: Path,
     line_interval_secs: float,
     paragraph_interval_secs: float,
@@ -129,9 +129,9 @@ def align_and_build(
     speakers: dict[str, str] | None = None,
     ffsubsync_srt: bool = False,
 ) -> None:
-    """Build .srt.tmp/.speakers.srt.tmp/.txt.tmp from the transcript.
+    """Build .srt.tmp/.diarized.srt.tmp/.txt.tmp from the transcript.
 
-    The main .srt/.speakers.srt keep the raw transcript timestamps. When
+    The main .srt/.diarized.srt keep the raw transcript timestamps. When
     ffsubsync_srt is True, an additional "<base>.ffsubsync.srt" is written
     with timestamps aligned to the full audio for manual comparison.
 
@@ -142,7 +142,7 @@ def align_and_build(
     cues = merge_cues(results, chunk_secs)
 
     srt_content = format_srt(cues)
-    speakers_srt_content = format_speakers_srt(cues, speaker_map=speakers)
+    diarized_srt_content = format_diarized_srt(cues, speaker_map=speakers)
     txt_content = build_txt(
         _merged_result(results, chunk_secs),
         line_interval_secs=line_interval_secs,
@@ -150,7 +150,7 @@ def align_and_build(
     )
 
     atomic_write(srt_tmp, srt_content)
-    atomic_write(speakers_srt_tmp, speakers_srt_content)
+    atomic_write(diarized_srt_tmp, diarized_srt_content)
     atomic_write(txt_tmp, txt_content)
 
     # Optionally produce an ffsubsync-aligned SRT as an extra file, leaving
@@ -250,7 +250,7 @@ def build_metadata_json(results: list[TranscriptionResult], chunk_secs: float) -
 
 def commit_outputs(
     outputs: dict[str, Path],
-    create_speakers_srt: bool,
+    create_diarized_srt: bool,
     create_srt: bool,
     create_txt: bool,
     create_metadata_json: bool,
@@ -260,7 +260,7 @@ def commit_outputs(
     """Atomically rename tmp outputs to finals, then apply cleanup filters."""
     produced: list[str] = []
     mapping = {
-        "speakers_srt": create_speakers_srt,
+        "diarized_srt": create_diarized_srt,
         "srt": create_srt,
         "txt": create_txt,
         "metadata_json": create_metadata_json,
