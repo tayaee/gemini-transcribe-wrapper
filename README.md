@@ -9,7 +9,7 @@ Transcribe hours of audio `for free` with Gemini 3.5 — auto-chunked, rate-limi
 
 ### Prerequisites
 
-- Get an API key for free from https://aistudio.google.com/api-keys/.
+- Get an API key from https://aistudio.google.com/api-keys/ for free.
 - Install uv (https://docs.astral.sh/uv/getting-started/installation/).
 
 ### Install the tool
