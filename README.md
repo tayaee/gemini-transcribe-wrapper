@@ -43,44 +43,13 @@ Any local video/audio as input works (`.mp4`, `.mp3`, etc.).
 - GitHub: https://github.com/tayaee/gemini-transcribe-wrapper
 - PyPI: https://pypi.org/project/gemini-transcribe-wrapper/
 
-## Limits
+## What are improved by this project?
 
-This wrapper exists to get past the Gemini free tier limits:
-
-- Max 2 API calls per minute: chunks are transcribed sequentially with a
-  built-in delay (default 30s) between API calls.
-- Max 30 minutes of audio per call: long files are split into 29m50s
-  chunks (packed to the max so the 25 calls/day budget is used efficiently),
-  transcribed, then merged.
-- Max 25 API calls per day: once the daily quota is used up, the API
-  returns HTTP 429. If you hit it, the tool prints the limits above:
-  free tier users should try again tomorrow, or switch to a paid tier
-  (enable billing) to keep going immediately.
-
-Usage tracking: every API call is counted per day (PST, resets at midnight
-Pacific) and saved to `~/.cache/gemini-transcribe-wrapper/usage.json`. Every
-run (`gtw -v`, `gtw --help`, or after transcription) prints today's count on
-the last line, e.g.
-`API calls today 2026-08-28 (PST-08:00): 3/25 (free tier limit: 25)`.
-
-If you want an ffsubsync-aligned SRT for manual comparison, pass `--ffsubsync-srt` to also
-write `<base>.ffsubsync.srt` (aligned to the full audio via
-`uvx --python 3.13 ffsubsync <audio> -i <srt> --max-offset-seconds=120
---gss --overwrite-input`); the main `.srt`/`.speakers.srt` always keep the
-raw transcript timestamps.
-
-`.speakers.srt` (speaker diarization, still a standard .srt for media
-players), `.srt` (no speaker labels), and `.txt`
-(clean text) are all generated at once by default. Don't need one? Turn it
-off:
-
-```bash
-gtw sample.mp4 --no-speakers-srt --no-txt   # keep only .srt
-gtw sample.mp4 --no-srt                     # keep .speakers.srt + .txt
-```
-
-See `gtw --help` for all options (speaker name
-mapping, transcript re-rendering, temp dir, etc.).
+This wrapper automatically overcomes Google Gemini API's free tier limits and constraints (as of Aug 2026):
+- Audio Length Limit (Max 30m/call): Automatically splits long audio into 29m50s optimal chunks, transcribes them, and merges them seamlessly with correct timestamps.
+- Rate Limit (Max 2 RPM): Applies a built-in delay (default 30s) between sequential requests to prevent rate-limit errors.
+- Daily Quota (Max 25 RPD): Tracks daily Pacific-time API usage locally (~/.cache/.../usage.json) and warns clearly before or upon hitting HTTP 429 quota limits.
+- Raw Response to Ready-to-Use Subtitles: Converts AI transcription output directly into speaker-diarized .speakers.srt, standard .srt, and clean .txt files in a single run.
 
 ## License
 
