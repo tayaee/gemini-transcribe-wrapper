@@ -12,6 +12,17 @@ from pathlib import Path
 from . import __version__
 from .api import gemini_transcribe
 from .models import TranscribeStatus
+from .usage_counter import usage_summary_line
+
+
+class _HelpAction(argparse.Action):
+    """Help action that appends the daily API usage summary as the last line."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        parser.print_help()
+        print()
+        print(usage_summary_line())
+        parser.exit()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +33,13 @@ def build_parser() -> argparse.ArgumentParser:
         description=f"{prog} v{__version__} - Zero-config Gemini 3.5 "
         "Transcribe wrapper (auto ffmpeg/ffsubsync).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        add_help=False,
+    )
+    parser.add_argument(
+        "-h", "--help",
+        action=_HelpAction,
+        nargs=0,
+        help="show this help message and exit",
     )
     parser.add_argument(
         "-v", "--version",
@@ -93,6 +111,8 @@ def main(argv: list[str] | None = None) -> int:
                 "Warning: GEMINI_API_KEY is not set. Set it or pass "
                 "--gemini-api-key to transcribe."
             )
+        print()
+        print(usage_summary_line())
         return 0
 
     logging.basicConfig(
@@ -157,6 +177,8 @@ def main(argv: list[str] | None = None) -> int:
     logging.getLogger(__name__).info(
         "Total elapsed time: %.1fs", elapsed
     )
+
+    print(usage_summary_line())
 
     if failed:
         return 1

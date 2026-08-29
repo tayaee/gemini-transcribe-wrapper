@@ -203,6 +203,9 @@ class TranscribeClient:
                 attempts = attempt + 1
                 attempt_start = time.monotonic()
                 try:
+                    from .usage_counter import increment_today
+
+                    increment_today()
                     interaction = self.client.interactions.create(
                         model=MODEL_ID,
                         input=[
