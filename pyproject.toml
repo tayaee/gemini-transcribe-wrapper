@@ -1,10 +1,11 @@
 [project]
 name = "gemini-transcribe-wrapper"
-version = "0.0.1"
+version = "0.0.2"
 description = "Zero-config Gemini 3.5 Transcribe wrapper with checkpoint/resume and atomic writes"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+urls = { Homepage = "https://github.com/tayaee/gemini-transcribe-wrapper", Repository = "https://github.com/tayaee/gemini-transcribe-wrapper", "Bug Tracker" = "https://github.com/tayaee/gemini-transcribe-wrapper/issues" }
 dependencies = [
     "google-genai>=1.0.0",
     "static-ffmpeg>=2.0.0",

@@ -1,7 +1,13 @@
 # gemini-transcribe-wrapper
 
+[![PyPI](https://img.shields.io/pypi/v/gemini-transcribe-wrapper)](https://pypi.org/project/gemini-transcribe-wrapper/)
+[![GitHub](https://img.shields.io/badge/GitHub-repo-blue)](https://github.com/tayaee/gemini-transcribe-wrapper)
+
 Zero-config wrapper for **Gemini 3.5 Transcribe** that breaks long audio into
 API-safe chunks and merges the results back into `.spk` / `.srt` / `.txt`.
+
+- **GitHub**: https://github.com/tayaee/gemini-transcribe-wrapper
+- **PyPI**: https://pypi.org/project/gemini-transcribe-wrapper/
 
 ## Quick Start
 
