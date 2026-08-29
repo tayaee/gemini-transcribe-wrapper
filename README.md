@@ -29,17 +29,10 @@ gtw -v
 
 ### Transcribe for free (see Limites below)
 
-With `GEMINI_API_KEY` set (from step 2):
-
 ```bash
-gtw sample.mp4
-```
-
-Or pass the key directly:
-
-```bash
+gtw sample.mp4   // with `GEMINI_API_KEY` set
+or
 gtw --gemini-api-key YOUR_API_KEY sample.mp4
-gtw --gemini-api-key YOUR_API_KEY *.mp4
 ```
 
 Done: `sample.speakers.srt`, `sample.srt`, `sample.txt` appear next to the input.
