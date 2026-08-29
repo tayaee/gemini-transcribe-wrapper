@@ -117,7 +117,8 @@ def gemini_transcribe(
         request_interval_secs: Delay between STT API calls.
         chunk_secs: Optional fixed chunk length in seconds. When set, the
             audio is split into equal chunks of ~this length instead of using
-            the default ≤25min algorithm. Useful for debugging short clips.
+            the default packs 29m50s chunks (max 30 min per API call).
+            Useful for debugging short clips.
         speakers: Optional mapping of raw speaker ids (e.g. "spk:0") to display
             names used in the .speakers.srt output. Speakers missing from the
             mapping keep their raw id, and a warning is emitted listing them.

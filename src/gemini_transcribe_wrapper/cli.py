@@ -43,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--line-interval-secs", type=float, default=1.0, help="TXT newline break threshold (default: 1.0)")
     parser.add_argument("--paragraph-interval-secs", type=float, default=2.5, help="TXT paragraph break threshold (default: 2.5)")
     parser.add_argument("--request-interval-secs", type=float, default=30.0, help="Delay between API calls (default: 30.0)")
-    parser.add_argument("--chunk-secs", type=float, default=None, help="Fixed chunk length in seconds (default: auto ≤25min)")
+    parser.add_argument("--chunk-secs", type=float, default=None, help="Fixed chunk length in seconds (default: auto, pack 29m50s chunks)")
     parser.add_argument("--speakers", default=None, help="Speaker name mapping for .speakers.srt, e.g. 'spk:0=궤도;spk:1=가람;'")
     parser.add_argument("--temp-dir", default=None, help="Directory for intermediate temp files (default: alongside output)")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")

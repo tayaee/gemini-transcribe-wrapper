@@ -64,26 +64,33 @@ def probe_duration_secs(media_path: Path) -> float:
 class SplitPlan:
     num_chunks: int
     chunk_secs: float
+    total_secs: float
 
 
 def compute_split_plan(total_secs: float, chunk_secs: float | None = None) -> SplitPlan:
-    """Determine equal chunk split for a given total duration.
+    """Determine chunk split for a given total duration.
 
     When chunk_secs is provided it is used as the chunk length directly
     (rounding to a whole number of chunks, remainder absorbed by the last
-    chunk). Otherwise the default algorithm applies: no chunk exceeds 25
-    minutes, splitting edge remainders equally (e.g. 26 min -> 13m+13m).
+    chunk). Otherwise the default algorithm applies: chunks are filled up to
+    29m50s (1790s) each, with only the final chunk possibly shorter. The
+    Gemini free tier caps audio at 30 min per call, so we pack each chunk to
+    the max to stay within the 25 calls/day budget.
     """
     if chunk_secs is not None and chunk_secs > 0:
         num_chunks = max(1, round(total_secs / chunk_secs))
-        return SplitPlan(num_chunks=num_chunks, chunk_secs=total_secs / num_chunks)
+        return SplitPlan(
+            num_chunks=num_chunks,
+            chunk_secs=total_secs / num_chunks,
+            total_secs=total_secs,
+        )
 
-    if total_secs <= 1500.0:
-        return SplitPlan(num_chunks=1, chunk_secs=total_secs)
+    if total_secs <= 1790.0:
+        return SplitPlan(num_chunks=1, chunk_secs=total_secs, total_secs=total_secs)
     num = 2
-    while total_secs / num > 1500.0:
+    while total_secs / num > 1790.0:
         num += 1
-    return SplitPlan(num_chunks=num, chunk_secs=total_secs / num)
+    return SplitPlan(num_chunks=num, chunk_secs=1790.0, total_secs=total_secs)
 
 
 def extract_audio(input_path: Path, out_mp3: Path, force: bool = False) -> None:
@@ -120,16 +127,20 @@ def split_chunks(full_mp3: Path, chunk_dir: Path, plan: SplitPlan) -> list[Path]
             chunks.append(out)
             continue
         start = idx * plan.chunk_secs
-        # -t with -ss: give last chunk exact remaining duration to avoid
-        # cutting mid-stream; use segment copy is not possible for mp3
+        # -t with -ss: give the last chunk the exact remaining duration to
+        # avoid cutting mid-stream; use segment copy is not possible for mp3
         # so re-encode with same normalization settings for consistency.
+        if idx == plan.num_chunks - 1:
+            duration = max(0.0, plan.total_secs - start)
+        else:
+            duration = plan.chunk_secs
         cmd = [
             "ffmpeg",
             "-y",
             "-ss",
             f"{start:.3f}",
             "-t",
-            f"{plan.chunk_secs:.3f}",
+            f"{duration:.3f}",
             "-i",
             str(full_mp3),
             "-vn",

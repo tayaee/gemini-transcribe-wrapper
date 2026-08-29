@@ -104,10 +104,11 @@ System dependencies are eliminated by dynamically managing binaries and librarie
      ffmpeg -y -i <input> -vn -ar 16000 -ac 1 -b:a 64k <temp_audio>.mp3
 2. Equal Split Algorithm:
    * Measure total audio duration T (seconds).
-   * Target chunk range: 1200s (20m) <= C <= 1500s (25m).
-   * If T <= 1500s: N = 1.
-   * If T > 1500s: Find minimum integer N where 20 <= (T / 60) / N <= 25.
-   * When handling edge remainders (e.g., 26 min total), split equally into 13m + 13m (N=2) rather than 25m + 1m.
+   * Target chunk size: pack each chunk to 1790s (29m50s) — the max safe
+     length under the 30 min per-call cap — leaving the final chunk shorter.
+   * If T <= 1790s: N = 1.
+   * If T > 1790s: N = ceil(T / 1790); chunks 0..N-2 are 1790s, chunk N-1
+     holds the remainder.
 
 ### 4.5. Rate Limiting & Gemini 3.5 Transcribe Integration
 

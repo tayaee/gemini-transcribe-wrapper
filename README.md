@@ -62,8 +62,9 @@ This wrapper exists to get past the Gemini free tier limits:
 
 - Max 2 API calls per minute: chunks are transcribed sequentially with a
   built-in delay (default 30s) between API calls.
-- Max 30 minutes of audio per call: long files are split into equal
-  ≤25 min chunks, transcribed, then merged.
+- Max 30 minutes of audio per call: long files are split into 29m50s
+  chunks (packed to the max so the 25 calls/day budget is used efficiently),
+  transcribed, then merged.
 - Max 25 API calls per day: once the daily quota is used up, the API
   returns HTTP 429. If you hit it, the tool prints the limits above:
   free tier users should try again tomorrow, or switch to a paid tier
