@@ -8,52 +8,55 @@ API-safe chunks and merges the results back into `.speakers.srt` / `.srt` / `.tx
 
 ## Quick Start
 
-1. Get an API key
+### Get an API key
 
 Sign up at [Google AI Studio](https://aistudio.google.com/) and create an API key.
 
-2. Install the tool
+### Install the tool
 
 Linux / macOS:
 
 ```bash
 export GEMINI_API_KEY=your_key_here
-uvx -q --python 3.13 gemini-transcribe-wrapper --help
+uv -q tool install --python 3.13 gemini-transcribe-wrapper
+gtw -v
 ```
 
 Windows (PowerShell):
 
 ```powershell
 $env:GEMINI_API_KEY = "your_key_here"
-uvx -q --python 3.13 gemini-transcribe-wrapper --help
+uv -q tool install --python 3.13 gemini-transcribe-wrapper
+gtw -v
 ```
 
 Windows (Command Prompt):
 
 ```cmd
 set GEMINI_API_KEY=your_key_here
-uvx -q --python 3.13 gemini-transcribe-wrapper --help
+uv -q tool install --python 3.13 gemini-transcribe-wrapper
+gtw -v
 ```
 
-3. Transcribe
+### Transcribe for free (see Limites below)
 
 With `GEMINI_API_KEY` set (from step 2):
 
 ```bash
-uvx -q --python 3.13 gemini-transcribe-wrapper sample.mp4
+gtw sample.mp4
 ```
 
 Or pass the key directly:
 
 ```bash
-uvx -q --python 3.13 gemini-transcribe-wrapper --gemini-api-key YOUR_API_KEY sample.mp4
-uvx -q --python 3.13 gemini-transcribe-wrapper --gemini-api-key YOUR_API_KEY *.mp4
+gtw --gemini-api-key YOUR_API_KEY sample.mp4
+gtw --gemini-api-key YOUR_API_KEY *.mp4
 ```
 
 Done: `sample.speakers.srt`, `sample.srt`, `sample.txt` appear next to the input.
 Any local video/audio works (`.mp4`, `.mp3`, etc.).
 
-## How it works
+## Limits
 
 This wrapper exists to get past the Gemini free tier limits:
 
@@ -80,37 +83,12 @@ players), `.srt` (no speaker labels), and `.txt`
 off:
 
 ```bash
-uvx -q --python 3.13 gemini-transcribe-wrapper sample.mp4 --no-speakers-srt --no-txt   # keep only .srt
-uvx -q --python 3.13 gemini-transcribe-wrapper sample.mp4 --no-srt                     # keep .speakers.srt + .txt
+gtw sample.mp4 --no-speakers-srt --no-txt   # keep only .srt
+gtw sample.mp4 --no-srt                     # keep .speakers.srt + .txt
 ```
 
-See `uvx -q --python 3.13 gemini-transcribe-wrapper --help` for all options (speaker name
+See `gtw --help` for all options (speaker name
 mapping, transcript re-rendering, temp dir, etc.).
-
-## Shortcut: install once, use `gtw`
-
-Typing `uvx -q --python 3.13 gemini-transcribe-wrapper ...` each time is verbose. If you want
-a short command, install the tool once and use the `gtw` shortcut: the exact
-same tool, installed alongside it.
-
-Linux / macOS:
-
-```bash
-uv -q tool install --python 3.13 gemini-transcribe-wrapper
-export GEMINI_API_KEY=your_key_here
-gtw sample.mp4
-```
-
-Windows (PowerShell):
-
-```powershell
-uv -q tool install --python 3.13 gemini-transcribe-wrapper
-$env:GEMINI_API_KEY = "your_key_here"
-gtw sample.mp4
-```
-
-After `uv tool install`, both `gemini-transcribe-wrapper` and `gtw` work
-interchangeably.
 
 ## License
 
