@@ -1,6 +1,6 @@
 # gemini-transcribe-wrapper
 
-Transcribe hours of audio `for free` with Gemini 3.5 — auto-chunked, rate-limit handled, and exported straight to diarized SRT and TXT.
+Transcribe hours of audio for free with Google AI model `gemini-3.5-transcribe` — auto-chunked, rate-limit handled, and exported straight to diarized SRT and TXT.
 
 ## Quick Start
 
