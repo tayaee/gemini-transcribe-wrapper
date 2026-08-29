@@ -38,11 +38,6 @@ gtw --gemini-api-key YOUR_API_KEY sample.mp4
 Done: `sample.speakers.srt`, `sample.srt`, `sample.txt` appear next to the input.
 Any local video/audio as input works (`.mp4`, `.mp3`, etc.).
 
-## Repositories
-
-- GitHub: https://github.com/tayaee/gemini-transcribe-wrapper
-- PyPI: https://pypi.org/project/gemini-transcribe-wrapper/
-
 ## What are improved by this project?
 
 This wrapper automatically overcomes Google Gemini API's free tier limits and constraints (as of Aug 2026):
@@ -50,6 +45,11 @@ This wrapper automatically overcomes Google Gemini API's free tier limits and co
 - Rate Limit (Max 2 RPM): Applies a built-in delay (default 30s) between sequential requests to prevent rate-limit errors.
 - Daily Quota (Max 25 RPD): Tracks daily Pacific-time API usage locally (~/.cache/.../usage.json) and warns clearly before or upon hitting HTTP 429 quota limits.
 - Raw Response to Ready-to-Use Subtitles: Converts AI transcription output directly into speaker-diarized .speakers.srt, standard .srt, and clean .txt files in a single run.
+
+## Relevant Repositories
+
+- GitHub: https://github.com/tayaee/gemini-transcribe-wrapper
+- PyPI: https://pypi.org/project/gemini-transcribe-wrapper/
 
 ## License
 
