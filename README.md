@@ -18,21 +18,21 @@ Linux / macOS:
 
 ```bash
 export GEMINI_API_KEY=your_key_here
-uvx -q gemini-transcribe-wrapper --help
+uvx -q --python 3.13 gemini-transcribe-wrapper --help
 ```
 
 Windows (PowerShell):
 
 ```powershell
 $env:GEMINI_API_KEY = "your_key_here"
-uvx -q gemini-transcribe-wrapper --help
+uvx -q --python 3.13 gemini-transcribe-wrapper --help
 ```
 
 Windows (Command Prompt):
 
 ```cmd
 set GEMINI_API_KEY=your_key_here
-uvx -q gemini-transcribe-wrapper --help
+uvx -q --python 3.13 gemini-transcribe-wrapper --help
 ```
 
 3. Transcribe
@@ -40,14 +40,14 @@ uvx -q gemini-transcribe-wrapper --help
 With `GEMINI_API_KEY` set (from step 2):
 
 ```bash
-uvx -q gemini-transcribe-wrapper sample.mp4
+uvx -q --python 3.13 gemini-transcribe-wrapper sample.mp4
 ```
 
 Or pass the key directly:
 
 ```bash
-uvx -q gemini-transcribe-wrapper --gemini-api-key YOUR_API_KEY sample.mp4
-uvx -q gemini-transcribe-wrapper --gemini-api-key YOUR_API_KEY *.mp4
+uvx -q --python 3.13 gemini-transcribe-wrapper --gemini-api-key YOUR_API_KEY sample.mp4
+uvx -q --python 3.13 gemini-transcribe-wrapper --gemini-api-key YOUR_API_KEY *.mp4
 ```
 
 Done: `sample.speakers.srt`, `sample.srt`, `sample.txt` appear next to the input.
@@ -70,7 +70,7 @@ Chunked transcription keeps the same global timeline as a single pass (word
 timestamps match within 0.5s; verified by `verify-chunk-secs.sh`). If you want
 an ffsubsync-aligned SRT for manual comparison, pass `--ffsubsync-srt` to also
 write `<base>.ffsubsync.srt` (aligned to the full audio via
-`uvx --python 3.14 ffsubsync <audio> -i <srt> --max-offset-seconds=120
+`uvx --python 3.13 ffsubsync <audio> -i <srt> --max-offset-seconds=120
 --gss --overwrite-input`); the main `.srt`/`.speakers.srt` always keep the
 raw transcript timestamps.
 
@@ -80,23 +80,23 @@ players), `.srt` (no speaker labels), and `.txt`
 off:
 
 ```bash
-uvx -q gemini-transcribe-wrapper sample.mp4 --no-speakers-srt --no-txt   # keep only .srt
-uvx -q gemini-transcribe-wrapper sample.mp4 --no-srt                     # keep .speakers.srt + .txt
+uvx -q --python 3.13 gemini-transcribe-wrapper sample.mp4 --no-speakers-srt --no-txt   # keep only .srt
+uvx -q --python 3.13 gemini-transcribe-wrapper sample.mp4 --no-srt                     # keep .speakers.srt + .txt
 ```
 
-See `uvx -q gemini-transcribe-wrapper --help` for all options (speaker name
+See `uvx -q --python 3.13 gemini-transcribe-wrapper --help` for all options (speaker name
 mapping, transcript re-rendering, temp dir, etc.).
 
 ## Shortcut: install once, use `gtw`
 
-Typing `uvx -q gemini-transcribe-wrapper ...` each time is verbose. If you want
+Typing `uvx -q --python 3.13 gemini-transcribe-wrapper ...` each time is verbose. If you want
 a short command, install the tool once and use the `gtw` shortcut: the exact
 same tool, installed alongside it.
 
 Linux / macOS:
 
 ```bash
-uv -q tool install gemini-transcribe-wrapper
+uv -q tool install --python 3.13 gemini-transcribe-wrapper
 export GEMINI_API_KEY=your_key_here
 gtw sample.mp4
 ```
@@ -104,7 +104,7 @@ gtw sample.mp4
 Windows (PowerShell):
 
 ```powershell
-uv -q tool install gemini-transcribe-wrapper
+uv -q tool install --python 3.13 gemini-transcribe-wrapper
 $env:GEMINI_API_KEY = "your_key_here"
 gtw sample.mp4
 ```

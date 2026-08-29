@@ -45,7 +45,7 @@ def merge_cues(results: list[TranscriptionResult], chunk_secs: float) -> list[Cu
 def run_ffsubsync(srt_path: Path, audio_mp3: Path) -> Path | None:
     """Align SRT timestamps to the full audio via ffsubsync.
 
-    Uses the robust recipe: uvx --python 3.14 ffsubsync <audio> -i <srt>
+    Uses the robust recipe: uvx --python 3.13 ffsubsync <audio> -i <srt>
     --max-offset-seconds=120 --gss --overwrite-input. The input srt is
     overwritten with the aligned version in place.
     """
@@ -62,7 +62,7 @@ def run_ffsubsync(srt_path: Path, audio_mp3: Path) -> Path | None:
     cmd = [
         "uvx",
         "--python",
-        "3.14",
+        "3.13",
         "ffsubsync",
         str(audio_mp3),
         "-i",
