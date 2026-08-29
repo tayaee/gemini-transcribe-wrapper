@@ -92,6 +92,7 @@ def gemini_transcribe(
     speakers: dict[str, str] | None = None,
     temp_dir: str | None = None,
     ffsubsync_srt: bool = False,
+    free_tier_wait_on_429: bool = False,
 ) -> BatchTranscribeResult:
     """Transcribe a multimedia file using Gemini 3.5 Transcribe.
 
@@ -129,6 +130,10 @@ def gemini_transcribe(
             the full audio via ffsubsync for manual comparison. The main
             .srt/.speakers.srt keep the raw transcript timestamps (default:
             off).
+        free_tier_wait_on_429: When True, sleep until PST midnight (in 1-hour
+            chunks, logging the remaining time) whenever the daily free-tier
+            quota is reached or a 429 is hit, then resume. Intended for
+            unattended multi-day batch runs on the free tier.
 
     Returns:
         BatchTranscribeResult with per-input TranscribeResult items. Each item
@@ -159,6 +164,7 @@ def gemini_transcribe(
                 speakers=speakers,
                 temp_dir=temp_dir,
                 ffsubsync_srt=ffsubsync_srt,
+                free_tier_wait_on_429=free_tier_wait_on_429,
             )
         )
     return BatchTranscribeResult(results=results)
@@ -183,6 +189,7 @@ def _process_one(
     speakers: dict[str, str] | None,
     temp_dir: str | None,
     ffsubsync_srt: bool,
+    free_tier_wait_on_429: bool,
 ) -> TranscribeResult:
     input_file = Path(input_path)
 
@@ -206,6 +213,7 @@ def _process_one(
         line_interval_secs=line_interval_secs,
         paragraph_interval_secs=paragraph_interval_secs,
         request_interval_secs=request_interval_secs,
+        free_tier_wait_on_429=free_tier_wait_on_429,
     )
 
     if not input_file.is_file():
@@ -299,9 +307,13 @@ def _process_one(
             api_key=gemini_api_key,
             language=language,
             enable_diarization=create_speakers_srt,
+            free_tier_wait_on_429=free_tier_wait_on_429,
         )
         results = transcribe_chunks_sequential(
-            client, chunks, request_interval_secs=request_interval_secs
+            client,
+            chunks,
+            request_interval_secs=request_interval_secs,
+            free_tier_wait_on_429=free_tier_wait_on_429,
         )
 
         srt_tmp = ctx.work_dir / f"{ctx.output_base}.srt.tmp"

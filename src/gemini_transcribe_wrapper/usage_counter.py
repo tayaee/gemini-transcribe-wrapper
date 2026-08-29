@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -93,3 +95,48 @@ def usage_summary_line(cache: Path | None = None) -> str:
         f"API calls today {day} (PST-08:00): {used}/{FREE_TIER_DAILY_LIMIT} "
         f"(free tier limit: {FREE_TIER_DAILY_LIMIT})"
     )
+
+
+def seconds_until_pst_midnight(now: datetime | None = None) -> float:
+    """Seconds remaining until the next PST midnight (00:00 PST = 08:00 UTC).
+
+    At exactly 00:00:00 PST, returns 0 — the quota has just reset and no wait
+    is needed. Otherwise, returns the seconds until the next 00:00 PST.
+    """
+    current = now or pst_now()
+    tod = (
+        current.hour * 3600
+        + current.minute * 60
+        + current.second
+        + current.microsecond / 1e6
+    )
+    if tod == 0:
+        return 0.0
+    return 86400.0 - tod
+
+
+def sleep_until_pst_midnight(
+    check_interval_secs: float = 3600.0,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> None:
+    """Sleep until the next PST midnight, logging the remaining time each step.
+
+    Splits the wait into chunks of up to ``check_interval_secs`` (default 1h),
+    logging the remaining time before each ``sleep_fn`` call. Intended for
+    free-tier batch runs that hit the 25 RPD daily quota or 429 errors and
+    need to wait for the quota to reset. ``sleep_fn`` is injectable for tests.
+    """
+    while True:
+        remaining = seconds_until_pst_midnight()
+        if remaining <= 0:
+            logger.warning(
+                "Free-tier wait: PST midnight reached (quota reset); resuming API calls."
+            )
+            return
+        chunk = min(check_interval_secs, remaining)
+        logger.warning(
+            "Free-tier wait: %.1fh remaining until PST midnight; sleeping %.0fs.",
+            remaining / 3600.0,
+            chunk,
+        )
+        sleep_fn(chunk)

@@ -152,11 +152,13 @@ class TranscribeClient:
         language: str = "ko-KR",
         enable_diarization: bool = True,
         max_retries: int = 5,
+        free_tier_wait_on_429: bool = False,
     ) -> None:
         self.client = genai.Client(api_key=api_key) if api_key else genai.Client()
         self.language = language
         self.enable_diarization = enable_diarization
         self.max_retries = max_retries
+        self.free_tier_wait_on_429 = free_tier_wait_on_429
         self.api_logs: list[dict[str, Any]] = []
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
@@ -402,10 +404,35 @@ def transcribe_chunks_sequential(
     client: TranscribeClient,
     chunks: list[Path],
     request_interval_secs: float = 30.0,
+    free_tier_wait_on_429: bool = False,
 ) -> list[TranscriptionResult]:
-    """Transcribe each chunk in order, reusing valid checkpoints (skip API + skip sleep)."""
+    """Transcribe each chunk in order, reusing valid checkpoints (skip API + skip sleep).
+
+    With ``free_tier_wait_on_429=True``:
+    - Before each chunk, if today's PST count has already reached the free-tier
+      daily limit, sleep until PST midnight before the next API call.
+    - On a 429 (quota) error, sleep until PST midnight and retry the same chunk.
+
+    The wait is performed in 1-hour chunks with the remaining time logged, so a
+    long multi-day batch can be left running unattended.
+    """
+    from .usage_counter import (
+        FREE_TIER_DAILY_LIMIT,
+        count_today,
+        sleep_until_pst_midnight,
+    )
+
     results: list[TranscriptionResult] = []
     for idx, chunk in enumerate(chunks):
+        if free_tier_wait_on_429 and count_today() >= FREE_TIER_DAILY_LIMIT:
+            logger.warning(
+                "Free-tier daily quota reached (%d/%d calls today, PST); "
+                "waiting until PST midnight before next chunk.",
+                count_today(),
+                FREE_TIER_DAILY_LIMIT,
+            )
+            sleep_until_pst_midnight()
+
         meta = checkpoint_path(chunk)
         existing = load_checkpoint(meta)
         if existing is not None:
@@ -414,7 +441,23 @@ def transcribe_chunks_sequential(
             continue
 
         logger.info("Chunk %d/%d: transcribing %s", idx + 1, len(chunks), chunk.name)
-        result = client.transcribe_chunk(chunk, chunk_index=idx)
+        # On 429 with --free-tier-wait-on-429, sleep until PST midnight and retry.
+        # Other exceptions propagate immediately to the caller.
+        while True:
+            try:
+                result = client.transcribe_chunk(chunk, chunk_index=idx)
+                break
+            except Exception as exc:
+                if free_tier_wait_on_429 and _is_quota_error(exc):
+                    logger.warning(
+                        "Hit 429 with --free-tier-wait-on-429 (chunk %d); "
+                        "sleeping until PST midnight and retrying.",
+                        idx,
+                    )
+                    sleep_until_pst_midnight()
+                    continue
+                raise
+
         save_checkpoint(meta, result)
         results.append(result)
 
