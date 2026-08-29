@@ -2,9 +2,6 @@
 
 Transcribe hours of audio `for free` with Gemini 3.5 — auto-chunked, rate-limit handled, and exported straight to diarized SRT and TXT.
 
-- GitHub: https://github.com/tayaee/gemini-transcribe-wrapper
-- PyPI: https://pypi.org/project/gemini-transcribe-wrapper/
-
 ## Quick Start
 
 ### Prerequisites
@@ -55,6 +52,11 @@ gtw --gemini-api-key YOUR_API_KEY *.mp4
 
 Done: `sample.speakers.srt`, `sample.srt`, `sample.txt` appear next to the input.
 Any local video/audio works (`.mp4`, `.mp3`, etc.).
+
+## Repositories
+
+- GitHub: https://github.com/tayaee/gemini-transcribe-wrapper
+- PyPI: https://pypi.org/project/gemini-transcribe-wrapper/
 
 ## Limits
 
