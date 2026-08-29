@@ -27,7 +27,7 @@ uv tool install --python 3.13 gemini-transcribe-wrapper@latest
 gtw -v
 ```
 
-### Transcribe for free (see Limites below)
+### Transcribe for free
 
 ```bash
 gtw sample.mp4   // with `GEMINI_API_KEY` set
