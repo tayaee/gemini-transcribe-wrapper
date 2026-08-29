@@ -1,0 +1,38 @@
+[project]
+name = "gemini-transcribe-wrapper"
+version = "0.0.1"
+description = "Zero-config Gemini 3.5 Transcribe wrapper with checkpoint/resume and atomic writes"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "google-genai>=1.0.0",
+    "static-ffmpeg>=2.0.0",
+    "ffsubsync>=0.4.24",
+    "filelock>=3.0.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+]
+
+[project.scripts]
+gemini-transcribe = "gemini_transcribe_wrapper.cli:main"
+gtw = "gemini_transcribe_wrapper.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.8.0",
+    "pyright>=1.1.0",
+]
+
+[tool.pyright]
+# Pydantic v2 model constructors are called with subset of fields relying on
+# Field() defaults; pyright reports these as missing required arguments.
+reportCallIssue = false
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gemini_transcribe_wrapper"]

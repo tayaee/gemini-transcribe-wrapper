@@ -1,0 +1,1 @@
+uv -q run gtw %*
