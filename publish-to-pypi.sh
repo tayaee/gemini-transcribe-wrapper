@@ -22,6 +22,14 @@ if [ -z "$REMOTE" ]; then
     echo "DEBUG: No prior release on PyPI (this will be the first publish)."
 elif [ "$REMOTE" = "$LOCAL" ]; then
     echo "Error: PyPI already has $LOCAL. Bump version in pyproject.toml first."
+    echo
+    echo "Commits on GitHub since v$REMOTE (not yet on PyPI):"
+    if git rev-parse "v$REMOTE" >/dev/null 2>&1; then
+        git log "v$REMOTE..HEAD" --oneline
+    else
+        echo "  (tag v$REMOTE not found locally; showing last 20 commits)"
+        git log --oneline -20
+    fi
     exit 1
 else
     echo "DEBUG: PyPI latest is $REMOTE, local is $LOCAL. OK to publish."
