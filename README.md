@@ -35,8 +35,13 @@ or
 gtw --gemini-api-key YOUR_API_KEY sample.mp4
 ```
 
-Done: `sample.speakers.srt`, `sample.srt`, `sample.txt` appear next to the input.
-Any local video/audio as input works (`.mp4`, `.mp3`, etc.).
+Output:
+
+```bash
+sample.speakers.srt
+sample.srt
+sample.txt
+```
 
 ## What are improved by this project?
 
