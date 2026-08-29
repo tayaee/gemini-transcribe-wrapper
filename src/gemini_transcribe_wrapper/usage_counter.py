@@ -87,10 +87,9 @@ def increment_today(cache: Path | None = None) -> int:
 
 def usage_summary_line(cache: Path | None = None) -> str:
     """One-line usage summary ending with today's count and the free tier limit."""
-    now = pst_now()
     used = count_today(cache)
-    ts = now.strftime("%Y-%m-%dT%H:%M:%S-08:00")
+    day = pst_date()
     return (
-        f"{ts} (PST) API calls today: {used}/{FREE_TIER_DAILY_LIMIT} "
+        f"API calls today {day} (PST-08:00): {used}/{FREE_TIER_DAILY_LIMIT} "
         f"(free tier limit: {FREE_TIER_DAILY_LIMIT})"
     )

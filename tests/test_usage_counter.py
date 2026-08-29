@@ -62,8 +62,8 @@ def test_summary_line_embeds_pst_time_count_and_limit(cache):
     line = usage_counter.usage_summary_line(cache)
     print("summary line:", line)
     assert line.endswith(f"{FREE_TIER_DAILY_LIMIT})")
-    assert "API calls today: 3/" in line
-    assert "-08:00" in line
+    assert "API calls today " in line and f": 3/{FREE_TIER_DAILY_LIMIT}" in line
+    assert "PST-08:00" in line
 
 
 def test_pst_offset_is_fixed_utc_minus_8():

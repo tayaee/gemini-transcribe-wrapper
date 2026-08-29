@@ -75,7 +75,7 @@ Usage tracking: every API call is counted per day (PST, resets at midnight
 Pacific) and saved to `~/.cache/gemini-transcribe-wrapper/usage.json`. Every
 run (`gtw -v`, `gtw --help`, or after transcription) prints today's count on
 the last line, e.g.
-`2026-08-28T220317-08:00 (PST) API calls today: 3/25 (free tier limit: 25)`.
+`API calls today 2026-08-28 (PST-08:00): 3/25 (free tier limit: 25)`.
 
 Chunked transcription keeps the same global timeline as a single pass (word
 timestamps match within 0.5s; verified by `verify-chunk-secs.sh`). If you want
