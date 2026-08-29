@@ -1,17 +1,58 @@
 @echo off
+setlocal
 
-if .%1. == .. (
-    echo Usage: %~nx0 VERSION
-    findstr version pyproject.toml
+REM Extract name and version from pyproject.toml (matches grep -oP on sh side).
+set PKG_NAME=
+set VERSION=
+for /F "usebackq tokens=2 delims==" %%V in (`findstr /R /C:"^name = " pyproject.toml`) do (
+    set "VAL=%%V"
+    setlocal enabledelayedexpansion
+    set "VAL=!VAL:"=!"
+    for /F "tokens=1" %%W in ("!VAL!") do endlocal & set PKG_NAME=%%W
+)
+for /F "usebackq tokens=2 delims==" %%V in (`findstr /R /C:"^version = " pyproject.toml`) do (
+    set "VAL=%%V"
+    setlocal enabledelayedexpansion
+    set "VAL=!VAL:"=!"
+    for /F "tokens=1" %%W in ("!VAL!") do endlocal & set VERSION=%%W
+)
+
+if "%PKG_NAME%" == "" (
+    echo Error: could not parse name from pyproject.toml
+    exit /b 1
+)
+if "%VERSION%" == "" (
+    echo Error: could not parse version from pyproject.toml
+    exit /b 1
+)
+echo DEBUG: Package %PKG_NAME%, local version %VERSION%.
+
+if not "%~1" == "" if not "%~1" == "%VERSION%" (
+    echo Error: CLI arg '%~1' does not match pyproject.toml version '%VERSION%'.
     exit /b 1
 )
 
-findstr /C:"version = \"%~1\"" pyproject.toml
-if errorlevel 1 (
-    echo Error: Version %1 not found in pyproject.toml
-    exit /b 1
+echo Fetching latest version from PyPI...
+set REMOTE=
+curl -fsSL "https://pypi.org/pypi/%PKG_NAME%/json" -o "%TEMP%\pypi-meta.json" >nul 2>&1
+if not errorlevel 1 (
+    for /F "usebackq tokens=2 delims==" %%V in (`findstr /C:"\"version\"" "%TEMP%\pypi-meta.json"`) do (
+        set "VAL=%%V"
+        setlocal enabledelayedexpansion
+        set "VAL=!VAL:"=!"
+        set "VAL=!VAL:,=!"
+        for /F "tokens=1" %%W in ("!VAL!") do endlocal & set REMOTE=%%W
+    )
+    del "%TEMP%\pypi-meta.json" >nul 2>&1
 )
-echo DEBUG: Version %1 confirmed.
+if "%REMOTE%" == "" (
+    echo DEBUG: No prior release on PyPI ^^(this will be the first publish^^).
+) else if "%REMOTE%" == "%VERSION%" (
+    echo Error: PyPI already has %VERSION%. Bump version in pyproject.toml first.
+    exit /b 1
+) else (
+    echo DEBUG: PyPI latest is %REMOTE%, local is %VERSION%. OK to publish.
+)
 
 if "%UV_PUBLISH_TOKEN%" == "" (
     echo UV_PUBLISH_TOKEN not set, exit.
@@ -26,6 +67,9 @@ if errorlevel 1 (
 )
 echo DEBUG: GitHub auth OK.
 
+echo Staging pyproject.toml (version bump)...
+git add pyproject.toml
+
 echo Building package (lock + dist)...
 call build.bat
 if errorlevel 1 (
@@ -33,7 +77,9 @@ if errorlevel 1 (
     exit /b 1
 )
 
-git add -u
+echo Staging uv.lock (sync from build)...
+git add uv.lock
+
 git status
 
 echo Press ENTER to publish package and code...
@@ -45,8 +91,8 @@ if errorlevel 1 (
 )
 
 git add -u
-git commit -m "Version %1"
-git tag v%1
+git commit -m "Version %VERSION%"
+git tag v%VERSION%
 git push origin --tags
 
-echo Done. Successfully published version %1.
+echo Done. Successfully published version %VERSION%.
