@@ -1,6 +1,6 @@
 # gemini-transcribe-wrapper
 
-Zero-config wrapper for Gemini 3.5 Transcribe that breaks long audio into
+Zero-config wrapper for free-tier Gemini 3.5 Transcribe that breaks long audio into
 API-safe chunks and merges the results back into `.speakers.srt` / `.srt` / `.txt`.
 
 - GitHub: https://github.com/tayaee/gemini-transcribe-wrapper
@@ -60,11 +60,19 @@ This wrapper exists to get past the Gemini free tier limits:
 - Max 2 API calls per minute: chunks are transcribed sequentially with a
   built-in delay (default 30s) between API calls.
 - Max 30 minutes of audio per call: long files are split into equal
-  ≤25 min chunks, transcribed, then merged and aligned with `ffsubsync`.
+  ≤25 min chunks, transcribed, then merged.
 - Max 25 API calls per day: once the daily quota is used up, the API
   returns HTTP 429. If you hit it, the tool prints the limits above:
   free tier users should try again tomorrow, or switch to a paid tier
   (enable billing) to keep going immediately.
+
+Chunked transcription keeps the same global timeline as a single pass (word
+timestamps match within 0.5s; verified by `verify-chunk-secs.sh`). If you want
+an ffsubsync-aligned SRT for manual comparison, pass `--ffsubsync-srt` to also
+write `<base>.ffsubsync.srt` (aligned to the full audio via
+`uvx --python 3.14 ffsubsync <audio> -i <srt> --max-offset-seconds=120
+--gss --overwrite-input`); the main `.srt`/`.speakers.srt` always keep the
+raw transcript timestamps.
 
 `.speakers.srt` (speaker diarization, still a standard .srt for media
 players), `.srt` (no speaker labels), and `.txt`

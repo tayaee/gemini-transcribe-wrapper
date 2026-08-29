@@ -38,6 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--txt", action=argparse.BooleanOptionalAction, default=True, help="Generate .txt transcript text (default: on)")
     parser.add_argument("--metadata-json", action=argparse.BooleanOptionalAction, default=False, help="Keep .metadata.json output (default: off)")
     parser.add_argument("--transcript-json", action=argparse.BooleanOptionalAction, default=True, help="Keep <base>.transcript.json for later re-render (default: on)")
+    parser.add_argument("--ffsubsync-srt", action="store_true", help="Also write <base>.ffsubsync.srt aligned to audio (default: off)")
     parser.add_argument("--force", action="store_true", help="Re-process even if outputs exist")
     parser.add_argument("--line-interval-secs", type=float, default=1.0, help="TXT newline break threshold (default: 1.0)")
     parser.add_argument("--paragraph-interval-secs", type=float, default=2.5, help="TXT paragraph break threshold (default: 2.5)")
@@ -136,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
                 chunk_secs=args.chunk_secs,
                 speakers=speakers,
                 temp_dir=args.temp_dir,
+                ffsubsync_srt=args.ffsubsync_srt,
             )
             produced_all.extend(batch.output_files())
             if any(r.status == TranscribeStatus.FAILED for r in batch.results):

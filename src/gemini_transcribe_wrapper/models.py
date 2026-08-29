@@ -28,6 +28,7 @@ class TranscribeInput(BaseModel):
     create_txt: bool = Field(True, description="Whether .txt output was requested.")
     create_metadata_json: bool = Field(False, description="Whether .metadata.json output was requested.")
     create_transcript_json: bool = Field(True, description="Whether .transcript.json was kept.")
+    ffsubsync_srt: bool = Field(False, description="Whether .ffsubsync.srt was written.")
     force: bool = Field(False, description="Whether re-processing was forced.")
     temp_dir: str | None = Field(None, description="Temp dir used for intermediate files.")
     line_interval_secs: float = Field(1.0, description="TXT newline break gap (s).")

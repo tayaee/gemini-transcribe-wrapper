@@ -15,6 +15,7 @@ build/
 chunk_*.mp3
 .gemini-work/
 out/
+.fft.gemini-work/
 
 # OS
 .DS_Store

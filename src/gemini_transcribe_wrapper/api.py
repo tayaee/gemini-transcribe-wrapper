@@ -91,6 +91,7 @@ def gemini_transcribe(
     chunk_secs: float | None = None,
     speakers: dict[str, str] | None = None,
     temp_dir: str | None = None,
+    ffsubsync_srt: bool = False,
 ) -> BatchTranscribeResult:
     """Transcribe a multimedia file using Gemini 3.5 Transcribe.
 
@@ -123,6 +124,10 @@ def gemini_transcribe(
         temp_dir: Where to place intermediate work files. When set, all temp
             files (temp_audio.mp3, chunk_*.mp3, *.tmp, checkpoints) live under
             this directory instead of next to the output.
+        ffsubsync_srt: When True, also write "<base>.ffsubsync.srt" aligned to
+            the full audio via ffsubsync for manual comparison. The main
+            .srt/.speakers.srt keep the raw transcript timestamps (default:
+            off).
 
     Returns:
         BatchTranscribeResult with per-input TranscribeResult items. Each item
@@ -152,6 +157,7 @@ def gemini_transcribe(
                 chunk_secs=chunk_secs,
                 speakers=speakers,
                 temp_dir=temp_dir,
+                ffsubsync_srt=ffsubsync_srt,
             )
         )
     return BatchTranscribeResult(results=results)
@@ -175,6 +181,7 @@ def _process_one(
     chunk_secs: float | None,
     speakers: dict[str, str] | None,
     temp_dir: str | None,
+    ffsubsync_srt: bool,
 ) -> TranscribeResult:
     input_file = Path(input_path)
 
@@ -192,6 +199,7 @@ def _process_one(
         create_txt=create_txt,
         create_metadata_json=create_metadata_json,
         create_transcript_json=create_transcript_json,
+        ffsubsync_srt=ffsubsync_srt,
         force=force,
         temp_dir=temp_dir,
         line_interval_secs=line_interval_secs,
@@ -310,6 +318,7 @@ def _process_one(
             line_interval_secs=line_interval_secs,
             paragraph_interval_secs=paragraph_interval_secs,
             speakers=speakers,
+            ffsubsync_srt=ffsubsync_srt,
         )
 
         # Save the transcript (full transcription result for later re-render),

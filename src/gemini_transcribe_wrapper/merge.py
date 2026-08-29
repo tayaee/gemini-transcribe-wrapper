@@ -8,7 +8,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 from .format import (
@@ -43,10 +42,12 @@ def merge_cues(results: list[TranscriptionResult], chunk_secs: float) -> list[Cu
     return group_words_to_cues(all_words)
 
 
-def run_ffsubsync(srt_path: Path, audio_mp3: Path, srt_out: Path) -> Path | None:
+def run_ffsubsync(srt_path: Path, audio_mp3: Path) -> Path | None:
     """Align SRT timestamps to the full audio via ffsubsync.
 
-    Returns path to the aligned SRT, or None if alignment was skipped/failed.
+    Uses the robust recipe: uvx --python 3.14 ffsubsync <audio> -i <srt>
+    --max-offset-seconds=120 --gss --overwrite-input. The input srt is
+    overwritten with the aligned version in place.
     """
     try:
         from ffsubsync import ffsubsync  # noqa: F401 - ensures package present
@@ -54,46 +55,38 @@ def run_ffsubsync(srt_path: Path, audio_mp3: Path, srt_out: Path) -> Path | None
         logger.warning("ffsubsync not available; skipping subtitle alignment")
         return None
 
-    tmp = srt_out.with_name(srt_out.stem + ".aligned" + srt_out.suffix)
-    tmp.parent.mkdir(parents=True, exist_ok=True)
-
-    ffsubsync_bin = shutil.which("ffsubsync")
-    if ffsubsync_bin is None:
-        # Console script not on PATH (e.g. uv tool install): resolve next to
-        # the active interpreter (bin/ on POSIX, Scripts/ on Windows).
-        exe_dir = Path(sys.executable).parent
-        candidates = [exe_dir / "ffsubsync", exe_dir / "Scripts" / "ffsubsync.exe"]
-        for c in candidates:
-            if c.exists():
-                ffsubsync_bin = str(c)
-                break
-    if ffsubsync_bin is None:
-        logger.warning("ffsubsync executable not found; skipping subtitle alignment")
-        return None
+    # Copy the srt to a temp file; --overwrite-input edits it in place.
+    work_srt = srt_path.with_name(srt_path.stem + ".sync" + srt_path.suffix)
+    shutil.copyfile(srt_path, work_srt)
 
     cmd = [
-        ffsubsync_bin,
+        "uvx",
+        "--python",
+        "3.14",
+        "ffsubsync",
         str(audio_mp3),
         "-i",
-        str(srt_path),
-        "-o",
-        str(tmp),
+        str(work_srt),
+        "--max-offset-seconds=120",
+        "--gss",
+        "--overwrite-input",
     ]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        if tmp.exists() and tmp.stat().st_size > 0:
-            return tmp
-        # Empty or failed alignment: discard output, keep original timestamps.
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
+        if work_srt.exists() and work_srt.stat().st_size > 0 and proc.returncode == 0:
+            shutil.copyfile(work_srt, srt_path)
+            return srt_path
         if proc.returncode != 0:
             logger.warning(
                 "ffsubsync exited %d: %s", proc.returncode, proc.stderr[-500:]
             )
     except Exception:  # noqa: BLE001 - fall back to unaligned
         logger.warning("ffsubsync failed; keeping original timestamps")
+    finally:
+        try:
+            work_srt.unlink(missing_ok=True)
+        except OSError:
+            pass
     return None
 
 
@@ -134,12 +127,17 @@ def align_and_build(
     paragraph_interval_secs: float,
     skip_sync: bool = False,
     speakers: dict[str, str] | None = None,
+    ffsubsync_srt: bool = False,
 ) -> None:
-    """Build .srt.tmp/.speakers.srt.tmp/.txt.tmp, then align with ffsubsync.
+    """Build .srt.tmp/.speakers.srt.tmp/.txt.tmp from the transcript.
+
+    The main .srt/.speakers.srt keep the raw transcript timestamps. When
+    ffsubsync_srt is True, an additional "<base>.ffsubsync.srt" is written
+    with timestamps aligned to the full audio for manual comparison.
 
     If skip_sync is True (e.g. re-rendering from a transcript without the
-    source audio), timestamps are used as-is. speakers maps raw speaker ids
-    (e.g. "spk:0") to display names for the speaker-diarized .srt output.
+    source audio), the ffsubsync extra file is skipped. speakers maps raw
+    speaker ids (e.g. "spk:0") to display names.
     """
     cues = merge_cues(results, chunk_secs)
 
@@ -155,32 +153,19 @@ def align_and_build(
     atomic_write(speakers_srt_tmp, speakers_srt_content)
     atomic_write(txt_tmp, txt_content)
 
-    # ffsubsync requires a known subtitle extension (e.g. .srt), so run it on a
-    # properly-suffixed intermediate file and fold the result back into .tmp.
-    # srt_tmp is "<base>.srt.tmp" -> sync file is "<base>.srt".
-    if not skip_sync:
+    # Optionally produce an ffsubsync-aligned SRT as an extra file, leaving
+    # the main outputs untouched.
+    if ffsubsync_srt and not skip_sync and full_mp3.exists():
         srt_for_sync = srt_tmp.with_name(srt_tmp.name[: -len(".tmp")])
         srt_for_sync.write_text(srt_content, encoding="utf-8")
-        aligned = run_ffsubsync(srt_for_sync, full_mp3, srt_for_sync)
+        aligned = run_ffsubsync(srt_for_sync, full_mp3)
         if aligned is not None and aligned.exists():
-            # Compute average shift from original SRT and apply to the
-            # speaker-diarized SRT as well.
-            delta = _estimate_delta(srt_for_sync, aligned)
-            os.replace(aligned, srt_for_sync)
-            atomic_write(srt_tmp, srt_for_sync.read_text(encoding="utf-8"))
-            if delta:
-                shifted = _apply_delta_to_srt(speakers_srt_tmp, delta)
-                atomic_write(speakers_srt_tmp, shifted)
+            extra = srt_tmp.with_name(
+                srt_tmp.name[: -len(".srt.tmp")] + ".ffsubsync.srt"
+            )
+            atomic_write(extra, aligned.read_text(encoding="utf-8"))
         try:
             srt_for_sync.unlink(missing_ok=True)
-            if aligned is not None and aligned.exists():
-                aligned.unlink(missing_ok=True)
-            else:
-                # Remove any leftover ffsubsync output file.
-                leftover = srt_for_sync.with_name(
-                    srt_for_sync.stem + ".aligned" + srt_for_sync.suffix
-                )
-                leftover.unlink(missing_ok=True)
         except OSError:
             pass
 
