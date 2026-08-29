@@ -36,7 +36,7 @@ gtw --gemini-api-key YOUR_API_KEY sample.mp4
 ```
 
 Done: `sample.speakers.srt`, `sample.srt`, `sample.txt` appear next to the input.
-Any local video/audio works (`.mp4`, `.mp3`, etc.).
+Any local video/audio as input works (`.mp4`, `.mp3`, etc.).
 
 ## Repositories
 
