@@ -25,12 +25,8 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 echo "DEBUG: GitHub auth OK ($(gh api user -q .login 2>/dev/null || echo unknown))."
 
-if [ -d "dist" ]; then
-    rm -f dist/*
-fi
-
-echo "Building package..."
-uv -q build
+echo "Building package (lock + dist)..."
+./build.sh
 
 git add -u
 git status

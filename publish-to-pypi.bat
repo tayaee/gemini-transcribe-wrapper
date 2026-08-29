@@ -26,12 +26,8 @@ if errorlevel 1 (
 )
 echo DEBUG: GitHub auth OK.
 
-if exist dist\ (
-    del /q dist\*.*
-)
-
-echo Building package...
-uv -q build
+echo Building package (lock + dist)...
+call build.bat
 if errorlevel 1 (
     echo Error: Build failed.
     exit /b 1
