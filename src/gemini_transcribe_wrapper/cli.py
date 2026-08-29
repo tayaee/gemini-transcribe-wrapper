@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -24,16 +25,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-v", "--version",
-        action="version",
-        version=f"%(prog)s {__version__}",
+        action="store_true",
         help="Show version and exit",
     )
-    parser.add_argument("path", nargs="+", help="Input file or glob pattern (*.mp4, *.mp3, ...)")
+    parser.add_argument("path", nargs="*", help="Input file or glob pattern (*.mp4, *.mp3, ...)")
     parser.add_argument("--output-dir", default=None, help="Directory for output files (default: alongside input)")
     parser.add_argument("--output-base", default=None, help="Base name for output files (default: input stem)")
     parser.add_argument("--gemini-api-key", default=None, help="Gemini API key (default: $GEMINI_API_KEY)")
     parser.add_argument("--language", default="ko-KR", help="BCP-47 language code (default: ko-KR)")
-    parser.add_argument("--spk", action=argparse.BooleanOptionalAction, default=True, help="Generate speaker-diarized .spk (default: on)")
+    parser.add_argument("--speakers-srt", action=argparse.BooleanOptionalAction, default=True, help="Generate speaker-diarized .speakers.srt (default: on)")
     parser.add_argument("--srt", action=argparse.BooleanOptionalAction, default=True, help="Generate .srt subtitles (default: on)")
     parser.add_argument("--txt", action=argparse.BooleanOptionalAction, default=True, help="Generate .txt transcript text (default: on)")
     parser.add_argument("--metadata-json", action=argparse.BooleanOptionalAction, default=False, help="Keep .metadata.json output (default: off)")
@@ -43,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--paragraph-interval-secs", type=float, default=2.5, help="TXT paragraph break threshold (default: 2.5)")
     parser.add_argument("--request-interval-secs", type=float, default=30.0, help="Delay between API calls (default: 30.0)")
     parser.add_argument("--chunk-secs", type=float, default=None, help="Fixed chunk length in seconds (default: auto ≤25min)")
-    parser.add_argument("--speakers", default=None, help="Speaker name mapping for .spk, e.g. 'spk:0=궤도;spk:1=가람;'")
+    parser.add_argument("--speakers", default=None, help="Speaker name mapping for .speakers.srt, e.g. 'spk:0=궤도;spk:1=가람;'")
     parser.add_argument("--temp-dir", default=None, help="Directory for intermediate temp files (default: alongside output)")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
     return parser
@@ -79,12 +79,31 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    prog = Path(sys.argv[0]).name or "gemini-transcribe"
+
+    if args.version:
+        print(f"{prog} {__version__}")
+        if not (
+            args.gemini_api_key
+            or os.environ.get("GEMINI_API_KEY")
+            or os.environ.get("GOOGLE_API_KEY")
+        ):
+            print(
+                "Warning: GEMINI_API_KEY is not set. Set it or pass "
+                "--gemini-api-key to transcribe."
+            )
+        return 0
+
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
     start_time = time.monotonic()
+
+    if not args.path:
+        parser.print_usage()
+        return 1
 
     produced_all: list[str] = []
     failed = False
@@ -105,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_base=args.output_base,
                 gemini_api_key=args.gemini_api_key,
                 language=args.language,
-                create_spk=args.spk,
+                create_speakers_srt=args.speakers_srt,
                 create_srt=args.srt,
                 create_txt=args.txt,
                 create_metadata_json=args.metadata_json,

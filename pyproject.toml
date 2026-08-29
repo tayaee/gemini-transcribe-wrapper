@@ -1,9 +1,9 @@
 [project]
 name = "gemini-transcribe-wrapper"
-version = "0.0.2"
+version = "0.0.3"
 description = "Zero-config Gemini 3.5 Transcribe wrapper with checkpoint/resume and atomic writes"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 license = { text = "MIT" }
 urls = { Homepage = "https://github.com/tayaee/gemini-transcribe-wrapper", Repository = "https://github.com/tayaee/gemini-transcribe-wrapper", "Bug Tracker" = "https://github.com/tayaee/gemini-transcribe-wrapper/issues" }
 dependencies = [
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-gemini-transcribe = "gemini_transcribe_wrapper.cli:main"
+gemini-transcribe-wrapper = "gemini_transcribe_wrapper.cli:main"
 gtw = "gemini_transcribe_wrapper.cli:main"
 
 [dependency-groups]
@@ -24,6 +24,7 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.8.0",
     "pyright>=1.1.0",
+    "semgrep>=1.0.0",
 ]
 
 [tool.pyright]

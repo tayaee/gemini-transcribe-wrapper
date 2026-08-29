@@ -1,5 +1,5 @@
 #!/bin/bash -x
-uv -q tool install -e . --force
+uv -q tool install -e .
 
 mkdir -p out/standard out/chunked
 

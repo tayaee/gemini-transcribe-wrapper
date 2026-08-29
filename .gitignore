@@ -14,6 +14,7 @@ build/
 *.metadata.json
 chunk_*.mp3
 .gemini-work/
+out/
 
 # OS
 .DS_Store

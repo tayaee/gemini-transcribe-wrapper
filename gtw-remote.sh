@@ -1,2 +1,3 @@
 #!/bin/bash -x
+# Developer tool: run gtw from PyPI.
 uvx -q --from gemini-transcribe-wrapper run gtw $*

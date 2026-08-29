@@ -23,7 +23,7 @@ class TranscribeInput(BaseModel):
     output_dir: str | None = Field(None, description="Directory for final outputs.")
     output_base: str | None = Field(None, description="Output base name.")
     language: str = Field("ko-KR", description="BCP-47 language code.")
-    create_spk: bool = Field(True, description="Whether .spk output was requested.")
+    create_speakers_srt: bool = Field(True, description="Whether .speakers.srt output was requested.")
     create_srt: bool = Field(True, description="Whether .srt output was requested.")
     create_txt: bool = Field(True, description="Whether .txt output was requested.")
     create_metadata_json: bool = Field(False, description="Whether .metadata.json output was requested.")
@@ -38,13 +38,13 @@ class TranscribeInput(BaseModel):
 class TranscribeOutput(BaseModel):
     """Requested final output files that were generated."""
 
-    spk: str | None = Field(None, description="Speaker-diarized subtitle file (.spk).")
+    speakers_srt: str | None = Field(None, description="Speaker-diarized subtitle file (.speakers.srt).")
     srt: str | None = Field(None, description="Subtitle file (.srt).")
     txt: str | None = Field(None, description="Editor-formatted text file (.txt).")
     metadata_json: str | None = Field(None, description="Metadata file (.metadata.json).")
 
     def as_list(self) -> list[str]:
-        return [p for p in (self.spk, self.srt, self.txt, self.metadata_json) if p]
+        return [p for p in (self.speakers_srt, self.srt, self.txt, self.metadata_json) if p]
 
 
 class TranscribeLeftover(BaseModel):

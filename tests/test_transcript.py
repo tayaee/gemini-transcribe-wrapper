@@ -57,7 +57,7 @@ def run():
         assert transcript.exists(), "transcript.json should be created by default"
 
         # 2) Delete outputs, keep transcript -> re-run must NOT call the API.
-        for p in (td / "input.spk", td / "input.srt", td / "input.txt"):
+        for p in (td / "input.speakers.srt", td / "input.srt", td / "input.txt"):
             p.unlink()
 
         api.TranscribeClient = CountingClient
@@ -67,10 +67,10 @@ def run():
             api.TranscribeClient = orig
 
         print("calls after re-render run:", API_CALLS["n"])
-        print("outputs regenerated:", sorted(p.name for p in td.glob("input.spk")) + sorted(p.name for p in td.glob("input.srt")) + sorted(p.name for p in td.glob("input.txt")))
+        print("outputs regenerated:", sorted(p.name for p in td.glob("input.speakers.srt")) + sorted(p.name for p in td.glob("input.srt")) + sorted(p.name for p in td.glob("input.txt")))
         print("re-render status:", r2.results[0].status)
         assert API_CALLS["n"] == 1, f"re-render should not call API, calls={API_CALLS['n']}"
-        assert (td / "input.spk").exists() and (td / "input.srt").exists() and (td / "input.txt").exists()
+        assert (td / "input.speakers.srt").exists() and (td / "input.srt").exists() and (td / "input.txt").exists()
 
         # 3) --no-transcript-json: transcript.json removed after processing.
         api.TranscribeClient = CountingClient

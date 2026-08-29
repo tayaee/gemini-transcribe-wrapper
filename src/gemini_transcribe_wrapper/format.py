@@ -121,11 +121,14 @@ def format_srt(cues: list[Cue]) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-def format_spk(cues: list[Cue], speaker_map: dict[str, str] | None = None) -> str:
-    """Format speaker-diarized subtitles.
+def format_speakers_srt(
+    cues: list[Cue], speaker_map: dict[str, str] | None = None
+) -> str:
+    """Format speaker-diarized subtitles as an .srt (media-player compatible).
 
-    speaker_map maps raw speaker ids (e.g. "spk:0") to display names. Speakers
-    missing from the map keep their raw id.
+    Standard SRT cue layout with a speaker tag prefix, e.g.:
+    `[궤도] 네. 이번 시간엔`. speaker_map maps raw speaker ids (e.g. "spk:0")
+    to display names; speakers missing from the map keep their raw id.
     """
     out: list[str] = []
     for i, cue in enumerate(cues, 1):

@@ -79,7 +79,7 @@ def gemini_transcribe(
     output_base: str | None = None,
     gemini_api_key: str | None = None,
     language: str = "ko-KR",
-    create_spk: bool = True,
+    create_speakers_srt: bool = True,
     create_srt: bool = True,
     create_txt: bool = True,
     create_metadata_json: bool = False,
@@ -102,14 +102,14 @@ def gemini_transcribe(
         output_base: Base name for outputs (default: input stem).
         gemini_api_key: Gemini API key (default: $GEMINI_API_KEY).
         language: BCP-47 language code (default: "ko-KR").
-        create_spk/create_srt/create_txt: Whether to generate each output
-            format (.spk, .srt, .txt).
+        create_speakers_srt/create_srt/create_txt: Whether to generate each
+            output format (.speakers.srt, .srt, .txt).
         create_metadata_json: Whether to keep the .metadata.json output
             (default: off).
         create_transcript_json: Whether to keep <base>.transcript.json
             (default: on). The transcript stores the full transcription result
-            (text + word timestamps + speakers) so .spk/.srt/.txt can be
-            re-rendered without calling the API again: if it exists and
+            (text + word timestamps + speakers) so .speakers.srt/.srt/.txt can
+            be re-rendered without calling the API again: if it exists and
             outputs are missing, they are regenerated from it.
         force: Re-process even if all outputs already exist.
         line_interval_secs / paragraph_interval_secs: TXT break gaps.
@@ -118,8 +118,8 @@ def gemini_transcribe(
             audio is split into equal chunks of ~this length instead of using
             the default ≤25min algorithm. Useful for debugging short clips.
         speakers: Optional mapping of raw speaker ids (e.g. "spk:0") to display
-            names used in the .spk output. Speakers missing from the mapping
-            keep their raw id, and a warning is emitted listing them.
+            names used in the .speakers.srt output. Speakers missing from the
+            mapping keep their raw id, and a warning is emitted listing them.
         temp_dir: Where to place intermediate work files. When set, all temp
             files (temp_audio.mp3, chunk_*.mp3, *.tmp, checkpoints) live under
             this directory instead of next to the output.
@@ -140,7 +140,7 @@ def gemini_transcribe(
                 output_base=output_base,
                 gemini_api_key=gemini_api_key,
                 language=language,
-                create_spk=create_spk,
+                create_speakers_srt=create_speakers_srt,
                 create_srt=create_srt,
                 create_txt=create_txt,
                 create_metadata_json=create_metadata_json,
@@ -163,7 +163,7 @@ def _process_one(
     output_base: str | None,
     gemini_api_key: str | None,
     language: str,
-    create_spk: bool,
+    create_speakers_srt: bool,
     create_srt: bool,
     create_txt: bool,
     create_metadata_json: bool,
@@ -187,7 +187,7 @@ def _process_one(
         output_dir=str(out_dir) if output_dir else None,
         output_base=out_stem.name,
         language=language,
-        create_spk=create_spk,
+        create_speakers_srt=create_speakers_srt,
         create_srt=create_srt,
         create_txt=create_txt,
         create_metadata_json=create_metadata_json,
@@ -221,7 +221,7 @@ def _process_one(
 
     transcript_path = out_dir / f"{out_stem.name}.transcript.json"
     final_paths = _build_output_paths(
-        out_dir, out_stem.name, create_spk, create_srt, create_txt, create_metadata_json
+        out_dir, out_stem.name, create_speakers_srt, create_srt, create_txt, create_metadata_json
     )
     chunks: list[Path] = []
     ctx: WorkContext | None = None
@@ -229,7 +229,8 @@ def _process_one(
     try:
         # Re-render path: a valid transcript exists and the outputs are stale
         # relative to it (missing, or the transcript is newer). Regenerate
-        # .spk/.srt/.txt from the stored transcript without calling the API.
+        # .speakers.srt/.srt/.txt from the stored transcript without calling
+        # the API.
         if load_transcript(transcript_path) is not None and (
             force or not _outputs_valid(final_paths, [transcript_path])
         ):
@@ -240,7 +241,7 @@ def _process_one(
                     out_dir=out_dir,
                     out_stem=out_stem.name,
                     transcript_path=transcript_path,
-                    create_spk=create_spk,
+                    create_speakers_srt=create_speakers_srt,
                     create_srt=create_srt,
                     create_txt=create_txt,
                     create_metadata_json=create_metadata_json,
@@ -288,14 +289,14 @@ def _process_one(
         client = TranscribeClient(
             api_key=gemini_api_key,
             language=language,
-            enable_diarization=create_spk,
+            enable_diarization=create_speakers_srt,
         )
         results = transcribe_chunks_sequential(
             client, chunks, request_interval_secs=request_interval_secs
         )
 
         srt_tmp = ctx.work_dir / f"{ctx.output_base}.srt.tmp"
-        spk_tmp = ctx.work_dir / f"{ctx.output_base}.spk.tmp"
+        speakers_srt_tmp = ctx.work_dir / f"{ctx.output_base}.speakers.srt.tmp"
         txt_tmp = ctx.work_dir / f"{ctx.output_base}.txt.tmp"
 
         align_and_build(
@@ -304,7 +305,7 @@ def _process_one(
             full_mp3=ctx.full_mp3,
             out_base=ctx.work_dir / ctx.output_base,
             srt_tmp=srt_tmp,
-            spk_tmp=spk_tmp,
+            speakers_srt_tmp=speakers_srt_tmp,
             txt_tmp=txt_tmp,
             line_interval_secs=line_interval_secs,
             paragraph_interval_secs=paragraph_interval_secs,
@@ -330,12 +331,12 @@ def _process_one(
                     meta.unlink()
 
         tmp_map = {
-            "spk_tmp": spk_tmp,
+            "speakers_srt_tmp": speakers_srt_tmp,
             "srt_tmp": srt_tmp,
             "txt_tmp": txt_tmp,
         }
         final_map = {
-            "spk": out_dir / f"{ctx.output_base}.spk",
+            "speakers_srt": out_dir / f"{ctx.output_base}.speakers.srt",
             "srt": out_dir / f"{ctx.output_base}.srt",
             "txt": out_dir / f"{ctx.output_base}.txt",
         }
@@ -349,7 +350,7 @@ def _process_one(
 
         produced = commit_outputs(
             outputs={**tmp_map, **final_map},
-            create_spk=create_spk,
+            create_speakers_srt=create_speakers_srt,
             create_srt=create_srt,
             create_txt=create_txt,
             create_metadata_json=create_metadata_json,
@@ -409,7 +410,7 @@ def _render_from_transcript(
     out_dir: Path,
     out_stem: str,
     transcript_path: Path,
-    create_spk: bool,
+    create_speakers_srt: bool,
     create_srt: bool,
     create_txt: bool,
     create_metadata_json: bool,
@@ -418,7 +419,7 @@ def _render_from_transcript(
     paragraph_interval_secs: float,
     speakers: dict[str, str] | None,
 ) -> TranscribeResult:
-    """Regenerate .spk/.srt/.txt from an existing transcript.json (no API call)."""
+    """Regenerate .speakers.srt/.srt/.txt from a transcript.json (no API call)."""
     results = load_transcript(transcript_path)
     if results is None:
         raise ValueError(f"Invalid transcript: {transcript_path}")
@@ -429,7 +430,7 @@ def _render_from_transcript(
     with tempfile.TemporaryDirectory(prefix=f".{out_stem}.render-", dir=str(out_dir)) as tmp:
         work = Path(tmp)
         srt_tmp = work / f"{out_stem}.srt.tmp"
-        spk_tmp = work / f"{out_stem}.spk.tmp"
+        speakers_srt_tmp = work / f"{out_stem}.speakers.srt.tmp"
         txt_tmp = work / f"{out_stem}.txt.tmp"
 
         align_and_build(
@@ -438,7 +439,7 @@ def _render_from_transcript(
             full_mp3=work / "unused.mp3",  # no audio needed for re-render
             out_base=work / out_stem,
             srt_tmp=srt_tmp,
-            spk_tmp=spk_tmp,
+            speakers_srt_tmp=speakers_srt_tmp,
             txt_tmp=txt_tmp,
             line_interval_secs=line_interval_secs,
             paragraph_interval_secs=paragraph_interval_secs,
@@ -447,12 +448,12 @@ def _render_from_transcript(
         )
 
         tmp_map = {
-            "spk_tmp": spk_tmp,
+            "speakers_srt_tmp": speakers_srt_tmp,
             "srt_tmp": srt_tmp,
             "txt_tmp": txt_tmp,
         }
         final_map = {
-            "spk": out_dir / f"{out_stem}.spk",
+            "speakers_srt": out_dir / f"{out_stem}.speakers.srt",
             "srt": out_dir / f"{out_stem}.srt",
             "txt": out_dir / f"{out_stem}.txt",
         }
@@ -469,7 +470,7 @@ def _render_from_transcript(
         regenerated: list[str] = []
         unchanged: list[str] = []
         for key, enabled in (
-            ("spk", create_spk),
+            ("speakers_srt", create_speakers_srt),
             ("srt", create_srt),
             ("txt", create_txt),
             ("metadata_json", create_metadata_json),
@@ -538,8 +539,8 @@ def _warn_unmapped_speakers(
         display,
         ", ".join(unmapped),
     )
-    # Recommended command: delete the .spk and re-render with a completed map,
-    # naming missing entries Name<index> for the user to edit.
+    # Recommended command: delete the .speakers.srt and re-render with a
+    # completed map, naming missing entries Name<index> for the user to edit.
     parts = []
     for s in used:
         if s not in speaker_map:
@@ -549,9 +550,10 @@ def _warn_unmapped_speakers(
             parts.append(f"{s}={speaker_map[s]}")
     recommended = "; ".join(parts) + ";"
     logger.warning(
-        "To re-render with names, delete the .spk and re-run with the option, "
-        "editing the Name# entries: rm '%s' && gemini-transcribe '%s' --speakers '%s'",
-        out_dir / f"{out_stem}.spk",
+        "To re-render with names, delete the .speakers.srt and re-run with the "
+        "option, editing the Name# entries: rm '%s' && gemini-transcribe '%s' "
+        "--speakers '%s'",
+        out_dir / f"{out_stem}.speakers.srt",
         echo.input_file,
         recommended,
     )
@@ -560,14 +562,14 @@ def _warn_unmapped_speakers(
 def _build_output_paths(
     out_dir: Path,
     out_base: str,
-    create_spk: bool,
+    create_speakers_srt: bool,
     create_srt: bool,
     create_txt: bool,
     create_metadata_json: bool,
 ) -> list[Path | None]:
     out = []
-    if create_spk:
-        out.append(out_dir / f"{out_base}.spk")
+    if create_speakers_srt:
+        out.append(out_dir / f"{out_base}.speakers.srt")
     if create_srt:
         out.append(out_dir / f"{out_base}.srt")
     if create_txt:
@@ -579,7 +581,7 @@ def _build_output_paths(
 
 def _existing_outputs(paths: list[Path | None]) -> TranscribeOutput:
     mapping: dict[str, Path | None] = {}
-    for key, p in zip(("spk", "srt", "txt", "metadata_json"), paths):
+    for key, p in zip(("speakers_srt", "srt", "txt", "metadata_json"), paths):
         if p is not None:
             mapping[key] = p
     return _to_output([str(p) for p in mapping.values() if p is not None])
@@ -589,8 +591,8 @@ def _to_output(produced: list[str]) -> TranscribeOutput:
     out = TranscribeOutput()
     for p in produced:
         name = Path(p).name
-        if name.endswith(".spk"):
-            out.spk = p
+        if name.endswith(".speakers.srt"):
+            out.speakers_srt = p
         elif name.endswith(".srt"):
             out.srt = p
         elif name.endswith(".txt"):
@@ -660,7 +662,8 @@ def _check_api_key(api_key: str | None) -> None:
         raise RuntimeError(
             "No Gemini API key found. Set GEMINI_API_KEY or pass --gemini-api-key."
         )
-    logger.info("Using GEMINI_API_KEY=%s", _mask_key(key))
+    # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+    logger.info("Using GEMINI_API_KEY=%s", _mask_key(key))  # nosemgrep
 
 
 def _cleanup_workdir(ctx: WorkContext, keep_chunks: bool) -> None:

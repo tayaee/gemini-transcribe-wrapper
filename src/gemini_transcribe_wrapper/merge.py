@@ -15,7 +15,7 @@ from .format import (
     Cue,
     atomic_write,
     build_txt,
-    format_spk,
+    format_speakers_srt,
     format_srt,
     group_words_to_cues,
 )
@@ -128,23 +128,23 @@ def align_and_build(
     full_mp3: Path,
     out_base: Path,
     srt_tmp: Path,
-    spk_tmp: Path,
+    speakers_srt_tmp: Path,
     txt_tmp: Path,
     line_interval_secs: float,
     paragraph_interval_secs: float,
     skip_sync: bool = False,
     speakers: dict[str, str] | None = None,
 ) -> None:
-    """Build .srt.tmp/.spk.tmp/.txt.tmp, then align SRT/SPK with ffsubsync.
+    """Build .srt.tmp/.speakers.srt.tmp/.txt.tmp, then align with ffsubsync.
 
     If skip_sync is True (e.g. re-rendering from a transcript without the
     source audio), timestamps are used as-is. speakers maps raw speaker ids
-    (e.g. "spk:0") to display names for the .spk output.
+    (e.g. "spk:0") to display names for the speaker-diarized .srt output.
     """
     cues = merge_cues(results, chunk_secs)
 
     srt_content = format_srt(cues)
-    spk_content = format_spk(cues, speaker_map=speakers)
+    speakers_srt_content = format_speakers_srt(cues, speaker_map=speakers)
     txt_content = build_txt(
         _merged_result(results, chunk_secs),
         line_interval_secs=line_interval_secs,
@@ -152,7 +152,7 @@ def align_and_build(
     )
 
     atomic_write(srt_tmp, srt_content)
-    atomic_write(spk_tmp, spk_content)
+    atomic_write(speakers_srt_tmp, speakers_srt_content)
     atomic_write(txt_tmp, txt_content)
 
     # ffsubsync requires a known subtitle extension (e.g. .srt), so run it on a
@@ -163,13 +163,14 @@ def align_and_build(
         srt_for_sync.write_text(srt_content, encoding="utf-8")
         aligned = run_ffsubsync(srt_for_sync, full_mp3, srt_for_sync)
         if aligned is not None and aligned.exists():
-            # Compute average shift from original SRT and apply to SPK as well.
+            # Compute average shift from original SRT and apply to the
+            # speaker-diarized SRT as well.
             delta = _estimate_delta(srt_for_sync, aligned)
             os.replace(aligned, srt_for_sync)
             atomic_write(srt_tmp, srt_for_sync.read_text(encoding="utf-8"))
             if delta:
-                shifted = _apply_delta_to_srt(spk_tmp, delta)
-                atomic_write(spk_tmp, shifted)
+                shifted = _apply_delta_to_srt(speakers_srt_tmp, delta)
+                atomic_write(speakers_srt_tmp, shifted)
         try:
             srt_for_sync.unlink(missing_ok=True)
             if aligned is not None and aligned.exists():
@@ -264,7 +265,7 @@ def build_metadata_json(results: list[TranscriptionResult], chunk_secs: float) -
 
 def commit_outputs(
     outputs: dict[str, Path],
-    create_spk: bool,
+    create_speakers_srt: bool,
     create_srt: bool,
     create_txt: bool,
     create_metadata_json: bool,
@@ -274,7 +275,7 @@ def commit_outputs(
     """Atomically rename tmp outputs to finals, then apply cleanup filters."""
     produced: list[str] = []
     mapping = {
-        "spk": create_spk,
+        "speakers_srt": create_speakers_srt,
         "srt": create_srt,
         "txt": create_txt,
         "metadata_json": create_metadata_json,
