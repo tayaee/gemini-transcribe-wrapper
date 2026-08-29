@@ -9,17 +9,27 @@ if not exist pyproject.toml (
 )
 
 echo Syncing uv.lock with pyproject.toml...
+echo + uv -q lock
 uv -q lock
 if errorlevel 1 (
     echo Error: uv lock failed.
     exit /b 1
 )
 
-echo Building package (overwriting existing dist\*)...
-uv -q build --force
+if exist dist (
+    echo + rmdir /s /q dist
+    rmdir /s /q dist
+)
+
+echo Building package (overwriting existing dist)...
+echo + uv -q build
+uv -q build
 if errorlevel 1 (
     echo Error: uv build failed.
     exit /b 1
 )
+
+echo + dir dist
+dir dist
 
 echo Done. uv.lock and dist\ are now in sync with pyproject.toml.
