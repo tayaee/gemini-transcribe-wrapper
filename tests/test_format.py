@@ -179,32 +179,87 @@ def test_korean_phrase_not_truncated_to_two_lines():
 
 
 def test_fix_korean_su_text():
+    assert fix_korean_su_text("먹을 su") == "먹을 수"
+    assert fix_korean_su_text("찾을 su") == "찾을 수"
+    assert fix_korean_su_text("될 su") == "될 수"
+    assert fix_korean_su_text("살 su") == "살 수"
+    assert fix_korean_su_text("만들 su") == "만들 수"
+    assert fix_korean_su_text("아실 su") == "아실 수"
+    assert fix_korean_su_text("하실 su") == "하실 수"
+    assert fix_korean_su_text("보실 su") == "보실 수"
+    assert fix_korean_su_text("확인하실 su 있습니다") == "확인하실 수 있습니다"
+    assert fix_korean_su_text("보실 su도 있습니다") == "보실 수도 있습니다"
+    assert fix_korean_su_text("하실 su가 없습니다") == "하실 수가 없습니다"
+    assert fix_korean_su_text("아실 su밖에 없습니다") == "아실 수밖에 없습니다"
     assert fix_korean_su_text("할 su 있다") == "할 수 있다"
     assert fix_korean_su_text("볼 su 없다") == "볼 수 없다"
+    assert fix_korean_su_text("할 su 도") == "할 수도"
+    assert fix_korean_su_text("볼 su 가") == "볼 수가"
+    assert fix_korean_su_text("할 su 밖에") == "할 수밖에"
+    assert fix_korean_su_text("그럴 su 밖에 없다") == "그럴 수밖에 없다"
+    assert fix_korean_su_text("할 Su 도 있다") == "할 수도 있다"
+    assert fix_korean_su_text("볼 SU 가 없다") == "볼 수가 없다"
     assert fix_korean_su_text("할 Su 있습니다") == "할 수 있습니다"
     assert fix_korean_su_text("볼 SU 없었습니다") == "볼 수 없었습니다"
+    assert fix_korean_su_text("su도") == "수도"
+    assert fix_korean_su_text("su가") == "수가"
+    assert fix_korean_su_text("su밖에") == "수밖에"
     assert fix_korean_su_text("su있다") == "수있다"
     assert fix_korean_su_text("su없는") == "수없는"
-    # Unrelated English text should not be touched
+    # Unrelated English text or non-rieul Hangul should not be touched
+    assert fix_korean_su_text("하 su") == "하 su"
     assert fix_korean_su_text("su won") == "su won"
     assert fix_korean_su_text("summer is nice") == "summer is nice"
 
 
 def test_sanitize_words_korean_su_followed_by_iss_or_eops():
     words = [
-        Word("할", 0.0, 0.5),
+        Word("먹을", 0.0, 0.5),
         Word("su", 0.5, 0.8),
-        Word("있다", 0.8, 1.2),
-        Word("볼", 1.2, 1.5),
-        Word("Su,", 1.5, 1.8),
-        Word("없습니다", 1.8, 2.3),
-        Word("su", 2.3, 2.5),
-        Word("won", 2.5, 3.0),
-        Word("su있다", 3.0, 3.5),
+        Word("찾을", 0.8, 1.2),
+        Word("su", 1.2, 1.5),
+        Word("있다", 1.5, 1.8),
+        Word("아실", 1.8, 2.1),
+        Word("su", 2.1, 2.4),
+        Word("보실", 2.4, 2.7),
+        Word("su", 2.7, 3.0),
+        Word("있습니다", 3.0, 3.3),
+        Word("확인하실", 3.3, 3.7),
+        Word("su", 3.7, 4.0),
+        Word("도", 4.0, 4.2),
+        Word("할", 4.2, 4.5),
+        Word("su", 4.5, 4.8),
+        Word("있다", 4.8, 5.1),
+        Word("볼", 5.1, 5.4),
+        Word("Su,", 5.4, 5.7),
+        Word("없습니다", 5.7, 6.0),
+        Word("그럴", 6.0, 6.3),
+        Word("su", 6.3, 6.5),
+        Word("밖에", 6.5, 6.8),
+        Word("없다", 6.8, 7.1),
+        Word("하", 7.1, 7.3),
+        Word("su", 7.3, 7.5),
+        Word("won", 7.5, 7.9),
+        Word("su있다", 7.9, 8.2),
+        Word("su도", 8.2, 8.5),
+        Word("su밖에", 8.5, 8.9),
     ]
     cleaned = sanitize_words(words)
     texts = [w.text for w in cleaned]
-    assert texts == ["할", "수", "있다", "볼", "수,", "없습니다", "su", "won", "수있다"]
+    assert texts == [
+        "먹을", "수",
+        "찾을", "수", "있다",
+        "아실", "수",
+        "보실", "수", "있습니다",
+        "확인하실", "수도",
+        "할", "수", "있다",
+        "볼", "수,", "없습니다",
+        "그럴", "수밖에", "없다",
+        "하", "su", "won",
+        "수있다",
+        "수도",
+        "수밖에",
+    ]
 
 
 def test_srt_and_txt_with_su_replacement():

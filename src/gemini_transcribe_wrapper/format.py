@@ -39,30 +39,50 @@ class Cue:
 
 MAX_WORD_DURATION_SECS = 5.0
 
+RIEUL_JONGSEONG_CHARS = "".join(
+    chr(0xAC00 + (cho * 21 + jung) * 28 + 8)
+    for cho in range(19)
+    for jung in range(21)
+)
+
+
+def has_rieul_jongseong(ch: str) -> bool:
+    """Return True if character is a complete Hangul syllable with 'ㄹ' (rieul) final consonant."""
+    if not ch or len(ch) != 1:
+        return False
+    code = ord(ch) - 0xAC00
+    return 0 <= code <= 11171 and (code % 28 == 8)
+
 
 def fix_korean_su_text(text: str) -> str:
-    """Replace misrecognized 'su' with Korean '수' when followed by '있' or '없'."""
+    """Replace misrecognized 'su' with Korean '수' / '수도' / '수가' / '수밖에'.
+
+    - If preceded by a Hangul syllable with 종성 'ㄹ' (e.g. '할', '볼', '알', '먹을', '아실', '될', etc.)
+      or followed by '있', '없', '도', '가', '밖', replaces 'su' with '수' / '수도' / '수가' / '수밖에'.
+    """
     if not text:
         return ""
-    # 1. 'su' as a separate word followed by optional whitespace and '있' or '없': e.g. "할 su 있다" -> "할 수 있다"
-    t = re.sub(r"(?i)\bsu\b(?=\s*[있없])", "수", text)
-    # 2. 'su' attached directly to '있' or '없': e.g. "su있다" -> "수있다"
+    # 1. 'su 밖에' -> '수밖에', 'su 밖' -> '수밖'
+    t = re.sub(r"(?i)\bsu\s*밖에\b", "수밖에", text)
+    t = re.sub(r"(?i)\bsu\s*밖", "수밖", t)
+    t = re.sub(r"(?i)\bsu(?=밖)", "수", t)
+    # 2. 'su 도' -> '수도', 'su 가' -> '수가'
+    t = re.sub(r"(?i)\bsu\s*도\b", "수도", t)
+    t = re.sub(r"(?i)\bsu\s*가\b", "수가", t)
+    # 3. 'su도' -> '수도', 'su가' -> '수가'
+    t = re.sub(r"(?i)\bsu(?=[도가])", "수", t)
+    # 4. 'su' as a separate word followed by optional whitespace and '있' or '없': e.g. "할 su 있다" -> "할 수 있다"
+    t = re.sub(r"(?i)\bsu\b(?=\s*[있없])", "수", t)
+    # 5. 'su' attached directly to '있' or '없': e.g. "su있다" -> "수있다"
     t = re.sub(r"(?i)\bsu(?=[있없])", "수", t)
+    # 6. Preceded by Hangul syllable with 종성 'ㄹ': e.g. "할 su", "볼 su", "먹을 su", "아실 su", "될 su"
+    t = re.sub(rf"(?i)(?<=[{RIEUL_JONGSEONG_CHARS}])\s+su\b", " 수", t)
+    t = re.sub(rf"(?i)(?<=[{RIEUL_JONGSEONG_CHARS}])su\b", "수", t)
     return t
 
 
 def _sanitize_word(w: Word) -> Word:
-    """Repair obviously-broken word timestamps before downstream logic.
-
-    Gemini's word_info annotations sometimes come back with ``start`` and
-    ``end`` swapped (start > end) for a single word in a stream of otherwise
-    normal words. Left as-is, that one bad word produces a phantom multi-
-    hundred-second gap that splits the cue stream in two, then collapses the
-    rest of the words into one giant cue that gets truncated to a few lines.
-    Mirror the swap when the fields look reversed, and clamp any single-word
-    duration above :data:`MAX_WORD_DURATION_SECS` so a stray "speaker turn end"
-    cannot stretch one cue across the whole file.
-    """
+    """단일 단어 타임스탬프 이상치(start > end 역전, 과도한 duration) 보정."""
     start, end = w.start, w.end
     if start > end:
         start, end = end, start
@@ -71,31 +91,107 @@ def _sanitize_word(w: Word) -> Word:
     return Word(text=w.text, start=start, end=end, speaker=w.speaker)
 
 
-def sanitize_words(words: list[Word]) -> list[Word]:
-    """Sanitize word timestamps and repair Korean 'su' -> '수' misrecognitions.
+def sanitize_words_rule_timestamps(words: list[Word]) -> list[Word]:
+    """[규칙 1] 단어 타임스탬프 비정상 값(start > end 역전, MAX_WORD_DURATION_SECS 초과) 보정."""
+    return [_sanitize_word(w) for w in words]
 
-    - Repairs swapped/unreasonable timestamps via _sanitize_word.
-    - If a word is 'su' (case-insensitive) and the next word starts with '있' or '없'
-      (e.g. 'su 있다', 'su 없다'), or if a word is 'su있다' / 'su없다', repairs 'su' to '수'.
+
+_SU_PARTICLE_MAP: tuple[tuple[str, str], ...] = (
+    ("밖에", "수밖에"),
+    ("도", "수도"),
+    ("가", "수가"),
+)
+
+
+def sanitize_words_rule_particle_merge(words: list[Word]) -> list[Word]:
+    """[규칙 2] 조사 결합: 독립된 'su' 뒤에 조사('밖에', '도', '가')가 오면 1개 단어로 병합 (예: '수밖에', '수도', '수가')."""
+    merged: list[Word] = []
+    i = 0
+    n = len(words)
+    while i < n:
+        w = words[i]
+        clean_bare = w.text.strip().strip(".,!?:;\"'()[]{}")
+        if clean_bare.lower() == "su" and i + 1 < n:
+            next_w = words[i + 1]
+            next_clean = next_w.text.strip().lstrip(".,!?:;\"'([{")
+            matched = False
+            for particle, replacement in _SU_PARTICLE_MAP:
+                if next_clean == particle or next_clean.startswith(particle):
+                    merged_text = re.sub(r"^" + particle, replacement, next_clean)
+                    merged.append(
+                        Word(
+                            text=merged_text,
+                            start=w.start,
+                            end=next_w.end,
+                            speaker=w.speaker or next_w.speaker,
+                        )
+                    )
+                    i += 2
+                    matched = True
+                    break
+            if matched:
+                continue
+
+        merged.append(w)
+        i += 1
+    return merged
+
+
+def sanitize_words_rule_rieul_preceded(words: list[Word]) -> list[Word]:
+    """[규칙 3-A] 선행어 기반: 앞 단어가 관형형 어미 종성 'ㄹ'로 끝나는 경우 독립 'su'를 '수'로 교정 (띄어쓰기 유지)."""
+    result: list[Word] = []
+    for i, w in enumerate(words):
+        clean_bare = w.text.strip().strip(".,!?:;\"'()[]{}")
+        if clean_bare.lower() == "su" and i > 0:
+            prev_clean = words[i - 1].text.strip().rstrip(".,!?:;\"'()[]{}")
+            if prev_clean and has_rieul_jongseong(prev_clean[-1]):
+                w = Word(text=re.sub(r"(?i)\bsu\b", "수", w.text), start=w.start, end=w.end, speaker=w.speaker)
+        result.append(w)
+    return result
+
+
+def sanitize_words_rule_iss_eops_followed(words: list[Word]) -> list[Word]:
+    """[규칙 3-B] 후행 용언 기반: 뒤 단어가 보조용언 '있~' 또는 '없~'으로 시작하는 경우 독립 'su'를 '수'로 교정 (띄어쓰기 유지)."""
+    result: list[Word] = []
+    n = len(words)
+    for i, w in enumerate(words):
+        clean_bare = w.text.strip().strip(".,!?:;\"'()[]{}")
+        if clean_bare.lower() == "su" and i + 1 < n:
+            next_clean = words[i + 1].text.strip().lstrip(".,!?:;\"'([{")
+            if next_clean and next_clean[0] in ("있", "없"):
+                w = Word(text=re.sub(r"(?i)\bsu\b", "수", w.text), start=w.start, end=w.end, speaker=w.speaker)
+        result.append(w)
+    return result
+
+
+def sanitize_words_rule_attached_prefix(words: list[Word]) -> list[Word]:
+    """[규칙 4] 붙여쓴 단어: 'su'에 '있/없/도/가/밖'이 붙어있는 단어('su있다', 'su없다', 'su도', 'su가', 'su밖에')의 'su'를 '수'로 교정."""
+    result: list[Word] = []
+    for w in words:
+        if re.match(r"(?i)^su[있없도가밖]", w.text.strip()):
+            w = Word(text=re.sub(r"(?i)^su(?=[있없도가밖])", "수", w.text), start=w.start, end=w.end, speaker=w.speaker)
+        result.append(w)
+    return result
+
+
+def sanitize_words(words: list[Word]) -> list[Word]:
+    """단어 타임스탬프 보정 및 한국어 'su' 오인식 단어 스트림 교정 파이프라인.
+
+    각 단계별 단일 책임 함수(Rule)를 순차 실행:
+      1. sanitize_words_rule_timestamps       : 타임스탬프 이상치 보정
+      2. sanitize_words_rule_particle_merge    : 조사 결합 병합 ('수밖에' / '수도' / '수가')
+      3. sanitize_words_rule_rieul_preceded    : 선행어 종성 'ㄹ' 기반 독립 'su' ➡️ '수' (띄어쓰기 유지)
+      4. sanitize_words_rule_iss_eops_followed : 후행 용언 '있~/없~' 기반 독립 'su' ➡️ '수' (띄어쓰기 유지)
+      5. sanitize_words_rule_attached_prefix   : 붙여쓴 오인식 단어 접두어 교정
     """
     if not words:
         return []
-    cleaned = [_sanitize_word(w) for w in words]
-    n = len(cleaned)
-    for i in range(n):
-        w = cleaned[i]
-        clean_text = w.text.strip()
-        clean_bare = clean_text.strip(".,!?:;\"'()[]{}")
-        if clean_bare.lower() == "su":
-            if i + 1 < n:
-                next_clean = cleaned[i + 1].text.strip().lstrip(".,!?:;\"'([{")
-                if next_clean and next_clean[0] in ("있", "없"):
-                    new_text = re.sub(r"(?i)\bsu\b", "수", w.text)
-                    cleaned[i] = Word(text=new_text, start=w.start, end=w.end, speaker=w.speaker)
-        elif re.match(r"(?i)^su[있없]", clean_text):
-            new_text = re.sub(r"(?i)^su(?=[있없])", "수", w.text)
-            cleaned[i] = Word(text=new_text, start=w.start, end=w.end, speaker=w.speaker)
-    return cleaned
+    words = sanitize_words_rule_timestamps(words)
+    words = sanitize_words_rule_particle_merge(words)
+    words = sanitize_words_rule_rieul_preceded(words)
+    words = sanitize_words_rule_iss_eops_followed(words)
+    words = sanitize_words_rule_attached_prefix(words)
+    return words
 
 
 def group_words_to_cues(words: list[Word], max_gap: float = 1.5) -> list[Cue]:
