@@ -1,4 +1,7 @@
 #!/bin/bash
+# Step 5 of release: verify version is newer than the latest PyPI release,
+# then publish via uv. Mirrors 5-publish-to-pypi.bat.
+
 set -e
 
 PKG_NAME="$(grep -oP '(?<=^name = ")[^"]*' pyproject.toml | head -n1)"

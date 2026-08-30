@@ -1,6 +1,9 @@
 @echo off
 setlocal
 
+REM Step 5 of release: verify version is newer than the latest PyPI release,
+REM then publish via uv. Mirrors 5-publish-to-pypi.sh.
+
 REM Extract name and version from pyproject.toml (matches grep -oP on sh side).
 set PKG_NAME=
 set VERSION=
