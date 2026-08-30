@@ -27,7 +27,7 @@ echo "DEBUG: GitHub auth OK ($(gh api user -q .login 2>/dev/null || echo unknown
 
 # Stage every modified/untracked file, except anything the user added
 # locally that shouldn't be committed (none currently expected).
-git add -A
+git add -u
 
 # Bail out early if there is nothing to commit.
 if git diff --cached --quiet; then

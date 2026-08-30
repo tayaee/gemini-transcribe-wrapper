@@ -34,7 +34,7 @@ if errorlevel 1 (
 )
 echo DEBUG: GitHub auth OK.
 
-git add -A
+git add -u
 git diff --cached --quiet
 if not errorlevel 1 (
     echo Nothing to commit ^(working tree clean, no staged changes^).
