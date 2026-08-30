@@ -6,8 +6,10 @@ import json
 import logging
 import os
 import re
+import tempfile
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -149,6 +151,65 @@ def _is_quota_error(exc: Exception) -> bool:
     return False
 
 
+def get_audit_log_path() -> Path:
+    """Return path to <os-temp>/google_transcribe_wrapper_audit.jsonl."""
+    return Path(tempfile.gettempdir()) / "google_transcribe_wrapper_audit.jsonl"
+
+
+def _extract_status_code(exc: Exception | None) -> int:
+    """Extract HTTP status code (e.g. 200, 429, 400) from an exception."""
+    if exc is None:
+        return 200
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if isinstance(code, int):
+        return code
+    if isinstance(code, str) and code.isdigit():
+        return int(code)
+    msg = str(exc)
+    m = re.search(r"\b(4[0-9]{2}|5[0-9]{2})\b", msg)
+    if m:
+        return int(m.group(1))
+    if "quota" in msg.lower() or "429" in msg:
+        return 429
+    return 500
+
+
+def append_audit_log(
+    input_file_path: str,
+    audio_chunk_file_path: str,
+    audio_chunk_playtime_s: float,
+    api_processing_time_s: float,
+    api_http_status_code: int,
+    api_key: str | None = None,
+    timestamp: str | None = None,
+    log_path: Path | None = None,
+) -> None:
+    """Append a single audit record to <os-temp>/google_transcribe_wrapper_audit.jsonl."""
+    if timestamp is None:
+        timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    key_tail = api_key[-8:] if api_key else ""
+    record = {
+        "timestamp": timestamp,
+        "api_key_tail": key_tail,
+        "input_file_path": input_file_path,
+        "audio_chunk_file_path": audio_chunk_file_path,
+        "audio_chunk_playtime_s": round(float(audio_chunk_playtime_s), 3),
+        "api_processing_time_s": (
+            round(float(api_processing_time_s), 3)
+            if api_http_status_code == 200 and api_processing_time_s >= 0
+            else -1
+        ),
+        "api_http_status_code": int(api_http_status_code),
+    }
+    target = log_path or get_audit_log_path()
+    line = json.dumps(record, ensure_ascii=False) + "\n"
+    try:
+        with open(target, "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Failed to append audit log to %s: %s", target, exc)
+
+
 MODEL_REF_URL = "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-transcribe"
 
 _QUOTA_HINT = (
@@ -236,6 +297,7 @@ class TranscribeClient:
         enable_diarization: bool = True,
         request_interval_secs: float = 30.0,
         custom_vocabulary: list[str] | None = None,
+        source_file: str | Path | None = None,
     ) -> None:
         # Resolve the effective key from env vars early so the daily usage
         # counter (incremented per API call) and the genai.Client use the
@@ -255,6 +317,7 @@ class TranscribeClient:
         self.enable_diarization = enable_diarization
         self.request_interval_secs = request_interval_secs
         self.custom_vocabulary = list(custom_vocabulary) if custom_vocabulary else None
+        self.source_file = str(Path(source_file).resolve()) if source_file else None
         self.api_logs: list[dict[str, Any]] = []
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
@@ -303,15 +366,43 @@ class TranscribeClient:
 
     def transcribe_chunk(
         self,
-        chunk_mp3: Path,
+        chunk_mp3: Path | None,
         chunk_index: int = 0,
+        source_file: str | Path | None = None,
+        chunk_duration_secs: float | None = None,
     ) -> TranscriptionResult:
         """Transcribe a single MP3 chunk with a single API attempt (no retries)."""
         _throttle_api_call(getattr(self, "request_interval_secs", 30.0))
 
+        if source_file is not None:
+            effective_source_file = str(Path(source_file).resolve())
+        elif getattr(self, "source_file", None):
+            effective_source_file = str(Path(str(self.source_file)).resolve())
+        elif chunk_mp3 is not None and isinstance(chunk_mp3, (str, Path)):
+            effective_source_file = str(Path(chunk_mp3).resolve())
+        else:
+            effective_source_file = "unknown"
+
+        effective_chunk_file = (
+            str(Path(chunk_mp3).resolve())
+            if chunk_mp3 is not None and isinstance(chunk_mp3, (str, Path))
+            else str(chunk_mp3 or "")
+        )
+        if chunk_duration_secs is None:
+            try:
+                from .audio import probe_duration_secs
+
+                chunk_dur = probe_duration_secs(chunk_mp3) if chunk_mp3 is not None and isinstance(chunk_mp3, Path) and chunk_mp3.exists() else 0.0
+            except Exception:  # noqa: BLE001
+                chunk_dur = 0.0
+        else:
+            chunk_dur = float(chunk_duration_secs)
+
         started_at = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
-        uploaded = self.client.files.upload(file=str(chunk_mp3))
+        iso_ts = datetime.now().astimezone().isoformat(timespec="seconds")
+        uploaded = None
         try:
+            uploaded = self.client.files.upload(file=str(chunk_mp3))
             attempt_start = time.monotonic()
             try:
                 from .usage_counter import increment_today
@@ -340,8 +431,27 @@ class TranscribeClient:
                 self._log_api_call(
                     chunk_index, 1, started_at, duration, "success"
                 )
+                append_audit_log(
+                    input_file_path=effective_source_file,
+                    audio_chunk_file_path=effective_chunk_file,
+                    audio_chunk_playtime_s=chunk_dur,
+                    api_processing_time_s=duration,
+                    api_http_status_code=200,
+                    api_key=getattr(self, "api_key", None),
+                    timestamp=iso_ts,
+                )
                 return TranscriptionResult(text=text, words=words)
             except Exception as exc:
+                status_code = _extract_status_code(exc)
+                append_audit_log(
+                    input_file_path=effective_source_file,
+                    audio_chunk_file_path=effective_chunk_file,
+                    audio_chunk_playtime_s=chunk_dur,
+                    api_processing_time_s=-1.0,
+                    api_http_status_code=status_code,
+                    api_key=getattr(self, "api_key", None),
+                    timestamp=iso_ts,
+                )
                 _log_quota_hint(exc)
                 if not _is_quota_error(exc):
                     logger.error(
@@ -356,13 +466,27 @@ class TranscribeClient:
                     error=str(exc),
                 )
                 raise
+        except Exception as exc:
+            if uploaded is None:
+                status_code = _extract_status_code(exc)
+                append_audit_log(
+                    input_file_path=effective_source_file,
+                    audio_chunk_file_path=effective_chunk_file,
+                    audio_chunk_playtime_s=chunk_dur,
+                    api_processing_time_s=-1.0,
+                    api_http_status_code=status_code,
+                    api_key=getattr(self, "api_key", None),
+                    timestamp=iso_ts,
+                )
+            raise
         finally:
-            try:
-                name = uploaded.name or ""
-                if name:
-                    self.client.files.delete(name=name)
-            except Exception:  # noqa: BLE001, S110 - best-effort cleanup
-                pass
+            if uploaded is not None:
+                try:
+                    name = uploaded.name or ""
+                    if name:
+                        self.client.files.delete(name=name)
+                except Exception:  # noqa: BLE001, S110 - best-effort cleanup
+                    pass
 
 
 def checkpoint_path(chunk_mp3: Path) -> Path:

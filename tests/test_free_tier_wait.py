@@ -230,7 +230,13 @@ class _ImmediateClient(stt.TranscribeClient):
         self.calls = 0
         self.api_key = "fake"
 
-    def transcribe_chunk(self, chunk_mp3: Path | None, chunk_index: int = 0) -> stt.TranscriptionResult:
+    def transcribe_chunk(
+        self,
+        chunk_mp3: Path | None,
+        chunk_index: int = 0,
+        source_file: str | Path | None = None,
+        chunk_duration_secs: float | None = None,
+    ) -> stt.TranscriptionResult:
         self.calls += 1
         raise RuntimeError("429 quota exceeded")
 

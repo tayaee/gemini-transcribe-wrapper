@@ -409,6 +409,7 @@ def _process_one(
             enable_diarization=diarize,
             request_interval_secs=request_interval_secs,
             custom_vocabulary=custom_vocabulary,
+            source_file=str(input_file.resolve()),
         )
         results = transcribe_chunks_sequential(
             client,
