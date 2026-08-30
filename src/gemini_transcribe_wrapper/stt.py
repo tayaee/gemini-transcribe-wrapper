@@ -235,26 +235,30 @@ _LAST_API_CALL_MONOTONIC: float | None = None
 
 
 def reset_api_rate_limiter() -> None:
-    """Reset the module-level last API call timestamp (for testing)."""
+    """Reset the module-level last API call completion timestamp (for testing)."""
     global _LAST_API_CALL_MONOTONIC
     _LAST_API_CALL_MONOTONIC = None
 
 
-def _throttle_api_call(request_interval_secs: float) -> None:
-    """Enforce minimum interval between consecutive STT API calls (free tier: 2 RPM)."""
+def record_api_call_completed() -> None:
+    """Record that an STT API call and its cleanup have completed."""
     global _LAST_API_CALL_MONOTONIC
+    _LAST_API_CALL_MONOTONIC = time.monotonic()
+
+
+def _throttle_api_call(request_interval_secs: float) -> None:
+    """Enforce minimum cooldown after the previous STT API call completed (free tier: 2 RPM)."""
     if request_interval_secs > 0 and _LAST_API_CALL_MONOTONIC is not None:
         elapsed = time.monotonic() - _LAST_API_CALL_MONOTONIC
         if elapsed < request_interval_secs:
             sleep_secs = request_interval_secs - elapsed
             logger.info(
-                "Free-tier rate limit: %.1fs elapsed since last API call (< %.0fs interval); sleeping %.1fs.",
+                "Free-tier rate limit: %.1fs elapsed since last API call completed (< %.0fs interval); sleeping %.1fs.",
                 elapsed,
                 request_interval_secs,
                 sleep_secs,
             )
             time.sleep(sleep_secs)
-    _LAST_API_CALL_MONOTONIC = time.monotonic()
 
 
 class TranscribeClient:
@@ -445,6 +449,7 @@ class TranscribeClient:
                         self.client.files.delete(name=name)
                 except Exception:  # noqa: BLE001, S110 - best-effort cleanup
                     pass
+            record_api_call_completed()
 
 
 def checkpoint_path(chunk_mp3: Path) -> Path:

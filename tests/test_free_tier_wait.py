@@ -273,8 +273,9 @@ def test_throttle_api_call_enforces_interval(monkeypatch):
     # First call: no previous call, no sleep
     stt._throttle_api_call(30.0)
     assert sleeps == []
+    stt.record_api_call_completed()
 
-    # Second call right after: sleeps ~30s
+    # Second call right after completion: sleeps ~30s
     stt._throttle_api_call(30.0)
     assert len(sleeps) == 1
     assert 29.0 <= sleeps[0] <= 30.0
