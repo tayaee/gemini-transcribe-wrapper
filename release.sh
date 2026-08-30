@@ -1,4 +1,15 @@
 #!/bin/bash
+# Guard against recursive invocation. If a step script (or any descendant)
+# ever calls release.sh again, this marker is already set and we abort
+# instead of looping forever.
+if [ -n "${RELEASE_GUARD:-}" ]; then
+    echo "Error: release.sh is already running in this session." >&2
+    echo "Guard RELEASE_GUARD is set -- refusing to recurse." >&2
+    echo "If this is not a nested call, unset RELEASE_GUARD before invoking." >&2
+    exit 1
+fi
+export RELEASE_GUARD=1
+
 set -e
 cd "$(dirname "$0")"
 

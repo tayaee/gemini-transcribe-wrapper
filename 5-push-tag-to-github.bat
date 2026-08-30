@@ -46,7 +46,7 @@ echo + git add pyproject.toml
 git add pyproject.toml
 
 echo + call 3-build.bat
-call 3-build.bat
+call "%~dp03-build.bat"
 if errorlevel 1 (
     echo Error: Build failed.
     exit /b 1
