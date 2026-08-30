@@ -59,7 +59,7 @@ def run():
 
         # Verify no .lck, no .tmp, no chunk mp3 leftovers
         leftovers = [p.name for p in td.iterdir() if p.suffix in (".lck", ".tmp")]
-        workdir = td / ".input.gemini-work"
+        workdir = td / "temp" / "input.gemini-work"
         print("leftovers in outdir:", leftovers)
         print("workdir exists:", workdir.exists())
         print("leftover list:", result.results[0].leftover_files())

@@ -79,6 +79,8 @@ def _setup_workdir(
 ) -> WorkContext:
     if temp_dir:
         base_dir = Path(temp_dir)
+        if not base_dir.is_absolute():
+            base_dir = output_dir / base_dir
         base_dir.mkdir(parents=True, exist_ok=True)
         work_dir = base_dir / f"{output_base}.gemini-work"
     else:
@@ -153,7 +155,7 @@ def gemini_transcribe(
     request_interval_secs: float = 30.0,
     chunk_secs: float | None = None,
     speakers: dict[str, str] | None = None,
-    temp_dir: str | None = None,
+    temp_dir: str | None = "temp",
     ffsubsync_srt: bool = False,
 ) -> BatchTranscribeResult:
     """Transcribe a multimedia file using Gemini 3.5 Transcribe.
@@ -197,9 +199,9 @@ def gemini_transcribe(
             display names used in the .diarized.srt output. Speakers missing
             from the mapping keep their raw id, and a warning is emitted
             listing them. Ignored unless ``diarize`` is True.
-        temp_dir: Where to place intermediate work files. When set, all temp
-            files (temp_audio.mp3, chunk_*.mp3, *.tmp, checkpoints) live under
-            this directory instead of next to the output.
+        temp_dir: Where to place intermediate work files (default: 'temp').
+            When set, all temp files (temp_audio.mp3, chunk_*.mp3, *.tmp,
+            checkpoints) live under this directory instead of next to the output.
         ffsubsync_srt: When True, also write "<base>.ffsubsync.srt" aligned to
             the full audio via ffsubsync for manual comparison. The main
             .srt/.diarized.srt keep the raw transcript timestamps (default:
@@ -208,24 +210,19 @@ def gemini_transcribe(
     Returns:
         BatchTranscribeResult with per-input TranscribeResult items. Each item
         carries `input` (echo of inputs/options), `output` (requested final
-        files) and `leftover` (info files / artifacts left behind, suitable for
-        caller-side cleanup).
+        outputs only), `leftover` (info files and kept-on-failure work files),
+        `status` (SUCCESS or FAILED), and `error` (when failed).
 
-    Note:
-        429 (quota / rate limit) errors are NOT retried automatically and
-        cause the entire batch to abort. The caller prints a one-shot hint
-        with retry suggestions (wait ~1 minute, or wait until PST midnight
-        for the daily quota to reset) and a :class:`QuotaExceededError` is
-        raised so the CLI can exit with a distinct exit code. Per-file
-        failures other than quota still produce a per-file FAILED result
-        and the batch continues.
+    Raises:
+        QuotaExceededError: When a Gemini API call fails with HTTP 429 / quota
+            exhaustion. Aborts the batch immediately instead of continuing.
     """
-    files = _expand_path(input_file)
-    results: list[TranscribeResult] = []
-    for f in files:
+    inputs = _expand_path(input_file)
+    results = []
+    for path in inputs:
         results.append(
             _process_one(
-                f,
+                input_path=path,
                 output_dir=output_dir,
                 output_base=output_base,
                 gemini_api_key=gemini_api_key,
@@ -827,6 +824,12 @@ def _cleanup_workdir(ctx: WorkContext, keep_chunks: bool) -> None:
     if keep_chunks:
         return
     shutil.rmtree(ctx.work_dir, ignore_errors=True)
+    try:
+        parent = ctx.work_dir.parent
+        if parent.exists() and not any(parent.iterdir()):
+            parent.rmdir()
+    except OSError:
+        pass
 
 
 def _format_split_plan(plan) -> str:

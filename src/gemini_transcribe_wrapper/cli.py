@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--request-interval-secs", type=float, default=30.0, help="Delay between API calls (default: 30.0)")
     parser.add_argument("--chunk-secs", type=float, default=None, help="Fixed chunk length in seconds (default: auto, 59-min logical units when --no-diarize, 29-min when --diarize; hard ceiling of 29 min enforced to fit the Gemini 30-min per-call limit)")
     parser.add_argument("--speakers", default=None, help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=궤도;spk:1=가람;'")
-    parser.add_argument("--temp-dir", default=None, help="Directory for intermediate temp files (default: alongside output)")
+    parser.add_argument("--temp-dir", default="temp", help="Directory for intermediate temp files (default: temp)")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
     return parser
 

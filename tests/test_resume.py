@@ -49,7 +49,7 @@ def run():
 
         calls_after_fail = API_CALLS["n"]
         print("API calls after failed run:", calls_after_fail)
-        workdir = td / ".input.gemini-work"
+        workdir = td / "temp" / "input.gemini-work"
         print("workdir kept:", workdir.exists())
         leftover = failed.results[0].leftover
         print("leftover work_dir:", leftover.work_dir)

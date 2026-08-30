@@ -38,7 +38,7 @@ def test_failure_keeps_mp3():
 
         print("status:", result.results[0].status)
         print("error:", result.results[0].error)
-        workdir = td / ".input.gemini-work"
+        workdir = td / "temp" / "input.gemini-work"
         print("workdir exists after failure:", workdir.exists())
         print("temp_audio.mp3 kept:", (workdir / "temp_audio.mp3").exists())
         print("chunks kept:", list((workdir / "chunks").glob("*.mp3")) if (workdir / "chunks").exists() else [])
@@ -54,7 +54,7 @@ def test_checkpoint_resume():
             ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-ar", "16000", "-ac", "1", str(src)],
             capture_output=True, check=True,
         )
-        workdir = td / ".input.gemini-work"
+        workdir = td / "temp" / "input.gemini-work"
         chunk_dir = workdir / "chunks"
         chunk_dir.mkdir(parents=True)
         chunk = chunk_dir / "chunk_000.mp3"
