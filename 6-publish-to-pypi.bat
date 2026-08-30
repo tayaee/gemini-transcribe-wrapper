@@ -1,8 +1,8 @@
 @echo off
 setlocal
 
-REM Step 4 of release: stage pyproject.toml + uv.lock, build, then commit,
-REM tag, and push to GitHub. Mirrors 4-push-to-github.sh.
+REM Step 6 of release: verify version is newer than the latest PyPI release,
+REM then publish via uv. Mirrors 6-publish-to-pypi.sh.
 
 REM Extract name and version from pyproject.toml (matches grep -oP on sh side).
 set PKG_NAME=
@@ -35,6 +35,34 @@ if not "%~1" == "" if not "%~1" == "%VERSION%" (
     exit /b 1
 )
 
+echo Fetching latest version from PyPI...
+set REMOTE=
+curl -fsSL "https://pypi.org/pypi/%PKG_NAME%/json" -o "%TEMP%\pypi-meta.json" >nul 2>&1
+if not errorlevel 1 (
+    for /F "usebackq tokens=2 delims==" %%V in (`findstr /C:"\"version\"" "%TEMP%\pypi-meta.json"`) do (
+        set "VAL=%%V"
+        setlocal enabledelayedexpansion
+        set "VAL=!VAL:"=!"
+        set "VAL=!VAL:,=!"
+        for /F "tokens=1" %%W in ("!VAL!") do endlocal & set REMOTE=%%W
+    )
+    del "%TEMP%\pypi-meta.json" >nul 2>&1
+)
+if "%REMOTE%" == "" (
+    echo DEBUG: No prior release on PyPI ^^(this will be the first publish^^).
+) else if "%REMOTE%" == "%VERSION%" (
+    echo Error: PyPI already has %VERSION%. Bump version in pyproject.toml first.
+    exit /b 1
+) else (
+    echo DEBUG: PyPI latest is %REMOTE%, local is %VERSION%. OK to publish.
+)
+
+if "%UV_PUBLISH_TOKEN%" == "" (
+    echo UV_PUBLISH_TOKEN not set, exit.
+    exit /b 1
+)
+echo DEBUG: Found UV_PUBLISH_TOKEN, good.
+
 gh auth status >nul 2>&1
 if errorlevel 1 (
     echo Error: Not logged in to GitHub. Run "gh auth login" first.
@@ -57,18 +85,17 @@ git add uv.lock
 
 git status
 
-echo Press ENTER to commit, tag, and push to GitHub...
+echo Press ENTER to publish package and code...
 pause
-git commit -m "Version %VERSION%"
+uv -q publish
 if errorlevel 1 (
-    echo Error: Git commit failed.
-    exit /b 1
-)
-git tag v%VERSION%
-git push origin --tags
-if errorlevel 1 (
-    echo Error: Git push failed.
+    echo Error: Publish failed.
     exit /b 1
 )
 
-echo Done. Pushed v%VERSION% to GitHub.
+git add -u
+git commit -m "Version %VERSION%"
+git tag v%VERSION%
+git push origin --tags
+
+echo Done. Successfully published version %VERSION%.

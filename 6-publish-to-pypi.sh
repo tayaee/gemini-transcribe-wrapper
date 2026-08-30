@@ -1,6 +1,6 @@
 #!/bin/bash
-# Step 5 of release: verify version is newer than the latest PyPI release,
-# then publish via uv. Mirrors 5-publish-to-pypi.bat.
+# Step 6 of release: verify version is newer than the latest PyPI release,
+# then publish via uv. Mirrors 6-publish-to-pypi.bat.
 
 set -e
 

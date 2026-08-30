@@ -1,6 +1,6 @@
 #!/bin/bash
-# Step 4 of release: stage pyproject.toml + uv.lock, build, then commit,
-# tag, and push to GitHub. Mirrors 4-push-to-github.bat.
+# Step 5 of release: stage pyproject.toml + uv.lock, build, then commit,
+# tag, and push to GitHub. Mirrors 5-push-tag-to-github.bat.
 
 set -e
 

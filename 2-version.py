@@ -138,7 +138,7 @@ def decide_bump(local_version, latest_tag, latest_pypi):
             "For the first release:\n"
             "  1. Edit pyproject.toml directly to set the initial version.\n"
             f"  2. git tag {TAG_PREFIX}<version> && git push origin --tags\n"
-            "  3. uv -q publish    (or use 5-publish-to-pypi.sh after tagging)\n"
+            "  3. uv -q publish    (or use 6-publish-to-pypi.sh after tagging)\n"
             "Subsequent bumps will be automatic."
         )
 
@@ -154,10 +154,10 @@ def decide_bump(local_version, latest_tag, latest_pypi):
         hints = []
         if latest_tag and compare_versions(local_version, latest_tag) > 0:
             hints.append(
-                f"run 4-push-to-github.sh to push {TAG_PREFIX}{local_version}"
+                f"run 5-push-tag-to-github.sh to push {TAG_PREFIX}{local_version}"
             )
         if latest_pypi and compare_versions(local_version, latest_pypi) > 0:
-            hints.append(f"run 5-publish-to-pypi.sh to publish {local_version}")
+            hints.append(f"run 6-publish-to-pypi.sh to publish {local_version}")
         hint = (" " + " and ".join(hints) + ".") if hints else ""
         return False, (
             f"Local version {local_version} is already ahead of last release "
@@ -180,7 +180,7 @@ def decide_bump(local_version, latest_tag, latest_pypi):
         )
         if latest_pypi and compare_versions(local_version, latest_pypi) < 0:
             msg += (
-                f" PyPI is at {latest_pypi} — run 5-publish-to-pypi.sh to "
+                f" PyPI is at {latest_pypi} — run 6-publish-to-pypi.sh to "
                 f"publish {local_version}."
             )
         return False, msg
