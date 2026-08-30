@@ -5,12 +5,12 @@
 #     "python-dotenv",
 # ]
 # ///
-"""Sample 2: Speaker diarization (.diarized.srt) and batch transcription.
+"""Example 2: Speaker diarization (.diarized.srt) and batch transcription.
 
 Usage:
-    uv run samples/sample2.py
-    # or inside samples/:
-    uv run sample2.py
+    uv run examples/example2.py
+    # or inside examples/:
+    uv run example2.py
 """
 
 from __future__ import annotations
@@ -32,14 +32,14 @@ def main() -> None:
         print("Error: GEMINI_API_KEY is not set in environment or .env file.", file=sys.stderr)
         sys.exit(1)
 
-    sample_dir = Path(__file__).resolve().parent
-    input_pattern = str(sample_dir / "*.mp4")
+    example_dir = Path(__file__).resolve().parent
+    input_pattern = str(example_dir / "*.mp4")
 
     # Check for target files
-    mp4_files = list(sample_dir.glob("*.mp4"))
+    mp4_files = list(example_dir.glob("*.mp4"))
     if not mp4_files:
-        print(f"No mp4 files found in: {sample_dir}", file=sys.stderr)
-        print("Run samples/create-samples.sh to download sample files.", file=sys.stderr)
+        print(f"No mp4 files found in: {example_dir}", file=sys.stderr)
+        print("Run examples/download-example-videos.sh to download sample files.", file=sys.stderr)
         sys.exit(1)
 
     print("=== Sample 2: Diarization (.diarized.srt) and Batch Processing ===")
@@ -55,7 +55,7 @@ def main() -> None:
     # Call gtw.gemini_transcribe() with explicit API key and diarization enabled
     batch_result = gtw.gemini_transcribe(
         input_file=input_pattern,
-        output_dir=str(sample_dir / "output_sample2"),
+        output_dir=str(example_dir / "output_example2"),
         gemini_api_key=api_key,
         diarize=True,
         speakers=speakers_map,

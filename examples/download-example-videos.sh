@@ -1,5 +1,5 @@
 #!/bin/bash -x
-# Download YouTube clips into samples/.
+# Download YouTube clips into examples/.
 # Safe to invoke from any working directory.
 
 set -e

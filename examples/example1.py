@@ -5,12 +5,12 @@
 #     "python-dotenv",
 # ]
 # ///
-"""Sample 1: Basic transcription to .srt and .txt.
+"""Example 1: Basic transcription to .srt and .txt.
 
 Usage:
-    uv run samples/sample1.py
-    # or inside samples/:
-    uv run sample1.py
+    uv run examples/example1.py
+    # or inside examples/:
+    uv run example1.py
 """
 
 from __future__ import annotations
@@ -32,17 +32,17 @@ def main() -> None:
         print("Error: GEMINI_API_KEY is not set in environment or .env file.", file=sys.stderr)
         sys.exit(1)
 
-    sample_dir = Path(__file__).resolve().parent
-    input_file = sample_dir / "안될과학 개똥벌레.mp4"
+    example_dir = Path(__file__).resolve().parent
+    input_file = example_dir / "안될과학 개똥벌레.mp4"
 
     # Check if sample media exists
     if not input_file.exists():
-        mp4_files = list(sample_dir.glob("*.mp4"))
+        mp4_files = list(example_dir.glob("*.mp4"))
         if mp4_files:
             input_file = mp4_files[0]
         else:
             print(f"Sample media not found: {input_file}", file=sys.stderr)
-            print("Run samples/create-samples.sh to download sample files.", file=sys.stderr)
+            print("Run examples/download-example-videos.sh to download sample files.", file=sys.stderr)
             sys.exit(1)
 
     print("=== Sample 1: Basic Transcription (.srt and .txt) ===")
@@ -51,7 +51,7 @@ def main() -> None:
     # Call gtw.gemini_transcribe() with explicit API key
     batch_result = gtw.gemini_transcribe(
         input_file=str(input_file),
-        output_dir=str(sample_dir / "output_sample1"),
+        output_dir=str(example_dir / "output_example1"),
         gemini_api_key=api_key,
     )
 

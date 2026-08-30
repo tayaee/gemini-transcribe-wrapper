@@ -17,9 +17,9 @@ fi
 export GEMINI_API_KEY="$KEY"
 
 cd "$(dirname "$0")/.."
-INPUT="samples/안될과학 개똥벌레.mp4"
-BASE_STD="samples/verify-std"
-BASE_CHUNK="samples/verify-chunk-len-1m"
+INPUT="examples/안될과학 개똥벌레.mp4"
+BASE_STD="examples/verify-std"
+BASE_CHUNK="examples/verify-chunk-len-1m"
 
 cleanup() {
     rm -f "${BASE_STD}".* "${BASE_CHUNK}".*
