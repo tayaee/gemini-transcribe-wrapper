@@ -83,10 +83,16 @@ if errorlevel 1 (
 echo Staging uv.lock (sync from build)...
 git add uv.lock
 
+echo %VERSION%> release-version.txt
+echo + git add release-version.txt
+git add release-version.txt
+
+echo + git status
 git status
 
-echo Press ENTER to publish package and code...
-pause
+# echo Press ENTER to publish package and code...
+# pause
+echo + uv -q publish
 uv -q publish
 if errorlevel 1 (
     echo Error: Publish failed.

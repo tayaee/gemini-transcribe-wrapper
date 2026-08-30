@@ -59,6 +59,10 @@ echo "Building package (lock + dist)..."
 echo "Staging uv.lock (sync from build)..."
 git add uv.lock
 
+echo $LOCAL > release-version.txt
+echo + git add release-version.txt
+git add release-version.txt
+
 git status
 
 read -r -p "Press ENTER to publish package and code..."

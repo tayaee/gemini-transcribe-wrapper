@@ -27,13 +27,15 @@ if "%MSG%" == "" (
     exit /b 1
 )
 
+echo + gh auth status
 gh auth status >nul 2>&1
 if errorlevel 1 (
     echo Error: Not logged in to GitHub. Run "gh auth login" first.
     exit /b 1
 )
-echo DEBUG: GitHub auth OK.
+# echo DEBUG: GitHub auth OK.
 
+echo + git add -u
 git add -u
 git diff --cached --quiet
 if not errorlevel 1 (
@@ -43,8 +45,8 @@ if not errorlevel 1 (
 
 git status
 
-echo Press ENTER to commit and push to GitHub...
-pause
+# echo Press ENTER to commit and push to GitHub...
+# pause
 
 echo + git commit -m "%MSG%"
 git commit -m "%MSG%"
@@ -60,4 +62,4 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Done. Pushed commit to GitHub.
+# echo Done. Pushed commit to GitHub.

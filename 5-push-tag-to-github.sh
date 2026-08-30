@@ -34,10 +34,10 @@ git add uv.lock
 
 git status
 
-read -r -p "Press ENTER to commit, tag, and push to GitHub..."
+# read -r -p "Press ENTER to commit, tag, and push to GitHub..."
 
 git commit -m "Version $LOCAL"
 git tag "v$LOCAL"
 git push origin --tags
 
-echo "Done. Pushed v$LOCAL to GitHub."
+# echo "Done. Pushed v$LOCAL to GitHub."

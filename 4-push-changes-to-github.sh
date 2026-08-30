@@ -19,25 +19,24 @@ if [ $# -eq 0 ]; then
 fi
 MSG="$*"
 
+echo + gh auth status
 if ! gh auth status >/dev/null 2>&1; then
     echo "Error: Not logged in to GitHub. Run 'gh auth login' first."
     exit 1
 fi
 echo "DEBUG: GitHub auth OK ($(gh api user -q .login 2>/dev/null || echo unknown))."
 
-# Stage every modified/untracked file, except anything the user added
-# locally that shouldn't be committed (none currently expected).
+echo + git add -u
 git add -u
-
-# Bail out early if there is nothing to commit.
 if git diff --cached --quiet; then
     echo "Nothing to commit (working tree clean, no staged changes)."
     exit 1
 fi
 
+echo + git status
 git status
 
-read -r -p "Press ENTER to commit and push to GitHub..."
+# read -r -p "Press ENTER to commit and push to GitHub..."
 
 echo + git commit -m "$MSG"
 git commit -m "$MSG"
@@ -45,4 +44,4 @@ git commit -m "$MSG"
 echo + git push origin HEAD
 git push origin HEAD
 
-echo "Done. Pushed commit to GitHub."
+# echo "Done. Pushed commit to GitHub."
