@@ -49,6 +49,55 @@ class TranscriptionResult:
     words: list[Word] = field(default_factory=list)
 
 
+DEFAULT_KO_CUSTOM_VOCABULARY: list[str] = [
+    # ~ 수 있~ / ~ 수 없~
+    "수 있다",
+    "수 없다",
+    "수 있는",
+    "수 없는",
+    "수 있습니다",
+    "수 없습니다",
+    "수 있고",
+    "수 없고",
+    "수 있게",
+    "수 없게",
+    "수 있도록",
+    "수 없도록",
+    "수 있을",
+    "수 없을",
+    "수 있어서",
+    "수 없어서",
+    "수 있거나",
+    "수 없거나",
+    "할 수 있다",
+    "할 수 없다",
+    "할 수 있는",
+    "할 수 없는",
+    "할 수 있습니다",
+    "할 수 없습니다",
+    "할 수 있고",
+    "할 수 없고",
+    "볼 수 있다",
+    "볼 수 없다",
+    "볼 수 있는",
+    "볼 수 없는",
+    "볼 수 있습니다",
+    "볼 수 없습니다",
+    "볼 수 있고",
+    "볼 수 없고",
+    "알 수 있다",
+    "알 수 없다",
+    "알 수 있는",
+    "알 수 없는",
+    "알 수 있습니다",
+    "알 수 없습니다",
+    "갈 수 있다",
+    "갈 수 없다",
+    "올 수 있다",
+    "올 수 없다",
+]
+
+
 def _extract_words(interaction: Any) -> list[Word]:
     """Extract word-level annotations from an interaction.
 
@@ -56,7 +105,7 @@ def _extract_words(interaction: Any) -> list[Word]:
     1. word_info annotations on text content (current GAOS SDK)
     2. a `transcription` object with .words (WordInfo: word/start_offset/end_offset)
     """
-    from .format import _sanitize_word
+    from .format import sanitize_words
 
     words: list[Word] = []
     for step in getattr(interaction, "steps", None) or []:
@@ -68,30 +117,26 @@ def _extract_words(interaction: Any) -> list[Word]:
             for annotation in getattr(content, "annotations", None) or []:
                 if getattr(annotation, "type", None) == "word_info":
                     words.append(
-                        _sanitize_word(
-                            Word(
-                                text=getattr(annotation, "text", "") or "",
-                                start=_parse_offset(getattr(annotation, "start_offset", None)),
-                                end=_parse_offset(getattr(annotation, "end_offset", None)),
-                                speaker=getattr(annotation, "speaker", None),
-                            )
+                        Word(
+                            text=getattr(annotation, "text", "") or "",
+                            start=_parse_offset(getattr(annotation, "start_offset", None)),
+                            end=_parse_offset(getattr(annotation, "end_offset", None)),
+                            speaker=getattr(annotation, "speaker", None),
                         )
                     )
             transcription = getattr(content, "transcription", None)
             if transcription is not None and not words:
                 for w in getattr(transcription, "words", None) or []:
                     words.append(
-                        _sanitize_word(
-                            Word(
-                                text=getattr(w, "word", "") or getattr(w, "text", "") or "",
-                                start=_parse_offset(getattr(w, "start_offset", None)),
-                                end=_parse_offset(getattr(w, "end_offset", None)),
-                                speaker=getattr(w, "speaker", None)
-                                or getattr(transcription, "speaker_label", None),
-                            )
+                        Word(
+                            text=getattr(w, "word", "") or getattr(w, "text", "") or "",
+                            start=_parse_offset(getattr(w, "start_offset", None)),
+                            end=_parse_offset(getattr(w, "end_offset", None)),
+                            speaker=getattr(w, "speaker", None)
+                            or getattr(transcription, "speaker_label", None),
                         )
                     )
-    return words
+    return sanitize_words(words)
 
 
 def _is_quota_error(exc: Exception) -> bool:
@@ -190,6 +235,7 @@ class TranscribeClient:
         language: str = "ko-KR",
         enable_diarization: bool = True,
         request_interval_secs: float = 30.0,
+        custom_vocabulary: list[str] | None = None,
     ) -> None:
         # Resolve the effective key from env vars early so the daily usage
         # counter (incremented per API call) and the genai.Client use the
@@ -208,6 +254,7 @@ class TranscribeClient:
         self.language = language
         self.enable_diarization = enable_diarization
         self.request_interval_secs = request_interval_secs
+        self.custom_vocabulary = list(custom_vocabulary) if custom_vocabulary else None
         self.api_logs: list[dict[str, Any]] = []
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
@@ -219,6 +266,17 @@ class TranscribeClient:
             mode["diarization_mode"] = "speaker"
         mode["timestamp_granularities"] = ["word"]
         transcription["mode"] = mode
+
+        vocab: list[str] = []
+        if self.language and self.language.lower().startswith("ko"):
+            vocab.extend(DEFAULT_KO_CUSTOM_VOCABULARY)
+        if self.custom_vocabulary:
+            for item in self.custom_vocabulary:
+                if item not in vocab:
+                    vocab.append(item)
+        if vocab:
+            transcription["custom_vocabulary"] = vocab
+
         return _gaos_interactions.GenerationConfig(
             transcription_config=_gaos_interactions.TranscriptionConfig(**transcription)
         )
@@ -273,6 +331,10 @@ class TranscribeClient:
                 duration = time.monotonic() - attempt_start
                 text = getattr(interaction, "output_text", None) or ""
                 words = _extract_words(interaction)
+                if text:
+                    from .format import fix_korean_su_text
+
+                    text = fix_korean_su_text(text)
                 if not text and words:
                     text = " ".join(w.text for w in words)
                 self._log_api_call(

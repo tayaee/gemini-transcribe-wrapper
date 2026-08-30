@@ -64,9 +64,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--request-interval-secs", type=float, default=30.0, help="Delay between API calls (default: 30.0)")
     parser.add_argument("--chunk-secs", type=float, default=None, help="Fixed chunk length in seconds (default: auto, 59-min logical units when --no-diarize, 29-min when --diarize; hard ceiling of 29 min enforced to fit the Gemini 30-min per-call limit)")
     parser.add_argument("--speakers", default=None, help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=궤도;spk:1=가람;'")
+    parser.add_argument("--custom-vocabulary", default=None, help="Custom vocabulary / bias phrases (comma/semicolon separated or text file path)")
     parser.add_argument("--temp-dir", default="temp", help="Directory for intermediate temp files (default: temp)")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
     return parser
+
+
+def parse_custom_vocabulary(spec: str | None) -> list[str] | None:
+    """Parse comma/semicolon-delimited list or read phrases from a file."""
+    if not spec:
+        return None
+    p = Path(spec)
+    if p.is_file():
+        lines = [line.strip() for line in p.read_text(encoding="utf-8").splitlines()]
+        return [line for line in lines if line]
+    import re
+    raw_items = re.split(r"[,;]", spec)
+    items = [item.strip() for item in raw_items if item.strip()]
+    return items if items else None
 
 
 def parse_speakers(spec: str) -> dict[str, str]:
@@ -141,6 +156,8 @@ def main(argv: list[str] | None = None) -> int:
             logging.getLogger(__name__).error("Error: %s", exc)
             return 1
 
+    custom_vocab = parse_custom_vocabulary(args.custom_vocabulary)
+
     for pattern in args.path:
         try:
             batch = gemini_transcribe(
@@ -162,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
                 speakers=speakers,
                 temp_dir=args.temp_dir,
                 ffsubsync_srt=args.ffsubsync_srt,
+                custom_vocabulary=custom_vocab,
             )
             produced_all.extend(batch.output_files())
             if any(r.status == TranscribeStatus.FAILED for r in batch.results):

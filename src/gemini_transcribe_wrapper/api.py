@@ -157,6 +157,7 @@ def gemini_transcribe(
     speakers: dict[str, str] | None = None,
     temp_dir: str | None = "temp",
     ffsubsync_srt: bool = False,
+    custom_vocabulary: list[str] | None = None,
 ) -> BatchTranscribeResult:
     """Transcribe a multimedia file using Gemini 3.5 Transcribe.
 
@@ -240,6 +241,7 @@ def gemini_transcribe(
                 speakers=speakers,
                 temp_dir=temp_dir,
                 ffsubsync_srt=ffsubsync_srt,
+                custom_vocabulary=custom_vocabulary,
             )
         )
     return BatchTranscribeResult(results=results)
@@ -264,6 +266,7 @@ def _process_one(
     speakers: dict[str, str] | None,
     temp_dir: str | None,
     ffsubsync_srt: bool,
+    custom_vocabulary: list[str] | None = None,
 ) -> TranscribeResult:
     input_file = Path(input_path)
 
@@ -405,6 +408,7 @@ def _process_one(
             language=language,
             enable_diarization=diarize,
             request_interval_secs=request_interval_secs,
+            custom_vocabulary=custom_vocabulary,
         )
         results = transcribe_chunks_sequential(
             client,

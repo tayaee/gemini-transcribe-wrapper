@@ -40,6 +40,17 @@ class Cue:
 MAX_WORD_DURATION_SECS = 5.0
 
 
+def fix_korean_su_text(text: str) -> str:
+    """Replace misrecognized 'su' with Korean '수' when followed by '있' or '없'."""
+    if not text:
+        return ""
+    # 1. 'su' as a separate word followed by optional whitespace and '있' or '없': e.g. "할 su 있다" -> "할 수 있다"
+    t = re.sub(r"(?i)\bsu\b(?=\s*[있없])", "수", text)
+    # 2. 'su' attached directly to '있' or '없': e.g. "su있다" -> "수있다"
+    t = re.sub(r"(?i)\bsu(?=[있없])", "수", t)
+    return t
+
+
 def _sanitize_word(w: Word) -> Word:
     """Repair obviously-broken word timestamps before downstream logic.
 
@@ -60,6 +71,33 @@ def _sanitize_word(w: Word) -> Word:
     return Word(text=w.text, start=start, end=end, speaker=w.speaker)
 
 
+def sanitize_words(words: list[Word]) -> list[Word]:
+    """Sanitize word timestamps and repair Korean 'su' -> '수' misrecognitions.
+
+    - Repairs swapped/unreasonable timestamps via _sanitize_word.
+    - If a word is 'su' (case-insensitive) and the next word starts with '있' or '없'
+      (e.g. 'su 있다', 'su 없다'), or if a word is 'su있다' / 'su없다', repairs 'su' to '수'.
+    """
+    if not words:
+        return []
+    cleaned = [_sanitize_word(w) for w in words]
+    n = len(cleaned)
+    for i in range(n):
+        w = cleaned[i]
+        clean_text = w.text.strip()
+        clean_bare = clean_text.strip(".,!?:;\"'()[]{}")
+        if clean_bare.lower() == "su":
+            if i + 1 < n:
+                next_clean = cleaned[i + 1].text.strip().lstrip(".,!?:;\"'([{")
+                if next_clean and next_clean[0] in ("있", "없"):
+                    new_text = re.sub(r"(?i)\bsu\b", "수", w.text)
+                    cleaned[i] = Word(text=new_text, start=w.start, end=w.end, speaker=w.speaker)
+        elif re.match(r"(?i)^su[있없]", clean_text):
+            new_text = re.sub(r"(?i)^su(?=[있없])", "수", w.text)
+            cleaned[i] = Word(text=new_text, start=w.start, end=w.end, speaker=w.speaker)
+    return cleaned
+
+
 def group_words_to_cues(words: list[Word], max_gap: float = 1.5) -> list[Cue]:
     """Group words into cues, breaking at pauses > max_gap or speaker change.
 
@@ -71,7 +109,7 @@ def group_words_to_cues(words: list[Word], max_gap: float = 1.5) -> list[Cue]:
     cues: list[Cue] = []
     if not words:
         return cues
-    clean = [_sanitize_word(w) for w in words]
+    clean = sanitize_words(words)
     groups: list[list[Word]] = [[clean[0]]]
     for w in clean[1:]:
         gap = w.start - groups[-1][-1].end
@@ -222,8 +260,8 @@ def format_diarized_srt(
 
 
 def _clean_for_txt(text: str) -> str:
-    """Remove common Korean filler words and normalize whitespace."""
-    cleaned = text
+    """Remove common Korean filler words, fix 'su' -> '수', and normalize whitespace."""
+    cleaned = fix_korean_su_text(text)
     # Remove repeated single filler syllables surrounded by spaces
     cleaned = re.sub(r"\b(?:어|음|아)\b", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned)
@@ -246,6 +284,7 @@ def build_txt(
             _clean_for_txt(result.text), width=TXT_WRAP_WIDTH, break_long_words=False
         ) + "\n"
 
+    sanitized_words = sanitize_words(result.words)
     paragraphs: list[str] = []
     lines: list[str] = []
     line_words: list[str] = []
@@ -262,7 +301,7 @@ def build_txt(
             paragraphs.append("\n".join(lines))
             lines.clear()
 
-    for w in result.words:
+    for w in sanitized_words:
         if last_end is not None:
             gap = w.start - last_end
             if gap >= paragraph_interval_secs:

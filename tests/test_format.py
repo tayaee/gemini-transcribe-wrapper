@@ -14,10 +14,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from gemini_transcribe_wrapper.format import (
     _sanitize_word,
+    build_txt,
+    fix_korean_su_text,
     format_srt,
     group_words_to_cues,
+    sanitize_words,
 )
-from gemini_transcribe_wrapper.stt import Word
+from gemini_transcribe_wrapper.stt import (
+    DEFAULT_KO_CUSTOM_VOCABULARY,
+    TranscribeClient,
+    TranscriptionResult,
+    Word,
+)
 
 
 def test_sanitize_swaps_swapped_timestamps():
@@ -170,6 +178,70 @@ def test_korean_phrase_not_truncated_to_two_lines():
     )
 
 
+def test_fix_korean_su_text():
+    assert fix_korean_su_text("할 su 있다") == "할 수 있다"
+    assert fix_korean_su_text("볼 su 없다") == "볼 수 없다"
+    assert fix_korean_su_text("할 Su 있습니다") == "할 수 있습니다"
+    assert fix_korean_su_text("볼 SU 없었습니다") == "볼 수 없었습니다"
+    assert fix_korean_su_text("su있다") == "수있다"
+    assert fix_korean_su_text("su없는") == "수없는"
+    # Unrelated English text should not be touched
+    assert fix_korean_su_text("su won") == "su won"
+    assert fix_korean_su_text("summer is nice") == "summer is nice"
+
+
+def test_sanitize_words_korean_su_followed_by_iss_or_eops():
+    words = [
+        Word("할", 0.0, 0.5),
+        Word("su", 0.5, 0.8),
+        Word("있다", 0.8, 1.2),
+        Word("볼", 1.2, 1.5),
+        Word("Su,", 1.5, 1.8),
+        Word("없습니다", 1.8, 2.3),
+        Word("su", 2.3, 2.5),
+        Word("won", 2.5, 3.0),
+        Word("su있다", 3.0, 3.5),
+    ]
+    cleaned = sanitize_words(words)
+    texts = [w.text for w in cleaned]
+    assert texts == ["할", "수", "있다", "볼", "수,", "없습니다", "su", "won", "수있다"]
+
+
+def test_srt_and_txt_with_su_replacement():
+    words = [
+        Word("할", 0.0, 0.5),
+        Word("su", 0.5, 0.8),
+        Word("있습니다", 0.8, 1.2),
+    ]
+    cues = group_words_to_cues(words)
+    srt = format_srt(cues)
+    assert "할 수 있습니다" in srt
+    assert "su" not in srt
+
+    txt = build_txt(TranscriptionResult(text="할 su 있습니다", words=words))
+    assert "할 수 있습니다" in txt
+    assert "su" not in txt
+
+
+def test_custom_vocabulary_in_transcribe_client():
+    client = TranscribeClient(
+        api_key="fake-key",
+        language="ko-KR",
+        custom_vocabulary=["특수용어A", "특수용어B"],
+    )
+    gen_config = client._generation_config()
+    tc = gen_config.transcription_config
+    assert tc is not None
+    vocab = getattr(tc, "custom_vocabulary", None)
+    assert vocab is not None
+    # Must include default Korean phrases (~ 수 있~ / ~ 수 없~)
+    for phrase in DEFAULT_KO_CUSTOM_VOCABULARY:
+        assert phrase in vocab
+    # Must include user-specified phrases
+    assert "특수용어A" in vocab
+    assert "특수용어B" in vocab
+
+
 if __name__ == "__main__":
     test_sanitize_swaps_swapped_timestamps()
     test_sanitize_keeps_normal_word_intact()
@@ -179,4 +251,8 @@ if __name__ == "__main__":
     test_continuous_speech_splits_into_many_cues()
     test_srt_full_content_for_long_continuous_speech()
     test_korean_phrase_not_truncated_to_two_lines()
+    test_fix_korean_su_text()
+    test_sanitize_words_korean_su_followed_by_iss_or_eops()
+    test_srt_and_txt_with_su_replacement()
+    test_custom_vocabulary_in_transcribe_client()
     print("PASS: format sanitization tests")
