@@ -94,16 +94,6 @@ def _extract_words(interaction: Any) -> list[Word]:
     return words
 
 
-def _is_retryable(exc: Exception) -> bool:
-    # 429 (rate limit / quota) is NOT retried: backoff won't help a daily
-    # quota, and we want to surface the friendly hint immediately.
-    if _is_quota_error(exc):
-        return False
-    if isinstance(exc, (errors.APIError,)) and exc.code is not None:
-        return exc.code in (500, 502, 503, 504)
-    return isinstance(exc, (TimeoutError, ConnectionError, OSError))
-
-
 def _is_quota_error(exc: Exception) -> bool:
     """True for 429 Too Many Requests (rate limit / daily quota exceeded)."""
     message = str(exc)
@@ -145,19 +135,12 @@ def _log_quota_hint(exc: Exception) -> None:
     logger.error(_QUOTA_HINT)
 
 
-def _sleep_backoff(attempt: int, base: float = 2.0, cap: float = 60.0) -> None:
-    delay = min(cap, base * (2 ** attempt))
-    logger.warning("Retrying in %.1fs (attempt %d)", delay, attempt + 1)
-    time.sleep(delay)
-
-
 class TranscribeClient:
     def __init__(
         self,
         api_key: str | None = None,
         language: str = "ko-KR",
         enable_diarization: bool = True,
-        max_retries: int = 5,
         free_tier_wait_on_429: bool = False,
     ) -> None:
         # Resolve the effective key from env vars early so the daily usage
@@ -176,7 +159,6 @@ class TranscribeClient:
         )
         self.language = language
         self.enable_diarization = enable_diarization
-        self.max_retries = max_retries
         self.free_tier_wait_on_429 = free_tier_wait_on_429
         self.api_logs: list[dict[str, Any]] = []
 
@@ -214,60 +196,50 @@ class TranscribeClient:
         self.api_logs.append(entry)
 
     def transcribe_chunk(self, chunk_mp3: Path, chunk_index: int = 0) -> TranscriptionResult:
-        """Transcribe a single MP3 chunk with exponential-backoff retries."""
+        """Transcribe a single MP3 chunk with a single API attempt (no retries)."""
         started_at = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
-        attempts = 0
-        last_exc: Exception | None = None
         uploaded = self.client.files.upload(file=str(chunk_mp3))
         try:
-            for attempt in range(self.max_retries + 1):
-                attempts = attempt + 1
-                attempt_start = time.monotonic()
-                try:
-                    from .usage_counter import increment_today
+            attempt_start = time.monotonic()
+            try:
+                from .usage_counter import increment_today
 
-                    increment_today(api_key=self.api_key)
-                    interaction = self.client.interactions.create(
-                        model=MODEL_ID,
-                        input=[
-                            {
-                                "type": "audio",
-                                "uri": uploaded.uri,
-                                "mime_type": "audio/mpeg",
-                            }
-                        ],
-                        generation_config=self._generation_config(),
+                increment_today(api_key=self.api_key)
+                interaction = self.client.interactions.create(
+                    model=MODEL_ID,
+                    input=[
+                        {
+                            "type": "audio",
+                            "uri": uploaded.uri,
+                            "mime_type": "audio/mpeg",
+                        }
+                    ],
+                    generation_config=self._generation_config(),
+                )
+                duration = time.monotonic() - attempt_start
+                text = getattr(interaction, "output_text", None) or ""
+                words = _extract_words(interaction)
+                if not text and words:
+                    text = " ".join(w.text for w in words)
+                self._log_api_call(
+                    chunk_index, 1, started_at, duration, "success"
+                )
+                return TranscriptionResult(text=text, words=words)
+            except Exception as exc:
+                _log_quota_hint(exc)
+                if not _is_quota_error(exc):
+                    logger.error(
+                        "Gemini API call failed. Reference: %s", MODEL_REF_URL
                     )
-                    duration = time.monotonic() - attempt_start
-                    text = getattr(interaction, "output_text", None) or ""
-                    words = _extract_words(interaction)
-                    if not text and words:
-                        text = " ".join(w.text for w in words)
-                    self._log_api_call(
-                        chunk_index, attempts, started_at, duration, "success"
-                    )
-                    return TranscriptionResult(text=text, words=words)
-                except Exception as exc:
-                    last_exc = exc
-                    if attempt >= self.max_retries or not _is_retryable(exc):
-                        _log_quota_hint(exc)
-                        if not _is_quota_error(exc):
-                            logger.error(
-                                "Gemini API call failed. Reference: %s", MODEL_REF_URL
-                            )
-                        self._log_api_call(
-                            chunk_index,
-                            attempts,
-                            started_at,
-                            time.monotonic() - attempt_start,
-                            "failed",
-                            error=str(exc),
-                        )
-                        raise
-                    if _is_quota_error(exc):
-                        _log_quota_hint(exc)
-                    _sleep_backoff(attempt)
-            raise RuntimeError(f"Transcription failed after retries: {last_exc}")
+                self._log_api_call(
+                    chunk_index,
+                    1,
+                    started_at,
+                    time.monotonic() - attempt_start,
+                    "failed",
+                    error=str(exc),
+                )
+                raise
         finally:
             try:
                 name = uploaded.name or ""

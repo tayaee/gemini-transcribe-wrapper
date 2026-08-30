@@ -192,6 +192,10 @@ def sleep_until_pst_midnight(
     logging the remaining time before each ``sleep_fn`` call. Intended for
     free-tier batch runs that hit the 25 RPD daily quota or 429 errors and
     need to wait for the quota to reset. ``sleep_fn`` is injectable for tests.
+
+    Ctrl-C during the wait exits quietly: a fresh ``KeyboardInterrupt`` is
+    re-raised with ``from None`` so the SDK's preceding quota exception does
+    not get flushed into the traceback at exit.
     """
     while True:
         remaining = seconds_until_pst_midnight()
@@ -206,4 +210,10 @@ def sleep_until_pst_midnight(
             remaining / 3600.0,
             chunk,
         )
-        sleep_fn(chunk)
+        try:
+            sleep_fn(chunk)
+        except KeyboardInterrupt:
+            logger.warning(
+                "Free-tier wait cancelled by user (Ctrl-C); exiting quietly."
+            )
+            raise KeyboardInterrupt from None

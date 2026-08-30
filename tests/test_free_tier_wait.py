@@ -117,6 +117,43 @@ def test_sleep_until_pst_midnight_chunks_respect_custom_interval(monkeypatch):
     assert sleeps == [60.0, 60.0]
 
 
+def test_sleep_until_pst_midnight_quiet_exit_on_ctrl_c(monkeypatch):
+    """Ctrl-C during the wait must exit without flushing a prior SDK exception.
+
+    In production, ``sleep_until_pst_midnight`` is called from inside an
+    ``except`` block handling the SDK's quota exception. A raw
+    ``KeyboardInterrupt`` raised during the sleep would carry that SDK
+    exception in ``__context__`` and Python would print the full chain at
+    exit. Re-raising with ``from None`` sets ``__suppress_context__=True``
+    so only a clean ``KeyboardInterrupt`` propagates.
+    """
+    base = datetime(2026, 8, 28, 20, 0, 0, tzinfo=PST)  # 4h to midnight
+    monkeypatch.setattr(usage_counter, "pst_now", lambda: base)
+
+    def fake_sleep(_secs: float) -> None:
+        raise KeyboardInterrupt
+
+    # Stand in for the SDK's quota exception so the auto-chain has somewhere
+    # to attach if our fix regresses.
+    class FakeSDKError(Exception):
+        pass
+
+    captured: KeyboardInterrupt | None = None
+    try:
+        raise FakeSDKError("simulated SDK 429")
+    except FakeSDKError:
+        try:
+            sleep_until_pst_midnight(sleep_fn=fake_sleep)
+        except KeyboardInterrupt as kb:
+            captured = kb
+
+    assert captured is not None, "KeyboardInterrupt must propagate out"
+    # The fix: __suppress_context__ True means Python won't print the
+    # __context__ chain (the SDK exception) when the KeyboardInterrupt
+    # reaches the top of the program.
+    assert captured.__suppress_context__ is True
+
+
 # --- STT integration: quota pre-check + 429 retry ---------------------------
 
 
