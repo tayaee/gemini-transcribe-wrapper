@@ -47,7 +47,8 @@ def run():
         api.TranscribeClient = CountingClient
         try:
             # 1) First run: transcript.json is created by default.
-            api.gemini_transcribe(str(src), force=True, gemini_api_key="fake")
+            # Use diarize=True so .diarized.srt is also emitted.
+            api.gemini_transcribe(str(src), force=True, gemini_api_key="fake", diarize=True)
         finally:
             api.TranscribeClient = orig
 
@@ -62,7 +63,7 @@ def run():
 
         api.TranscribeClient = CountingClient
         try:
-            r2 = api.gemini_transcribe(str(src), gemini_api_key="fake")
+            r2 = api.gemini_transcribe(str(src), gemini_api_key="fake", diarize=True)
         finally:
             api.TranscribeClient = orig
 
@@ -76,7 +77,8 @@ def run():
         api.TranscribeClient = CountingClient
         try:
             api.gemini_transcribe(
-                str(src), force=True, gemini_api_key="fake", create_transcript_json=False
+                str(src), force=True, gemini_api_key="fake",
+                diarize=True, create_transcript_json=False,
             )
         finally:
             api.TranscribeClient = orig
@@ -90,7 +92,7 @@ def run():
         # recreate to inspect
         api.TranscribeClient = CountingClient
         try:
-            api.gemini_transcribe(str(src), force=True, gemini_api_key="fake")
+            api.gemini_transcribe(str(src), force=True, gemini_api_key="fake", diarize=True)
         finally:
             api.TranscribeClient = orig
         data = json.loads(transcript.read_text(encoding="utf-8"))

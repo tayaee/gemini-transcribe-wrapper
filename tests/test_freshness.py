@@ -49,7 +49,7 @@ def run():
         api.TranscribeClient = FakeClient
 
         # 1) No targets -> generate
-        r = api.gemini_transcribe(str(src), gemini_api_key="fake")
+        r = api.gemini_transcribe(str(src), gemini_api_key="fake", diarize=True)
         assert r.results[0].status == TranscribeStatus.SUCCESS, "should generate when no targets"
         print("1) no targets -> SUCCESS, calls:", CALLS["n"])
 
@@ -59,19 +59,19 @@ def run():
         for p in (td / "input.diarized.srt", td / "input.srt", td / "input.txt"):
             set_mtime(p, base_ts)  # targets new
         calls_before = CALLS["n"]
-        r = api.gemini_transcribe(str(src), gemini_api_key="fake")
+        r = api.gemini_transcribe(str(src), gemini_api_key="fake", diarize=True)
         assert r.results[0].status == TranscribeStatus.SKIPPED, "should skip when targets are newer"
         assert CALLS["n"] == calls_before, "no API call on skip"
         print("2) targets newer -> SKIPPED")
 
         # 3) Source newer than targets -> regenerate (must not be SKIPPED).
         set_mtime(src, base_ts + 200)  # source now newer
-        r = api.gemini_transcribe(str(src), gemini_api_key="fake")
+        r = api.gemini_transcribe(str(src), gemini_api_key="fake", diarize=True)
         assert r.results[0].status == TranscribeStatus.SUCCESS, "should regenerate when source is newer"
         print("3) source newer -> SUCCESS, regenerated")
 
         # 4) --force always regenerates (may re-render from transcript).
-        r = api.gemini_transcribe(str(src), force=True, gemini_api_key="fake")
+        r = api.gemini_transcribe(str(src), force=True, gemini_api_key="fake", diarize=True)
         assert r.results[0].status == TranscribeStatus.SUCCESS
         print("4) --force -> SUCCESS, regenerated")
 

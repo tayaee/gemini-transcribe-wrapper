@@ -143,12 +143,14 @@ def _log_quota_hint(exc: Exception) -> None:
     else:
         hours = int(seconds_left // 3600)
         minutes = int((seconds_left % 3600) // 60)
+        total_seconds = int(seconds_left)
         logger.error(
             "To retry: wait about 1 minute for a short-term 429, "
-            "or wait %dh %dm until PST midnight for the daily quota to reset, "
+            "or wait %dh %dm (sleep %ds) until PST midnight for the daily quota to reset, "
             "then re-run.",
             hours,
             minutes,
+            total_seconds,
         )
     logger.error(
         "Switching to a paid tier (enable billing) removes the free-tier limits."
@@ -282,15 +284,20 @@ TRANSCRIPT_SCHEMA_VERSION = 2
 
 def transcript_to_dict(
     results: list[TranscriptionResult],
-    chunk_secs: float,
+    chunk_secs: list[float] | tuple[float, ...],
     language: str,
     api_logs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Serialize transcription results plus API call logs."""
+    """Serialize transcription results plus API call logs.
+
+    ``chunk_secs`` is the per-chunk size list (variable for front-loaded
+    splits). Older transcripts (schema 2) stored a single float; we always
+    write a list for forward compatibility.
+    """
     data: dict[str, Any] = {
         "schema_version": TRANSCRIPT_SCHEMA_VERSION,
         "language": language,
-        "chunk_secs": chunk_secs,
+        "chunk_secs": [float(c) for c in chunk_secs],
         "chunks": [
             {
                 "index": idx,
@@ -336,7 +343,7 @@ def transcript_from_dict(data: dict[str, Any]) -> list[TranscriptionResult]:
 def save_transcript(
     path: Path,
     results: list[TranscriptionResult],
-    chunk_secs: float,
+    chunk_secs: list[float] | tuple[float, ...],
     language: str,
     api_logs: list[dict[str, Any]] | None = None,
 ) -> None:
@@ -363,6 +370,27 @@ def load_transcript(path: Path) -> list[TranscriptionResult] | None:
     if not results:
         return None
     return results
+
+
+def load_transcript_chunk_secs(path: Path) -> list[float]:
+    """Load the per-chunk size list from a transcript, with backward compat.
+
+    Older transcripts stored ``chunk_secs`` as a single float (uniform chunk
+    size). We coerce that to a list of that size repeated over the chunk
+    count. Missing/invalid values fall back to ``[1790.0]``.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return [1790.0]
+    raw = data.get("chunk_secs", 1790.0)
+    if isinstance(raw, list):
+        return [float(c) for c in raw]
+    if isinstance(raw, (int, float)):
+        # Old schema: uniform chunk size. Expand to one entry per chunk.
+        num = len(data.get("chunks", [])) or 1
+        return [float(raw)] * num
+    return [1790.0]
 
 
 def load_checkpoint(meta_path: Path) -> TranscriptionResult | None:

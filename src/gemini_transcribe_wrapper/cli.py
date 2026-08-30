@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from . import __version__
-from .api import gemini_transcribe
+from .api import QuotaExceededError, gemini_transcribe
 from .models import TranscribeStatus
 from .usage_counter import usage_summary_line
 
@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-base", default=None, help="Base name for output files (default: input stem)")
     parser.add_argument("--gemini-api-key", default=None, help="Gemini API key (default: $GEMINI_API_KEY)")
     parser.add_argument("--language", default="ko-KR", help="BCP-47 language code (default: ko-KR)")
-    parser.add_argument("--diarized-srt", action=argparse.BooleanOptionalAction, default=True, help="Generate speaker-diarized .diarized.srt (default: on)")
+    parser.add_argument("--diarize", action=argparse.BooleanOptionalAction, default=False, help="Enable speaker diarization (default: off). When on, the wrapper uses 29-min chunks for better diarization accuracy and emits .diarized.* outputs. When off, it cuts the file into 59-min logical units (each split into 2x 29-min API calls to stay under the 30-min per-call limit), keeping free-tier API usage low.")
     parser.add_argument("--srt", action=argparse.BooleanOptionalAction, default=True, help="Generate .srt subtitles (default: on)")
     parser.add_argument("--txt", action=argparse.BooleanOptionalAction, default=True, help="Generate .txt transcript text (default: on)")
     parser.add_argument("--metadata-json", action=argparse.BooleanOptionalAction, default=False, help="Keep .metadata.json output (default: off)")
@@ -62,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--line-interval-secs", type=float, default=1.0, help="TXT newline break threshold (default: 1.0)")
     parser.add_argument("--paragraph-interval-secs", type=float, default=2.5, help="TXT paragraph break threshold (default: 2.5)")
     parser.add_argument("--request-interval-secs", type=float, default=30.0, help="Delay between API calls (default: 30.0)")
-    parser.add_argument("--chunk-secs", type=float, default=None, help="Fixed chunk length in seconds (default: auto, pack 29m50s chunks)")
+    parser.add_argument("--chunk-secs", type=float, default=None, help="Fixed chunk length in seconds (default: auto, 59-min logical units when --no-diarize, 29-min when --diarize; hard ceiling of 29 min enforced to fit the Gemini 30-min per-call limit)")
     parser.add_argument("--speakers", default=None, help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=궤도;spk:1=가람;'")
     parser.add_argument("--temp-dir", default=None, help="Directory for intermediate temp files (default: alongside output)")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
@@ -131,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
 
     produced_all: list[str] = []
     failed = False
+    quota_exceeded = False
 
     speakers: dict[str, str] | None = None
     if args.speakers:
@@ -148,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_base=args.output_base,
                 gemini_api_key=args.gemini_api_key,
                 language=args.language,
-                create_diarized_srt=args.diarized_srt,
+                diarize=args.diarize,
                 create_srt=args.srt,
                 create_txt=args.txt,
                 create_metadata_json=args.metadata_json,
@@ -172,6 +173,11 @@ def main(argv: list[str] | None = None) -> int:
                         r.input.input_file,
                         ", ".join(r.leftover_files()),
                     )
+        except QuotaExceededError:
+            # 429 / quota hit: no point trying the next pattern — it would
+            # hit the same limit. Bail out with a distinct exit code.
+            quota_exceeded = True
+            break
         except Exception as exc:  # noqa: BLE001 - CLI boundary
             logging.getLogger(__name__).error("Error: %s", exc)
             failed = True
@@ -183,6 +189,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(usage_summary_line(api_key=effective_key))
 
+    if quota_exceeded:
+        return 2
     if failed:
         return 1
     if not produced_all:

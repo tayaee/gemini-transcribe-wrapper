@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import glob as globlib
-import json
 import logging
 import os
 import shutil
@@ -26,11 +25,43 @@ from .models import (
 from .stt import (
     TranscribeClient,
     load_transcript,
+    load_transcript_chunk_secs,
     save_transcript,
     transcribe_chunks_sequential,
 )
 
 logger = logging.getLogger(__name__)
+
+
+class QuotaExceededError(Exception):
+    """Raised when the Gemini API returns 429 (rate limit / quota).
+
+    Unlike other transcription failures, this is not a per-file condition —
+    hitting the quota means subsequent files in the same batch will also
+    fail, so the wrapper aborts the entire batch rather than continuing
+    to make API calls that will only hit the same limit.
+    """
+
+    def __init__(self, source: Path | str, original: Exception) -> None:
+        self.source = source
+        self.original = original
+        super().__init__(f"{source}: {original}")
+
+# Default chunk length per diarize mode. The user can still override via
+# ``chunk_secs``; these are only the fallbacks when the user doesn't specify.
+# The Gemini-3.5-transcribe API caps audio per call differently depending
+# on whether speaker diarization is requested (60 min off, 30 min on). Both
+# defaults already include a 1-min safety margin, so they also serve as the
+# per-chunk ceiling passed to audio.compute_split_plan.
+# - diarize=False (default): 3540s (59 min) — file fits in one API call up
+#   to ~1 hour.
+# - diarize=True : 1740s (29 min) — shorter chunks aid diarization quality
+#   and stay under the 30-min per-call limit.
+DEFAULT_CHUNK_SECS_NO_DIARIZE = 3540.0
+DEFAULT_CHUNK_SECS_DIARIZE = 1740.0
+
+TRANSCRIPT_SUFFIX_DIARIZED = ".diarized.transcript.json"
+TRANSCRIPT_SUFFIX_PLAIN = ".transcript.json"
 
 
 @dataclass
@@ -73,13 +104,45 @@ def _expand_path(pattern: str) -> list[str]:
     return [pattern]
 
 
+def _resolve_transcript_path(
+    out_dir: Path, out_stem: str, diarize: bool
+) -> tuple[Path, Path | None]:
+    """Pick the canonical transcript path and flag any legacy fallback.
+
+    When ``diarize`` is True the canonical name is
+    ``<stem>.diarized.transcript.json``; otherwise it is the plain
+    ``<stem>.transcript.json``. For backward compat with transcripts written
+    by older versions (which always wrote the plain name), we also accept
+    the alternate name as a fallback. When a fallback is found, the second
+    element of the returned tuple is the fallback path so the caller can
+    migrate it (rename to the canonical name) after a successful save.
+
+    Returns ``(canonical_path, fallback_path_or_None)``.
+    """
+    canonical = out_dir / (
+        f"{out_stem}{TRANSCRIPT_SUFFIX_DIARIZED}"
+        if diarize
+        else f"{out_stem}{TRANSCRIPT_SUFFIX_PLAIN}"
+    )
+    alternate = out_dir / (
+        f"{out_stem}{TRANSCRIPT_SUFFIX_PLAIN}"
+        if diarize
+        else f"{out_stem}{TRANSCRIPT_SUFFIX_DIARIZED}"
+    )
+    if canonical.exists():
+        return canonical, None
+    if alternate.exists():
+        return alternate, canonical  # will be migrated
+    return canonical, None
+
+
 def gemini_transcribe(
     input_file: str,
     output_dir: str | None = None,
     output_base: str | None = None,
     gemini_api_key: str | None = None,
     language: str = "ko-KR",
-    create_diarized_srt: bool = True,
+    diarize: bool = False,
     create_srt: bool = True,
     create_txt: bool = True,
     create_metadata_json: bool = False,
@@ -103,25 +166,37 @@ def gemini_transcribe(
         output_base: Base name for outputs (default: input stem).
         gemini_api_key: Gemini API key (default: $GEMINI_API_KEY).
         language: BCP-47 language code (default: "ko-KR").
-        create_diarized_srt/create_srt/create_txt: Whether to generate each
-            output format (.diarized.srt, .srt, .txt).
+        diarize: When True, enable speaker diarization in the API call and
+            emit ``.diarized.*`` outputs. The wrapper then uses the shorter
+            default chunk length (29m50s) for better diarization quality.
+            When False (default), speaker labels are skipped at the API and
+            the wrapper packs each chunk up to 29 min (59-min logical units,
+            split into 2 API calls to stay under the 30-min per-call limit),
+            better suited to the free-tier daily quota. ``--speakers`` is
+            ignored when this is False.
+        create_srt/create_txt: Whether to generate each output format
+            (.srt, .txt). ``.diarized.srt`` is produced automatically when
+            ``diarize`` is True.
         create_metadata_json: Whether to keep the .metadata.json output
             (default: off).
-        create_transcript_json: Whether to keep <base>.transcript.json
-            (default: on). The transcript stores the full transcription result
-            (text + word timestamps + speakers) so .diarized.srt/.srt/.txt can
-            be re-rendered without calling the API again: if it exists and
-            outputs are missing, they are regenerated from it.
+        create_transcript_json: Whether to keep the transcript file
+            (default: on). The transcript stores the full transcription
+            result (text + word timestamps + speakers) so outputs can be
+            re-rendered without calling the API again: if it exists and
+            outputs are missing, they are regenerated from it. The transcript
+            filename picks up a ``.diarized.`` prefix when ``diarize`` is on.
         force: Re-process even if all outputs already exist.
         line_interval_secs / paragraph_interval_secs: TXT break gaps.
         request_interval_secs: Delay between STT API calls.
-        chunk_secs: Optional fixed chunk length in seconds. When set, the
-            audio is split into equal chunks of ~this length instead of using
-            the default packs 29m50s chunks (max 30 min per API call).
-            Useful for debugging short clips.
-        speakers: Optional mapping of raw speaker ids (e.g. "spk:0") to display
-            names used in the .diarized.srt output. Speakers missing from the
-            mapping keep their raw id, and a warning is emitted listing them.
+        chunk_secs: Optional fixed chunk length in seconds. Overrides the
+            default for the chosen ``diarize`` mode (59 min off, 29 min on).
+            A hard ceiling of 29 min (1740s) is always enforced because the
+            Gemini API caps audio at ~30 min per call. Useful for debugging
+            short clips.
+        speakers: Optional mapping of raw speaker ids (e.g. "spk:0") to
+            display names used in the .diarized.srt output. Speakers missing
+            from the mapping keep their raw id, and a warning is emitted
+            listing them. Ignored unless ``diarize`` is True.
         temp_dir: Where to place intermediate work files. When set, all temp
             files (temp_audio.mp3, chunk_*.mp3, *.tmp, checkpoints) live under
             this directory instead of next to the output.
@@ -137,10 +212,13 @@ def gemini_transcribe(
         caller-side cleanup).
 
     Note:
-        429 (quota / rate limit) errors are NOT retried automatically. The
-        caller prints a one-shot hint with retry suggestions (wait ~1 minute,
-        or wait until PST midnight for the daily quota to reset) and the
-        batch is reported as failed for that input.
+        429 (quota / rate limit) errors are NOT retried automatically and
+        cause the entire batch to abort. The caller prints a one-shot hint
+        with retry suggestions (wait ~1 minute, or wait until PST midnight
+        for the daily quota to reset) and a :class:`QuotaExceededError` is
+        raised so the CLI can exit with a distinct exit code. Per-file
+        failures other than quota still produce a per-file FAILED result
+        and the batch continues.
     """
     files = _expand_path(input_file)
     results: list[TranscribeResult] = []
@@ -152,7 +230,7 @@ def gemini_transcribe(
                 output_base=output_base,
                 gemini_api_key=gemini_api_key,
                 language=language,
-                create_diarized_srt=create_diarized_srt,
+                diarize=diarize,
                 create_srt=create_srt,
                 create_txt=create_txt,
                 create_metadata_json=create_metadata_json,
@@ -176,7 +254,7 @@ def _process_one(
     output_base: str | None,
     gemini_api_key: str | None,
     language: str,
-    create_diarized_srt: bool,
+    diarize: bool,
     create_srt: bool,
     create_txt: bool,
     create_metadata_json: bool,
@@ -201,7 +279,7 @@ def _process_one(
         output_dir=str(out_dir) if output_dir else None,
         output_base=out_stem.name,
         language=language,
-        create_diarized_srt=create_diarized_srt,
+        diarize=diarize,
         create_srt=create_srt,
         create_txt=create_txt,
         create_metadata_json=create_metadata_json,
@@ -213,6 +291,14 @@ def _process_one(
         paragraph_interval_secs=paragraph_interval_secs,
         request_interval_secs=request_interval_secs,
     )
+
+    # speakers is meaningless without diarize.
+    if speakers and not diarize:
+        logger.warning(
+            "--speakers was passed but diarization is off; ignoring speaker map. "
+            "Re-run with --diarize to use --speakers."
+        )
+        speakers = None
 
     if not input_file.is_file():
         logger.error("Input file not found: %s", input_file)
@@ -234,9 +320,11 @@ def _process_one(
             error=f"Lock held by another process: {lock_path}",
         )
 
-    transcript_path = out_dir / f"{out_stem.name}.transcript.json"
+    transcript_path, transcript_migrate_to = _resolve_transcript_path(
+        out_dir, out_stem.name, diarize
+    )
     final_paths = _build_output_paths(
-        out_dir, out_stem.name, create_diarized_srt, create_srt, create_txt, create_metadata_json
+        out_dir, out_stem.name, diarize, create_srt, create_txt, create_metadata_json
     )
     chunks: list[Path] = []
     ctx: WorkContext | None = None
@@ -256,7 +344,7 @@ def _process_one(
                     out_dir=out_dir,
                     out_stem=out_stem.name,
                     transcript_path=transcript_path,
-                    create_diarized_srt=create_diarized_srt,
+                    diarize=diarize,
                     create_srt=create_srt,
                     create_txt=create_txt,
                     create_metadata_json=create_metadata_json,
@@ -295,8 +383,22 @@ def _process_one(
 
         total_secs = probe_duration_secs(input_file)
         logger.info("%s duration: %.1fs", input_file, total_secs)
-        plan = compute_split_plan(total_secs, chunk_secs=chunk_secs)
-        logger.info("Split plan: %d chunk(s), %.1fs each", plan.num_chunks, plan.chunk_secs)
+        # The Gemini API has a different per-call audio limit depending on
+        # whether speaker diarization is requested (60 min off, 30 min on).
+        # Both defaults already bake in a 1-min safety margin, so they also
+        # serve as the per-chunk ceiling passed to compute_split_plan.
+        effective_chunk_secs = chunk_secs
+        max_chunk_secs = (
+            DEFAULT_CHUNK_SECS_DIARIZE if diarize else DEFAULT_CHUNK_SECS_NO_DIARIZE
+        )
+        if effective_chunk_secs is None:
+            effective_chunk_secs = max_chunk_secs
+        plan = compute_split_plan(
+            total_secs,
+            chunk_secs=effective_chunk_secs,
+            max_chunk_secs=max_chunk_secs,
+        )
+        logger.info("Split plan: %s", _format_split_plan(plan))
 
         extract_audio(input_file, ctx.full_mp3, force=force)
         chunks = split_chunks(ctx.full_mp3, ctx.chunk_dir, plan)
@@ -304,7 +406,7 @@ def _process_one(
         client = TranscribeClient(
             api_key=gemini_api_key,
             language=language,
-            enable_diarization=create_diarized_srt,
+            enable_diarization=diarize,
         )
         results = transcribe_chunks_sequential(
             client,
@@ -313,7 +415,12 @@ def _process_one(
         )
 
         srt_tmp = ctx.work_dir / f"{ctx.output_base}.srt.tmp"
-        diarized_srt_tmp = ctx.work_dir / f"{ctx.output_base}.diarized.srt.tmp"
+        # Only generate the diarized SRT tmp when diarize is on; otherwise the
+        # tmp/final pair would be created and immediately unlinked by
+        # commit_outputs, wasting a write.
+        diarized_srt_tmp: Path | None = None
+        if diarize:
+            diarized_srt_tmp = ctx.work_dir / f"{ctx.output_base}.diarized.srt.tmp"
         txt_tmp = ctx.work_dir / f"{ctx.output_base}.txt.tmp"
 
         align_and_build(
@@ -348,16 +455,15 @@ def _process_one(
                 if meta.exists():
                     meta.unlink()
 
-        tmp_map = {
-            "diarized_srt_tmp": diarized_srt_tmp,
-            "srt_tmp": srt_tmp,
-            "txt_tmp": txt_tmp,
-        }
-        final_map = {
-            "diarized_srt": out_dir / f"{ctx.output_base}.diarized.srt",
+        tmp_map: dict[str, Path] = {"srt_tmp": srt_tmp, "txt_tmp": txt_tmp}
+        final_map: dict[str, Path] = {
             "srt": out_dir / f"{ctx.output_base}.srt",
             "txt": out_dir / f"{ctx.output_base}.txt",
         }
+        if diarize:
+            assert diarized_srt_tmp is not None  # for type checkers
+            tmp_map["diarized_srt_tmp"] = diarized_srt_tmp
+            final_map["diarized_srt"] = out_dir / f"{ctx.output_base}.diarized.srt"
         if create_metadata_json:
             metadata_tmp = ctx.work_dir / f"{ctx.output_base}.metadata.json.tmp"
             metadata_tmp.write_text(
@@ -368,7 +474,7 @@ def _process_one(
 
         produced = commit_outputs(
             outputs={**tmp_map, **final_map},
-            create_diarized_srt=create_diarized_srt,
+            create_diarized_srt=diarize,
             create_srt=create_srt,
             create_txt=create_txt,
             create_metadata_json=create_metadata_json,
@@ -376,6 +482,24 @@ def _process_one(
             chunk_mp3s=chunks,
         )
         _cleanup_workdir(ctx, keep_chunks=False)
+
+        # Migrate legacy transcript (if we read from the alternate name) by
+        # moving it to the canonical location. Done after commit so a failure
+        # here doesn't leave two files lying around.
+        if (
+            transcript_migrate_to is not None
+            and transcript_path != transcript_migrate_to
+            and transcript_path.exists()
+        ):
+            try:
+                os.replace(transcript_path, transcript_migrate_to)
+                transcript_path = transcript_migrate_to
+            except OSError:
+                logger.warning(
+                    "Could not migrate legacy transcript %s to %s; both will remain.",
+                    transcript_path,
+                    transcript_migrate_to,
+                )
 
         # transcript.json is kept by default; --no-transcript-json removes it.
         if not create_transcript_json:
@@ -388,7 +512,7 @@ def _process_one(
 
         # Warn about speakers the custom mapping did not cover, with a
         # recommended re-render command.
-        if speakers:
+        if speakers and diarize:
             _warn_unmapped_speakers(
                 echo, results, plan.chunk_secs, out_dir, out_stem.name, speakers
             )
@@ -398,7 +522,20 @@ def _process_one(
             status=TranscribeStatus.SUCCESS,
             output=_to_output(produced),
         )
-    except Exception as exc:  # noqa: BLE001 - convert any failure into a result
+    except Exception as exc:
+        # 429 / quota errors are not a per-file condition: retrying the next
+        # file will hit the same limit. Abort the batch immediately so the
+        # caller doesn't burn more quota on calls that are guaranteed to
+        # fail. The hint was already logged in stt.transcribe_chunk.
+        from .stt import _is_quota_error
+
+        if _is_quota_error(exc):
+            logger.error(
+                "Aborting batch: quota / rate limit hit while processing %s. "
+                "Remaining files will not be processed.",
+                input_file,
+            )
+            raise QuotaExceededError(input_file, exc) from exc
         # On failure: keep intermediate mp3 files for resume. Report them as
         # leftover so the caller can clean up if desired.
         logger.error("Failed processing %s: %s", input_file, exc)
@@ -428,7 +565,7 @@ def _render_from_transcript(
     out_dir: Path,
     out_stem: str,
     transcript_path: Path,
-    create_diarized_srt: bool,
+    diarize: bool,
     create_srt: bool,
     create_txt: bool,
     create_metadata_json: bool,
@@ -437,18 +574,19 @@ def _render_from_transcript(
     paragraph_interval_secs: float,
     speakers: dict[str, str] | None,
 ) -> TranscribeResult:
-    """Regenerate .diarized.srt/.srt/.txt from a transcript.json (no API call)."""
+    """Regenerate .diarized.srt/.srt/.txt from a transcript (no API call)."""
     results = load_transcript(transcript_path)
     if results is None:
         raise ValueError(f"Invalid transcript: {transcript_path}")
-    data = json.loads(transcript_path.read_text(encoding="utf-8"))
-    chunk_secs = float(data.get("chunk_secs", 0.0))
+    chunk_secs = load_transcript_chunk_secs(transcript_path)
 
     # Render into temp files first (atomic commit at the end).
     with tempfile.TemporaryDirectory(prefix=f".{out_stem}.render-", dir=str(out_dir)) as tmp:
         work = Path(tmp)
         srt_tmp = work / f"{out_stem}.srt.tmp"
-        diarized_srt_tmp = work / f"{out_stem}.diarized.srt.tmp"
+        diarized_srt_tmp: Path | None = None
+        if diarize:
+            diarized_srt_tmp = work / f"{out_stem}.diarized.srt.tmp"
         txt_tmp = work / f"{out_stem}.txt.tmp"
 
         align_and_build(
@@ -465,16 +603,15 @@ def _render_from_transcript(
             speakers=speakers,
         )
 
-        tmp_map = {
-            "diarized_srt_tmp": diarized_srt_tmp,
-            "srt_tmp": srt_tmp,
-            "txt_tmp": txt_tmp,
-        }
-        final_map = {
-            "diarized_srt": out_dir / f"{out_stem}.diarized.srt",
+        tmp_map: dict[str, Path] = {"srt_tmp": srt_tmp, "txt_tmp": txt_tmp}
+        final_map: dict[str, Path] = {
             "srt": out_dir / f"{out_stem}.srt",
             "txt": out_dir / f"{out_stem}.txt",
         }
+        if diarize:
+            assert diarized_srt_tmp is not None
+            tmp_map["diarized_srt_tmp"] = diarized_srt_tmp
+            final_map["diarized_srt"] = out_dir / f"{out_stem}.diarized.srt"
         if create_metadata_json:
             metadata_tmp = work / f"{out_stem}.metadata.json.tmp"
             metadata_tmp.write_text(
@@ -488,7 +625,7 @@ def _render_from_transcript(
         regenerated: list[str] = []
         unchanged: list[str] = []
         for key, enabled in (
-            ("diarized_srt", create_diarized_srt),
+            ("diarized_srt", diarize),
             ("srt", create_srt),
             ("txt", create_txt),
             ("metadata_json", create_metadata_json),
@@ -519,7 +656,7 @@ def _render_from_transcript(
         produced = regenerated + unchanged
 
         # Warn about speakers the custom mapping did not cover.
-        if speakers:
+        if speakers and diarize:
             _warn_unmapped_speakers(echo, results, chunk_secs, out_dir, out_stem, speakers)
 
         return TranscribeResult(
@@ -580,13 +717,13 @@ def _warn_unmapped_speakers(
 def _build_output_paths(
     out_dir: Path,
     out_base: str,
-    create_diarized_srt: bool,
+    diarize: bool,
     create_srt: bool,
     create_txt: bool,
     create_metadata_json: bool,
 ) -> list[Path | None]:
     out = []
-    if create_diarized_srt:
+    if diarize:
         out.append(out_dir / f"{out_base}.diarized.srt")
     if create_srt:
         out.append(out_dir / f"{out_base}.srt")
@@ -689,3 +826,26 @@ def _cleanup_workdir(ctx: WorkContext, keep_chunks: bool) -> None:
     if keep_chunks:
         return
     shutil.rmtree(ctx.work_dir, ignore_errors=True)
+
+
+def _format_split_plan(plan) -> str:
+    """Render the split plan for human-readable logging.
+
+    Single chunk:    "1 chunk: 3833.5s"
+    Multiple chunks: "2 chunks: 1 full (3540.0s), last chunk 293.5s"
+    Three or more:   "3 chunks: 2 full (1740.0s each), last chunk 1520.0s"
+    """
+    n = plan.num_chunks
+    sizes = list(plan.chunk_secs)
+    if n == 1:
+        return f"1 chunk: {sizes[0]:.1f}s"
+    full = sizes[:-1]
+    last = sizes[-1]
+    full_size = full[0] if full else 0.0
+    if all(abs(s - full_size) < 0.01 for s in full):
+        full_desc = f"{len(full)} full ({full_size:.1f}s each)"
+    else:
+        full_desc = (
+            f"{len(full)} front-loaded (" + ", ".join(f"{s:.1f}s" for s in full) + ")"
+        )
+    return f"{n} chunks: {full_desc}, last chunk {last:.1f}s"

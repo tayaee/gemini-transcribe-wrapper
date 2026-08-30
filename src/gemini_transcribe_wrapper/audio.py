@@ -62,35 +62,127 @@ def probe_duration_secs(media_path: Path) -> float:
 
 @dataclass(frozen=True)
 class SplitPlan:
+    """Per-chunk split for a long audio file.
+
+    ``chunk_secs`` is a list of *variable* per-chunk sizes: chunks are
+    filled front-to-back to ``max_chunk_secs`` (e.g. 59 min for no-diarize,
+    29 min for diarize), with the final chunk absorbing the remainder.
+    """
+
     num_chunks: int
-    chunk_secs: float
+    chunk_secs: tuple[float, ...]
     total_secs: float
 
+    @property
+    def offsets(self) -> tuple[float, ...]:
+        """Cumulative start time of each chunk on the global timeline."""
+        offsets: list[float] = []
+        cum = 0.0
+        for cs in self.chunk_secs:
+            offsets.append(cum)
+            cum += cs
+        return tuple(offsets)
 
-def compute_split_plan(total_secs: float, chunk_secs: float | None = None) -> SplitPlan:
+
+def compute_split_plan(
+    total_secs: float,
+    chunk_secs: float | None = None,
+    max_chunk_secs: float = 1740.0,
+) -> SplitPlan:
     """Determine chunk split for a given total duration.
 
-    When chunk_secs is provided it is used as the chunk length directly
-    (rounding to a whole number of chunks, remainder absorbed by the last
-    chunk). Otherwise the default algorithm applies: chunks are filled up to
-    29m50s (1790s) each, with only the final chunk possibly shorter. The
-    Gemini free tier caps audio at 30 min per call, so we pack each chunk to
-    the max to stay within the 25 calls/day budget.
+    The Gemini-3.5-transcribe API caps audio per call differently depending
+    on whether speaker diarization is requested:
+      - no diarization: ~60 min per call
+      - with diarization: ~30 min per call
+
+    The caller passes ``max_chunk_secs`` = (per-call limit) − (1-min safety
+    margin). The default here is 1740s (29 min, 30-min limit minus 1 min),
+    which matches the diarization case. The API wrapper picks 3540s
+    (59 min) for the no-diarize case.
+
+    Once the number of chunks is decided, the wrapper packs them front-
+    loaded: the first N-1 chunks fill to ``max_chunk_secs`` and the last
+    chunk absorbs whatever's left. This means each chunk is at its
+    maximum allowed size — fewer wasted seconds per API call, better
+    diarization quality on full-length chunks.
+
+    Examples (max=3540s, no-diarize):
+      - 3833.5s -> [3540.0, 293.5]   (1 full + short tail)
+      - 3600.0s -> [3540.0, 60.0]    (1 full + short tail)
+      - 3540.0s -> [3540.0]          (single full chunk)
+      - 1800.0s -> [1800.0]          (single chunk smaller than max)
+
+    ``chunk_secs`` is treated as a *target* chunk length when supplied. The
+    actual chunk_secs may come out smaller because the per-chunk ceiling is
+    always enforced.
     """
-    if chunk_secs is not None and chunk_secs > 0:
+    user_specified = chunk_secs is not None and chunk_secs > 0
+    if user_specified:
         num_chunks = max(1, round(total_secs / chunk_secs))
+    else:
+        if total_secs <= max_chunk_secs:
+            return SplitPlan(
+                num_chunks=1,
+                chunk_secs=(float(total_secs),),
+                total_secs=total_secs,
+            )
+        num_chunks = max(2, int(total_secs // max_chunk_secs) + 1)
+
+    # Enforce the ceiling: bump num_chunks up if the rounded value would
+    # produce a chunk larger than max_chunk_secs.
+    while total_secs / num_chunks > max_chunk_secs:
+        num_chunks += 1
+
+    return _front_load(total_secs, num_chunks, max_chunk_secs, user_specified)
+
+
+def _front_load(
+    total_secs: float,
+    num_chunks: int,
+    max_chunk_secs: float,
+    user_specified: bool,
+) -> SplitPlan:
+    """Distribute ``total_secs`` across ``num_chunks``.
+
+    Two modes:
+      - Front-loaded (default): the first N-1 chunks fill to
+        ``max_chunk_secs`` and the last chunk absorbs the remainder.
+      - Equal split (user-specified ``chunk_secs``): each chunk is
+        ``total / num_chunks`` seconds, ideal for debug clips where the
+        caller wants predictable per-chunk sizes.
+    """
+    if num_chunks <= 1:
         return SplitPlan(
-            num_chunks=num_chunks,
-            chunk_secs=total_secs / num_chunks,
+            num_chunks=1,
+            chunk_secs=(float(total_secs),),
             total_secs=total_secs,
         )
-
-    if total_secs <= 1790.0:
-        return SplitPlan(num_chunks=1, chunk_secs=total_secs, total_secs=total_secs)
-    num = 2
-    while total_secs / num > 1790.0:
-        num += 1
-    return SplitPlan(num_chunks=num, chunk_secs=1790.0, total_secs=total_secs)
+    if user_specified:
+        each = total_secs / num_chunks
+        return SplitPlan(
+            num_chunks=num_chunks,
+            chunk_secs=tuple(float(each) for _ in range(num_chunks)),
+            total_secs=total_secs,
+        )
+    full_secs = max_chunk_secs
+    remainder = total_secs - full_secs * (num_chunks - 1)
+    # If the remainder happens to fit exactly in fewer chunks, drop them.
+    while num_chunks > 1 and remainder <= 0:
+        num_chunks -= 1
+        remainder = total_secs - full_secs * (num_chunks - 1)
+    if num_chunks == 1:
+        return SplitPlan(
+            num_chunks=1,
+            chunk_secs=(float(total_secs),),
+            total_secs=total_secs,
+        )
+    sizes = [full_secs] * (num_chunks - 1) + [float(remainder)]
+    return SplitPlan(
+        num_chunks=num_chunks,
+        chunk_secs=tuple(sizes),
+        total_secs=total_secs,
+    )
 
 
 def extract_audio(input_path: Path, out_mp3: Path, force: bool = False) -> None:
@@ -117,7 +209,11 @@ def extract_audio(input_path: Path, out_mp3: Path, force: bool = False) -> None:
 
 
 def split_chunks(full_mp3: Path, chunk_dir: Path, plan: SplitPlan) -> list[Path]:
-    """Split full MP3 into N equal-duration chunks: chunk_000.mp3 ... chunk_NNN.mp3."""
+    """Split full MP3 into N variable-duration chunks: chunk_000.mp3 ... chunk_NNN.mp3.
+
+    Each chunk uses its own size from ``plan.chunk_secs`` and starts at
+    ``plan.offsets[idx]``. The last chunk absorbs the remainder.
+    """
     chunk_dir.mkdir(parents=True, exist_ok=True)
     chunks: list[Path] = []
     width = max(3, len(str(plan.num_chunks - 1)))
@@ -126,14 +222,8 @@ def split_chunks(full_mp3: Path, chunk_dir: Path, plan: SplitPlan) -> list[Path]
         if out.exists():
             chunks.append(out)
             continue
-        start = idx * plan.chunk_secs
-        # -t with -ss: give the last chunk the exact remaining duration to
-        # avoid cutting mid-stream; use segment copy is not possible for mp3
-        # so re-encode with same normalization settings for consistency.
-        if idx == plan.num_chunks - 1:
-            duration = max(0.0, plan.total_secs - start)
-        else:
-            duration = plan.chunk_secs
+        start = plan.offsets[idx]
+        duration = plan.chunk_secs[idx]
         cmd = [
             "ffmpeg",
             "-y",

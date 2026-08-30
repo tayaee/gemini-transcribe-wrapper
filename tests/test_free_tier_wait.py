@@ -193,6 +193,8 @@ def test_quota_hint_suggests_retry_after_one_minute_or_pst_midnight(monkeypatch,
     assert "wait about 1 minute" in text
     assert "PST midnight" in text
     assert "4h 20m" in text
+    # Exact seconds so the user can script a sleep.
+    assert "sleep 15600s" in text  # 4h20m = 4*3600 + 20*60 = 15600
     assert "paid tier" in text
 
 

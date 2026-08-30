@@ -61,9 +61,18 @@ def test_summary_line_embeds_pst_time_count_and_limit(cache):
         usage_counter.increment_today(cache)
     line = usage_counter.usage_summary_line(cache)
     print("summary line:", line)
-    assert line.endswith(f"{FREE_TIER_DAILY_LIMIT})")
-    assert "API calls today " in line and f": 3/{FREE_TIER_DAILY_LIMIT}" in line
+    assert line.endswith(f"(free tier limit: {FREE_TIER_DAILY_LIMIT})")
+    assert "API calls today " in line
+    assert "with key 'unset': attempted 3" in line
     assert "PST-08:00" in line
+
+    key = "AIzaSyD-1234567890abcdef"
+    for _ in range(2):
+        usage_counter.increment_today(cache, api_key=key)
+    line_key = usage_counter.usage_summary_line(cache, api_key=key)
+    # Legacy 3 calls + 2 key calls = 5 total migrated calls
+    assert "with key 'AIza****************cdef': attempted 5" in line_key
+    assert line_key.endswith(f"(free tier limit: {FREE_TIER_DAILY_LIMIT})")
 
 
 def test_pst_offset_is_fixed_utc_minus_8():

@@ -23,11 +23,14 @@ from .stt import TranscriptionResult, Word
 logger = logging.getLogger(__name__)
 
 
-def merge_cues(results: list[TranscriptionResult], chunk_secs: float) -> list[Cue]:
+def merge_cues(
+    results: list[TranscriptionResult], chunk_secs: list[float] | tuple[float, ...]
+) -> list[Cue]:
     """Merge per-chunk word cues, offsetting each chunk by its start time."""
     all_words = []
+    cum = 0.0
     for idx, res in enumerate(results):
-        offset = idx * chunk_secs
+        offset = cum
         for w in res.words:
             all_words.append(
                 w.__class__(
@@ -37,6 +40,8 @@ def merge_cues(results: list[TranscriptionResult], chunk_secs: float) -> list[Cu
                     speaker=w.speaker,
                 )
             )
+        if idx < len(chunk_secs):
+            cum += float(chunk_secs[idx])
     if not all_words:
         return []
     return group_words_to_cues(all_words)
@@ -117,11 +122,11 @@ def _apply_delta_to_srt(srt_path: Path, delta: float) -> str:
 
 def align_and_build(
     results: list[TranscriptionResult],
-    chunk_secs: float,
+    chunk_secs: list[float] | tuple[float, ...],
     full_mp3: Path,
     out_base: Path,
     srt_tmp: Path,
-    diarized_srt_tmp: Path,
+    diarized_srt_tmp: Path | None,
     txt_tmp: Path,
     line_interval_secs: float,
     paragraph_interval_secs: float,
@@ -137,7 +142,9 @@ def align_and_build(
 
     If skip_sync is True (e.g. re-rendering from a transcript without the
     source audio), the ffsubsync extra file is skipped. speakers maps raw
-    speaker ids (e.g. "spk:0") to display names.
+    speaker ids (e.g. "spk:0") to display names. ``diarized_srt_tmp`` may be
+    None when the caller is in plain (no-diarize) mode; in that case the
+    diarized SRT is skipped entirely.
     """
     cues = merge_cues(results, chunk_secs)
 
@@ -150,7 +157,8 @@ def align_and_build(
     )
 
     atomic_write(srt_tmp, srt_content)
-    atomic_write(diarized_srt_tmp, diarized_srt_content)
+    if diarized_srt_tmp is not None:
+        atomic_write(diarized_srt_tmp, diarized_srt_content)
     atomic_write(txt_tmp, txt_content)
 
     # Optionally produce an ffsubsync-aligned SRT as an extra file, leaving
@@ -198,12 +206,16 @@ def _estimate_delta(original: Path, aligned: Path) -> float:
     return sum(deltas) / len(deltas)
 
 
-def _merged_result(results: list[TranscriptionResult], chunk_secs: float = 0.0) -> TranscriptionResult:
+def _merged_result(
+    results: list[TranscriptionResult],
+    chunk_secs: list[float] | tuple[float, ...] = (),
+) -> TranscriptionResult:
     """Concatenate chunk results, offsetting word timestamps by chunk position."""
     all_words: list = []
     text_parts: list[str] = []
+    cum = 0.0
     for idx, res in enumerate(results):
-        offset = idx * chunk_secs
+        offset = cum
         text_parts.append(res.text)
         for w in res.words:
             all_words.append(
@@ -214,18 +226,24 @@ def _merged_result(results: list[TranscriptionResult], chunk_secs: float = 0.0) 
                     speaker=w.speaker,
                 )
             )
+        if idx < len(chunk_secs):
+            cum += float(chunk_secs[idx])
     return TranscriptionResult(text="".join(text_parts), words=all_words)
 
 
-def build_metadata_json(results: list[TranscriptionResult], chunk_secs: float) -> str:
+def build_metadata_json(
+    results: list[TranscriptionResult],
+    chunk_secs: list[float] | tuple[float, ...],
+) -> str:
     """Build merged .metadata.json content from chunk transcription results.
 
     Contains the full transcript text plus per-chunk word-level details with
     absolute timestamps and speaker labels.
     """
     chunks = []
+    cum = 0.0
     for idx, res in enumerate(results):
-        offset = idx * chunk_secs
+        offset = cum
         chunks.append(
             {
                 "chunk_index": idx,
@@ -241,6 +259,8 @@ def build_metadata_json(results: list[TranscriptionResult], chunk_secs: float) -
                 ],
             }
         )
+        if idx < len(chunk_secs):
+            cum += float(chunk_secs[idx])
     return json.dumps(
         {"model": "gemini-3.5-transcribe", "chunks": chunks},
         ensure_ascii=False,

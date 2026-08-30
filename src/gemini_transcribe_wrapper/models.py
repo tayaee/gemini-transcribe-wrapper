@@ -23,7 +23,18 @@ class TranscribeInput(BaseModel):
     output_dir: str | None = Field(None, description="Directory for final outputs.")
     output_base: str | None = Field(None, description="Output base name.")
     language: str = Field("ko-KR", description="BCP-47 language code.")
-    create_diarized_srt: bool = Field(True, description="Whether .diarized.srt output was requested.")
+    diarize: bool = Field(
+        False,
+        description=(
+            "Whether speaker diarization was enabled. When on, the wrapper "
+            "uses shorter chunks (29m50s) and emits .diarized.* outputs. "
+            "When off (default), it cuts the file into 59-min logical units "
+            "(each split into 2 API calls to stay under the 30-min per-call "
+            "limit) and "
+            "emits plain .transcript.json / .srt / .txt only — fewer API "
+            "calls, fits the free-tier daily budget more comfortably."
+        ),
+    )
     create_srt: bool = Field(True, description="Whether .srt output was requested.")
     create_txt: bool = Field(True, description="Whether .txt output was requested.")
     create_metadata_json: bool = Field(False, description="Whether .metadata.json output was requested.")
