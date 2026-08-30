@@ -322,5 +322,22 @@ def test_throttle_api_call_persists_across_process_cache(monkeypatch, tmp_path):
     stt.reset_api_rate_limiter()
 
 
+def test_throttle_api_call_bypasses_for_paid_tier(monkeypatch):
+    stt.reset_api_rate_limiter()
+    sleeps: list[float] = []
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+
+    stt.record_api_call_completed(api_key="fake-key-1")
+    # Even with request_interval_secs=60.0, paid tier does not sleep
+    stt._throttle_api_call(60.0, api_key="fake-key-1", tier="paid")
+    assert sleeps == []
+
+    # Free tier sleeps
+    stt._throttle_api_call(60.0, api_key="fake-key-1", tier="free")
+    assert len(sleeps) == 1
+
+    stt.reset_api_rate_limiter()
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

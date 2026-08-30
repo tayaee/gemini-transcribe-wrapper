@@ -59,9 +59,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--transcript-json", action=argparse.BooleanOptionalAction, default=True, help="Keep <base>.transcript.json for later re-render (default: on)")
     parser.add_argument("--ffsubsync-srt", action="store_true", help="Also write <base>.ffsubsync.srt aligned to audio (default: off)")
     parser.add_argument("--force", action="store_true", help="Re-process even if outputs exist")
+    parser.add_argument("--tier", choices=["free", "paid"], default="free", help="Gemini API pricing tier (default: free). When 'free', enforces 60s cooldown between API calls; when 'paid', rate limiting is disabled unless overridden by --request-interval-secs.")
     parser.add_argument("--line-interval-secs", type=float, default=1.0, help="TXT newline break threshold (default: 1.0)")
     parser.add_argument("--paragraph-interval-secs", type=float, default=2.5, help="TXT paragraph break threshold (default: 2.5)")
-    parser.add_argument("--request-interval-secs", type=float, default=60.0, help="Delay between API calls (default: 60.0)")
+    parser.add_argument("--request-interval-secs", type=float, default=None, help="Delay between API calls (default: 60.0 for free tier, 0.0 for paid tier)")
     parser.add_argument("--chunk-secs", type=float, default=None, help="Fixed chunk length in seconds (default: auto, 59-min logical units when --no-diarize, 29-min when --diarize; hard ceiling of 29 min enforced to fit the Gemini 30-min per-call limit)")
     parser.add_argument("--speakers", default=None, help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=궤도;spk:1=가람;'")
     parser.add_argument("--custom-vocabulary", default=None, help="Custom vocabulary / bias phrases (comma/semicolon separated or text file path)")
@@ -167,6 +168,7 @@ def main(argv: list[str] | None = None) -> int:
                 gemini_api_key=args.gemini_api_key,
                 language=args.language,
                 diarize=args.diarize,
+                tier=args.tier,
                 create_srt=args.srt,
                 create_txt=args.txt,
                 create_metadata_json=args.metadata_json,

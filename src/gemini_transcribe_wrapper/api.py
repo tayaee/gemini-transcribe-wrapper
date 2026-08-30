@@ -145,6 +145,7 @@ def gemini_transcribe(
     gemini_api_key: str | None = None,
     language: str = "ko-KR",
     diarize: bool = False,
+    tier: str = "free",
     create_srt: bool = True,
     create_txt: bool = True,
     create_metadata_json: bool = False,
@@ -152,7 +153,7 @@ def gemini_transcribe(
     force: bool = False,
     line_interval_secs: float = 1.0,
     paragraph_interval_secs: float = 2.5,
-    request_interval_secs: float = 60.0,
+    request_interval_secs: float | None = None,
     chunk_secs: float | None = None,
     speakers: dict[str, str] | None = None,
     temp_dir: str | None = "temp",
@@ -177,6 +178,9 @@ def gemini_transcribe(
             split into 2 API calls to stay under the 30-min per-call limit),
             better suited to the free-tier daily quota. ``--speakers`` is
             ignored when this is False.
+        tier: Gemini API pricing tier ("free" or "paid", default: "free").
+            When "free", enforces 60s cooldown between API calls.
+            When "paid", cooldown is 0s unless overridden by ``request_interval_secs``.
         create_srt/create_txt: Whether to generate each output format
             (.srt, .txt). ``.diarized.srt`` is produced automatically when
             ``diarize`` is True.
@@ -190,7 +194,8 @@ def gemini_transcribe(
             filename picks up a ``.diarized.`` prefix when ``diarize`` is on.
         force: Re-process even if all outputs already exist.
         line_interval_secs / paragraph_interval_secs: TXT break gaps.
-        request_interval_secs: Delay between STT API calls.
+        request_interval_secs: Delay between STT API calls. Defaults to 60.0s for
+            "free" tier, 0.0s for "paid" tier.
         chunk_secs: Optional fixed chunk length in seconds. Overrides the
             default for the chosen ``diarize`` mode (59 min off, 29 min on).
             A hard ceiling of 29 min (1740s) is always enforced because the
@@ -218,6 +223,11 @@ def gemini_transcribe(
         QuotaExceededError: When a Gemini API call fails with HTTP 429 / quota
             exhaustion. Aborts the batch immediately instead of continuing.
     """
+    effective_interval = (
+        (0.0 if tier == "paid" else 60.0)
+        if request_interval_secs is None
+        else float(request_interval_secs)
+    )
     inputs = _expand_path(input_file)
     results = []
     for path in inputs:
@@ -229,6 +239,7 @@ def gemini_transcribe(
                 gemini_api_key=gemini_api_key,
                 language=language,
                 diarize=diarize,
+                tier=tier,
                 create_srt=create_srt,
                 create_txt=create_txt,
                 create_metadata_json=create_metadata_json,
@@ -236,7 +247,7 @@ def gemini_transcribe(
                 force=force,
                 line_interval_secs=line_interval_secs,
                 paragraph_interval_secs=paragraph_interval_secs,
-                request_interval_secs=request_interval_secs,
+                request_interval_secs=effective_interval,
                 chunk_secs=chunk_secs,
                 speakers=speakers,
                 temp_dir=temp_dir,
@@ -254,6 +265,7 @@ def _process_one(
     gemini_api_key: str | None,
     language: str,
     diarize: bool,
+    tier: str,
     create_srt: bool,
     create_txt: bool,
     create_metadata_json: bool,
@@ -280,6 +292,7 @@ def _process_one(
         output_base=out_stem.name,
         language=language,
         diarize=diarize,
+        tier=tier,
         create_srt=create_srt,
         create_txt=create_txt,
         create_metadata_json=create_metadata_json,
@@ -408,6 +421,7 @@ def _process_one(
             language=language,
             enable_diarization=diarize,
             request_interval_secs=request_interval_secs,
+            tier=tier,
             custom_vocabulary=custom_vocabulary,
             source_file=str(input_file.resolve()),
         )

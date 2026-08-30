@@ -294,9 +294,13 @@ def _get_last_completion_elapsed(api_key: str | None = None) -> float | None:
     return None
 
 
-def _throttle_api_call(request_interval_secs: float, api_key: str | None = None) -> None:
-    """Enforce minimum cooldown (e.g. 60s) after the previous STT API call completed."""
-    if request_interval_secs <= 0:
+def _throttle_api_call(
+    request_interval_secs: float,
+    api_key: str | None = None,
+    tier: str = "free",
+) -> None:
+    """Enforce minimum cooldown (e.g. 60s for free tier) after the previous STT API call completed."""
+    if request_interval_secs <= 0 or tier == "paid":
         return
     elapsed = _get_last_completion_elapsed(api_key)
     if elapsed is not None and elapsed < request_interval_secs:
@@ -317,6 +321,7 @@ class TranscribeClient:
         language: str = "ko-KR",
         enable_diarization: bool = True,
         request_interval_secs: float = 60.0,
+        tier: str = "free",
         custom_vocabulary: list[str] | None = None,
         source_file: str | Path | None = None,
     ) -> None:
@@ -337,6 +342,7 @@ class TranscribeClient:
         self.language = language
         self.enable_diarization = enable_diarization
         self.request_interval_secs = request_interval_secs
+        self.tier = tier
         self.custom_vocabulary = list(custom_vocabulary) if custom_vocabulary else None
         self.source_file = str(Path(source_file).resolve()) if source_file else None
         self.api_logs: list[dict[str, Any]] = []
@@ -385,6 +391,7 @@ class TranscribeClient:
         _throttle_api_call(
             getattr(self, "request_interval_secs", 60.0),
             api_key=getattr(self, "api_key", None),
+            tier=getattr(self, "tier", "free"),
         )
 
         if source_file is not None:
