@@ -2,9 +2,22 @@
 # Regression tests: verify the version command works on Python 3.10-3.13 via
 # Docker. For each combo, print only PASS/FAIL; show captured output on error.
 # Set PACKAGE_SPEC to override the package source (default: PyPI name).
+#
+# If Docker is not installed or the daemon is not reachable, the script
+# prints a notice and exits 0 (skip) — regression tests are optional and
+# must not break local verify runs on machines without Docker.
 set -e
 
 cd "$(dirname "$0")/.."
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker not installed; skipping regression tests."
+    exit 0
+fi
+if ! docker info >/dev/null 2>&1; then
+    echo "Docker daemon not reachable; skipping regression tests."
+    exit 0
+fi
 
 PACKAGE_SPEC="${PACKAGE_SPEC:-gemini-transcribe-wrapper}"
 MOUNT=()

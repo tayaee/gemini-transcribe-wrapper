@@ -65,6 +65,18 @@ def _load(path: Path) -> dict[str, int]:
     return {str(k): int(v) for k, v in data.items() if isinstance(v, (int, float))}
 
 
+def _legacy_count_today(cache: Path | None = None) -> int:
+    """Today's count from the legacy unscoped ``usage.json``.
+
+    Used as a fallback so users who ran an older version (which always
+    wrote to ``usage.json`` when no key was passed) still see their real
+    daily call count under the per-key display. Returns 0 when the legacy
+    file is missing.
+    """
+    path = (cache or cache_dir()) / USAGE_FILE
+    return _load(path).get(pst_date(), 0)
+
+
 def _save(path: Path, data: dict[str, int]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -87,15 +99,27 @@ def _usage_file(cache: Path | None = None, api_key: str | None = None) -> Path:
 
 
 def count_today(cache: Path | None = None, api_key: str | None = None) -> int:
-    """API calls made so far today (PST) for ``api_key``. 0 when no counter file exists yet."""
-    return _load(_usage_file(cache, api_key)).get(pst_date(), 0)
+    """API calls made so far today (PST) for ``api_key``. 0 when no counter file exists yet.
+
+    When a per-key file is used and today's entry is missing, the legacy
+    unscoped ``usage.json`` count is shown — :func:`increment_today` migrates
+    it into the per-key file on the first call after upgrade, so the two
+    never double-count.
+    """
+    key_count = _load(_usage_file(cache, api_key)).get(pst_date(), 0)
+    if key_count > 0 or not api_key:
+        return key_count
+    return _legacy_count_today(cache)
 
 
 def increment_today(cache: Path | None = None, api_key: str | None = None) -> int:
     """Increment today's (PST) API call count for ``api_key`` and return the new count.
 
-    Best-effort: a counter write failure must never break transcription, so
-    it is logged and swallowed (the count returned may then be stale).
+    On the first per-key call after an upgrade, fold the legacy unscoped
+    ``usage.json`` count into the per-key file so users who ran the older
+    version still see their real daily tally. Best-effort: a counter write
+    failure must never break transcription, so it is logged and swallowed
+    (the count returned may then be stale).
     """
     path = _usage_file(cache, api_key)
     try:
@@ -103,8 +127,27 @@ def increment_today(cache: Path | None = None, api_key: str | None = None) -> in
         with lock:
             data = _load(path)
             day = pst_date()
-            data[day] = data.get(day, 0) + 1
+            # One-time legacy migration: when the per-key file has no entry
+            # for today yet, carry over the unscoped legacy count so the
+            # user's pre-upgrade calls aren't silently lost.
+            legacy = (
+                _load((cache or cache_dir()) / USAGE_FILE).get(day, 0)
+                if api_key
+                else 0
+            )
+            base = max(data.get(day, 0), legacy)
+            data[day] = base + 1
             _save(path, data)
+            # Clear the migrated legacy entry so subsequent increments
+            # don't double-count it.
+            if legacy and api_key:
+                legacy_path = (cache or cache_dir()) / USAGE_FILE
+                legacy_data = _load(legacy_path)
+                legacy_data.pop(day, None)
+                if legacy_data:
+                    _save(legacy_path, legacy_data)
+                else:
+                    legacy_path.unlink(missing_ok=True)
         return data[day]
     except Exception:  # counter must never break transcription
         logger.exception("Failed to update usage counter at %s", path)

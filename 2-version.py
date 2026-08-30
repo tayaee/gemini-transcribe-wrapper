@@ -1,21 +1,32 @@
-#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.10"
+# ///
 """Display or bump the ``version`` field in pyproject.toml.
 
 The bump is gated by the current release state so that running
 ``bump`` repeatedly with no intervening code change is a no-op:
 
   bump fires only when local version == max(latest git tag, latest
-  PyPI release) AND there are commits since the latest git tag.
+  PyPI release) AND there are commits since the last released version.
+
+The "since" reference prefers the matching git tag, but falls back to
+the commit that introduced the last released version in pyproject.toml
+when no tag exists (e.g. the user published to PyPI before tagging on
+GitHub). This keeps the displayed commit count accurate regardless of
+whether tagging was done.
 
 In every other state the script prints an informative hint instead of
 bumping. This makes the script safe to chain into release automation
 ("just call bump, and the version will advance iff there's a release
 to ship").
 
-Usage:
-    2-version.py                 # print the current version
-    2-version.py bump [level]    # bump if pending changes exist
-                                 # (level: major|minor|patch, default: patch)
+Usage (via uv so PEP 723 metadata is honored):
+    uv run 2-version.py                 # print the current version
+    uv run 2-version.py bump [level]    # bump if pending changes exist
+                                        # (level: major|minor|patch, default: patch)
+
+The companion ``2-version.sh`` / ``2-version.bat`` wrappers invoke
+``uv run`` so users can just run ``./2-version.sh [bump [level]]``.
 """
 
 import json
@@ -88,6 +99,52 @@ def get_latest_tag():
         if SEMVER_RE.match(version):
             return version
     return None
+
+
+def find_version_introducing_commit(version):
+    """Return the oldest commit that introduced ``version`` in pyproject.toml.
+
+    Used as the "since" reference for counting pending commits when the
+    user has been publishing without creating a git tag. Always returns the
+    oldest matching commit (i.e. where ``version`` first appeared, not
+    subsequent edits). Returns None if no matching commit is found in
+    history.
+    """
+    result = subprocess.run(
+        [
+            "git",
+            "log",
+            "--all",
+            "--format=%H",
+            "-S",
+            f'version = "{version}"',
+            "--",
+            "pyproject.toml",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=PYPROJECT.parent,
+    )
+    commits = [c for c in result.stdout.splitlines() if c]
+    return commits[-1] if commits else None  # oldest match is the introducer
+
+
+def _release_ref(version, latest_tag):
+    """Pick the best git ref to count commits since for ``version``.
+
+    Prefer the tag (clean canonical ref). Fall back to the commit that
+    introduced ``version`` in pyproject.toml when no tag exists — this is
+    the normal state right after a manual bump that was published to PyPI
+    before being pushed to GitHub. Returns ``(ref_string, ref_kind)`` or
+    ``(None, None)`` when neither is found.
+    """
+    if latest_tag == version:
+        return f"{TAG_PREFIX}{version}", "tag"
+    commit = find_version_introducing_commit(version)
+    if commit:
+        return commit, "introducer-commit"
+    return None, None
 
 
 def count_commits_since(ref):
@@ -165,18 +222,23 @@ def decide_bump(local_version, latest_tag, latest_pypi):
         )
 
     # local == last_released.
-    if latest_tag is None:
+    ref, ref_kind = _release_ref(last_released, latest_tag)
+    if ref is None:
         return False, (
-            f"Local version {local_version} matches PyPI but no GitHub tag "
-            f"exists.\nCreate the tag first: "
+            f"Local version {local_version} matches the last released "
+            f"version but no reference commit could be located.\n"
+            f"Tag the current HEAD first: "
             f"git tag {TAG_PREFIX}{local_version} && git push origin --tags"
         )
 
-    commits = count_commits_since(f"{TAG_PREFIX}{latest_tag}")
+    ref_label = f"{TAG_PREFIX}{last_released}"
+    if ref_kind == "introducer-commit":
+        ref_label = f"{ref_label} (commit {ref[:7]})"
+
+    commits = count_commits_since(ref)
     if commits == 0:
         msg = (
-            f"No new commits since {TAG_PREFIX}{latest_tag}; nothing to "
-            f"release."
+            f"No new commits since {ref_label}; nothing to release."
         )
         if latest_pypi and compare_versions(local_version, latest_pypi) < 0:
             msg += (
@@ -185,7 +247,7 @@ def decide_bump(local_version, latest_tag, latest_pypi):
             )
         return False, msg
 
-    return True, f"{commits} new commit(s) since {TAG_PREFIX}{latest_tag}"
+    return True, f"{commits} new commit(s) since {ref_label}"
 
 
 def apply_bump(level):

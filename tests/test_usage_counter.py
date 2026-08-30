@@ -166,17 +166,59 @@ def test_no_key_falls_back_to_legacy_usage_json(cache):
     assert legacy.exists()
 
 
-def test_per_key_files_coexist_with_legacy(cache):
-    """Legacy usage.json and per-key files must not collide."""
-    usage_counter.increment_today(cache)  # legacy
-    usage_counter.increment_today(cache, api_key="key-A")
-    usage_counter.increment_today(cache, api_key="key-A")
-    assert usage_counter.count_today(cache) == 1
-    assert usage_counter.count_today(cache, api_key="key-A") == 2
-    # The legacy file holds 1 (date-only, no key).
+def test_legacy_count_migrates_to_per_key_on_first_call(cache):
+    """The first per-key call after upgrade folds legacy count into per-key.
+
+    Before the bug fix, an env-var-only setup tallied into the unscoped
+    legacy file; users running the old code want their existing daily
+    count carried over so the per-key display reflects reality.
+    """
     legacy = cache / usage_counter.USAGE_FILE
+    legacy.write_text(
+        json.dumps({usage_counter.pst_date(): 9}), encoding="utf-8"
+    )
+    # Before any per-key write, the display falls back to legacy so the
+    # user already sees 9/25 in `gtw -v`.
+    assert usage_counter.count_today(cache, api_key="key-A") == 9
+    # First per-key call: migrate 9 → per-key becomes 9 + 1 = 10, legacy cleared.
+    n = usage_counter.increment_today(cache, api_key="key-A")
+    assert n == 10
+    assert usage_counter.count_today(cache, api_key="key-A") == 10
+    assert usage_counter.count_today(cache, api_key="key-B") == 0
+    # Legacy entry for today is gone.
+    data = json.loads(legacy.read_text(encoding="utf-8")) if legacy.exists() else {}
+    assert usage_counter.pst_date() not in data
+    # Subsequent per-key calls just keep incrementing from 10 — no double count.
+    n = usage_counter.increment_today(cache, api_key="key-A")
+    assert n == 11
+    assert usage_counter.count_today(cache, api_key="key-A") == 11
+
+
+def test_per_key_files_coexist_with_legacy(cache):
+    """Legacy usage.json and per-key files must not collide on independent use.
+
+    Two independent counters per PST day:
+    - ``usage.json`` (legacy, unscoped) is for callers that pass ``api_key=None``.
+    - ``usage-<hash>.json`` (per-key) is for callers that pass an explicit key.
+
+    The first per-key call on a fresh cache does NOT migrate the legacy
+    count when the legacy entry came from a legitimate no-key call on the
+    same day — it just increments from zero. (The real one-time migration
+    is exercised by :func:`test_legacy_count_migrates_to_per_key_on_first_call`.)
+    """
+    # Bump legacy past midnight / to a different date so the per-key call
+    # does NOT see "today" in the legacy file and won't migrate it.
+    other_day = "1999-01-01"
+    legacy = cache / usage_counter.USAGE_FILE
+    legacy.write_text(json.dumps({other_day: 5}), encoding="utf-8")
+
+    usage_counter.increment_today(cache, api_key="key-A")
+    usage_counter.increment_today(cache, api_key="key-A")
+    assert usage_counter.count_today(cache, api_key="key-A") == 2
+    # Legacy entry for the OTHER day is untouched; today's entry was never created.
     data = json.loads(legacy.read_text(encoding="utf-8"))
-    assert data[usage_counter.pst_date()] == 1
+    assert data.get(other_day) == 5
+    assert usage_counter.pst_date() not in data
 
 
 def test_key_hash_is_non_reversible(cache):

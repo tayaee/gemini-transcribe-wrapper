@@ -160,8 +160,20 @@ class TranscribeClient:
         max_retries: int = 5,
         free_tier_wait_on_429: bool = False,
     ) -> None:
-        self.api_key = api_key
-        self.client = genai.Client(api_key=api_key) if api_key else genai.Client()
+        # Resolve the effective key from env vars early so the daily usage
+        # counter (incremented per API call) and the genai.Client use the
+        # same key. Without this, an env-var-only setup would tally API
+        # calls under the unscoped usage.json while ``gtw -v`` reports 0/25
+        # because the summary line reads the per-key usage-<hash>.json.
+        resolved = (
+            api_key
+            or os.environ.get("GEMINI_API_KEY")
+            or os.environ.get("GOOGLE_API_KEY")
+        )
+        self.api_key = resolved
+        self.client = (
+            genai.Client(api_key=resolved) if resolved else genai.Client()
+        )
         self.language = language
         self.enable_diarization = enable_diarization
         self.max_retries = max_retries

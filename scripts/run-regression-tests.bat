@@ -2,9 +2,24 @@
 rem Regression tests: verify the version command works on Python 3.10-3.13 via Docker.
 rem For each combo, print only PASS/FAIL; show captured output on error.
 rem Safe to invoke from any cwd.
+rem
+rem If Docker is not installed or the daemon is not reachable, the script
+rem prints a notice and exits 0 (skip) — regression tests are optional and
+rem must not break local verify runs on machines without Docker.
 setlocal
 
 cd /d "%~dp0.."
+
+where docker >nul 2>&1
+if errorlevel 1 (
+    echo Docker not installed; skipping regression tests.
+    exit /b 0
+)
+docker info >nul 2>&1
+if errorlevel 1 (
+    echo Docker daemon not reachable; skipping regression tests.
+    exit /b 0
+)
 
 set PACKAGE_SPEC=gemini-transcribe-wrapper
 set FAILED=0
