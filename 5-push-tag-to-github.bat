@@ -45,8 +45,8 @@ echo DEBUG: GitHub auth OK.
 echo + git add pyproject.toml
 git add pyproject.toml
 
-echo + call 3-build.bat
-call "%~dp03-build.bat"
+echo + call scripts\3-build.bat
+call "%~dp0scripts\3-build.bat"
 if errorlevel 1 (
     echo Error: Build failed.
     exit /b 1

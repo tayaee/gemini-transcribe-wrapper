@@ -4,6 +4,7 @@
 # so that uv.lock stays consistent before `git add` / `git commit`.
 
 set -e
+cd "$(dirname "$0")/.."
 
 if [ ! -f pyproject.toml ]; then
     echo "Error: pyproject.toml not found. Run from the repo root."

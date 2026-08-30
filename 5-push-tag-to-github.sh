@@ -26,8 +26,8 @@ echo "DEBUG: GitHub auth OK ($(gh api user -q .login 2>/dev/null || echo unknown
 echo + git add pyproject.toml
 git add pyproject.toml
 
-echo + ./3-build.sh
-./3-build.sh
+echo + ./scripts/3-build.sh
+./scripts/3-build.sh
 
 echo + git add uv.lock
 git add uv.lock

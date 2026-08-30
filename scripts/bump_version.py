@@ -195,7 +195,7 @@ def decide_bump(local_version, latest_tag, latest_pypi):
             "For the first release:\n"
             "  1. Edit pyproject.toml directly to set the initial version.\n"
             f"  2. git tag {TAG_PREFIX}<version> && git push origin --tags\n"
-            "  3. uv -q publish    (or use 6-publish-to-pypi.sh after tagging)\n"
+            "  3. GitHub Actions publishes to PyPI automatically upon tag push\n"
             "Subsequent bumps will be automatic."
         )
 
@@ -214,7 +214,7 @@ def decide_bump(local_version, latest_tag, latest_pypi):
                 f"run 5-push-tag-to-github.sh to push {TAG_PREFIX}{local_version}"
             )
         if latest_pypi and compare_versions(local_version, latest_pypi) > 0:
-            hints.append(f"run 6-publish-to-pypi.sh to publish {local_version}")
+            hints.append(f"run ./release.sh (or scripts/6-publish-to-pypi.sh) to publish {local_version}")
         hint = (" " + " and ".join(hints) + ".") if hints else ""
         return False, (
             f"Local version {local_version} is already ahead of last release "
@@ -242,7 +242,7 @@ def decide_bump(local_version, latest_tag, latest_pypi):
         )
         if latest_pypi and compare_versions(local_version, latest_pypi) < 0:
             msg += (
-                f" PyPI is at {latest_pypi} — run 6-publish-to-pypi.sh to "
+                f" PyPI is at {latest_pypi} — run ./release.sh (or scripts/6-publish-to-pypi.sh) to "
                 f"publish {local_version}."
             )
         return False, msg
@@ -266,6 +266,11 @@ def apply_bump(level):
     new_text = text[: match.start(1)] + new_version + text[match.end(1):]
     PYPROJECT.write_text(new_text, encoding="utf-8")
     print(f"{current} -> {new_version}  ({reason})")
+    try:
+        print("+ uv -q lock")
+        subprocess.run(["uv", "-q", "lock"], check=True, cwd=PYPROJECT.parent)
+    except (subprocess.SubprocessError, OSError) as e:
+        print(f"Notice: could not sync uv.lock: {e}")
     return True
 
 
