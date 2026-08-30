@@ -56,6 +56,8 @@ def _extract_words(interaction: Any) -> list[Word]:
     1. word_info annotations on text content (current GAOS SDK)
     2. a `transcription` object with .words (WordInfo: word/start_offset/end_offset)
     """
+    from .format import _sanitize_word
+
     words: list[Word] = []
     for step in getattr(interaction, "steps", None) or []:
         if getattr(step, "type", None) != "model_output":
@@ -66,23 +68,27 @@ def _extract_words(interaction: Any) -> list[Word]:
             for annotation in getattr(content, "annotations", None) or []:
                 if getattr(annotation, "type", None) == "word_info":
                     words.append(
-                        Word(
-                            text=getattr(annotation, "text", "") or "",
-                            start=_parse_offset(getattr(annotation, "start_offset", None)),
-                            end=_parse_offset(getattr(annotation, "end_offset", None)),
-                            speaker=getattr(annotation, "speaker", None),
+                        _sanitize_word(
+                            Word(
+                                text=getattr(annotation, "text", "") or "",
+                                start=_parse_offset(getattr(annotation, "start_offset", None)),
+                                end=_parse_offset(getattr(annotation, "end_offset", None)),
+                                speaker=getattr(annotation, "speaker", None),
+                            )
                         )
                     )
             transcription = getattr(content, "transcription", None)
             if transcription is not None and not words:
                 for w in getattr(transcription, "words", None) or []:
                     words.append(
-                        Word(
-                            text=getattr(w, "word", "") or getattr(w, "text", "") or "",
-                            start=_parse_offset(getattr(w, "start_offset", None)),
-                            end=_parse_offset(getattr(w, "end_offset", None)),
-                            speaker=getattr(w, "speaker", None)
-                            or getattr(transcription, "speaker_label", None),
+                        _sanitize_word(
+                            Word(
+                                text=getattr(w, "word", "") or getattr(w, "text", "") or "",
+                                start=_parse_offset(getattr(w, "start_offset", None)),
+                                end=_parse_offset(getattr(w, "end_offset", None)),
+                                speaker=getattr(w, "speaker", None)
+                                or getattr(transcription, "speaker_label", None),
+                            )
                         )
                     )
     return words

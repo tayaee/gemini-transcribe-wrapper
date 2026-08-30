@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 MAX_CHARS_PER_LINE = 30
 MAX_LINES_PER_CUE = 2
+MAX_WORDS_PER_CUE = 12
 TXT_WRAP_WIDTH = 40
 
 
@@ -36,22 +37,63 @@ class Cue:
     speaker: str | None = None
 
 
+MAX_WORD_DURATION_SECS = 5.0
+
+
+def _sanitize_word(w: Word) -> Word:
+    """Repair obviously-broken word timestamps before downstream logic.
+
+    Gemini's word_info annotations sometimes come back with ``start`` and
+    ``end`` swapped (start > end) for a single word in a stream of otherwise
+    normal words. Left as-is, that one bad word produces a phantom multi-
+    hundred-second gap that splits the cue stream in two, then collapses the
+    rest of the words into one giant cue that gets truncated to a few lines.
+    Mirror the swap when the fields look reversed, and clamp any single-word
+    duration above :data:`MAX_WORD_DURATION_SECS` so a stray "speaker turn end"
+    cannot stretch one cue across the whole file.
+    """
+    start, end = w.start, w.end
+    if start > end:
+        start, end = end, start
+    if end - start > MAX_WORD_DURATION_SECS:
+        end = start
+    return Word(text=w.text, start=start, end=end, speaker=w.speaker)
+
+
 def group_words_to_cues(words: list[Word], max_gap: float = 1.5) -> list[Cue]:
-    """Group words into cues, breaking at pauses > max_gap."""
+    """Group words into cues, breaking at pauses > max_gap or speaker change.
+
+    Each cue is then split into chunks of at most :data:`MAX_WORDS_PER_CUE`
+    words so a run of continuous speech (no pauses) still produces many
+    short subtitles instead of one giant cue whose text gets truncated to
+    two lines by ``format_srt``.
+    """
     cues: list[Cue] = []
     if not words:
         return cues
-    cur_words = [words[0]]
-    for w in words[1:]:
-        gap = w.start - cur_words[-1].end
-        if gap > max_gap or w.speaker != cur_words[-1].speaker:
-            cues.append(_words_to_cue(cur_words))
-            cur_words = [w]
+    clean = [_sanitize_word(w) for w in words]
+    groups: list[list[Word]] = [[clean[0]]]
+    for w in clean[1:]:
+        gap = w.start - groups[-1][-1].end
+        if gap > max_gap or w.speaker != groups[-1][-1].speaker:
+            groups.append([w])
         else:
-            cur_words.append(w)
-    if cur_words:
-        cues.append(_words_to_cue(cur_words))
+            groups[-1].append(w)
+    for group in groups:
+        cues.extend(_split_words_into_cues(group))
     return cues
+
+
+def _split_words_into_cues(words: list[Word]) -> list[Cue]:
+    """Split a word group into Cues of at most MAX_WORDS_PER_CUE words each."""
+    if not words:
+        return []
+    if len(words) <= MAX_WORDS_PER_CUE:
+        return [_words_to_cue(words)]
+    return [
+        _words_to_cue(words[i : i + MAX_WORDS_PER_CUE])
+        for i in range(0, len(words), MAX_WORDS_PER_CUE)
+    ]
 
 
 def _words_to_cue(words: list[Word]) -> Cue:
