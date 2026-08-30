@@ -37,25 +37,28 @@ if not "%~1" == "" if not "%~1" == "%VERSION%" (
 
 echo Fetching latest version from PyPI...
 set REMOTE=
-curl -fsSL "https://pypi.org/pypi/%PKG_NAME%/json" -o "%TEMP%\pypi-meta.json" >nul 2>&1
-if not errorlevel 1 (
-    for /F "usebackq tokens=2 delims==" %%V in (`findstr /C:"\"version\"" "%TEMP%\pypi-meta.json"`) do (
-        set "VAL=%%V"
-        setlocal enabledelayedexpansion
-        set "VAL=!VAL:"=!"
-        set "VAL=!VAL:,=!"
-        for /F "tokens=1" %%W in ("!VAL!") do endlocal & set REMOTE=%%W
-    )
-    del "%TEMP%\pypi-meta.json" >nul 2>&1
-)
-if "%REMOTE%" == "" (
-    echo DEBUG: No prior release on PyPI ^^(this will be the first publish^^).
-) else if "%REMOTE%" == "%VERSION%" (
-    echo Notice: PyPI already has %VERSION%. Skipping publish.
-    exit /b 0
-) else (
-    echo DEBUG: PyPI latest is %REMOTE%, local is %VERSION%. OK to publish.
-)
+REM %TEMP% often ends with a trailing space on Windows, which breaks
+REM redirects to "%TEMP%\...". Use a sibling of this script (no spaces
+REM in its path) for the Python helper, and capture its stdout via a
+REM file read to avoid for-loop parens-parsing surprises.
+set "VER_OUT=%~dp0gtw-pypi-ver.txt"
+python "%~dp0scripts\get-pypi-version.py" "%PKG_NAME%" > "%VER_OUT%" 2>nul
+if not errorlevel 1 set /p REMOTE=<"%VER_OUT%"
+del "%VER_OUT%" >nul 2>&1
+if "%REMOTE%" == "" goto :no_prior_release
+if "%REMOTE%" == "%VERSION%" goto :already_published
+echo DEBUG: PyPI latest is %REMOTE%, local is %VERSION%. OK to publish.
+goto :after_version_check
+
+:no_prior_release
+echo DEBUG: No prior release on PyPI ^^(this will be the first publish^^).
+goto :after_version_check
+
+:already_published
+echo Notice: PyPI already has %VERSION%. Skipping publish.
+exit /b 0
+
+:after_version_check
 
 if "%UV_PUBLISH_TOKEN%" == "" (
     echo UV_PUBLISH_TOKEN not set, exit.
@@ -71,7 +74,7 @@ if errorlevel 1 (
 echo DEBUG: GitHub auth OK.
 
 echo + call 3-build.bat
-call 3-build.bat
+call "%~dp03-build.bat"
 if errorlevel 1 (
     echo Error: Build failed.
     exit /b 1
