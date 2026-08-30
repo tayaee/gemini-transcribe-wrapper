@@ -34,13 +34,6 @@ class TranscribeInput(BaseModel):
     line_interval_secs: float = Field(1.0, description="TXT newline break gap (s).")
     paragraph_interval_secs: float = Field(2.5, description="TXT paragraph break gap (s).")
     request_interval_secs: float = Field(30.0, description="Delay between API calls (s).")
-    free_tier_wait_on_429: bool = Field(
-        False,
-        description=(
-            "Sleep until PST midnight on 429 or when 25 free-tier calls are reached. "
-            "Intended for unattended multi-day batch runs."
-        ),
-    )
 
 
 class TranscribeOutput(BaseModel):

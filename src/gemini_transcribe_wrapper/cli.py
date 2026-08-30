@@ -62,7 +62,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--line-interval-secs", type=float, default=1.0, help="TXT newline break threshold (default: 1.0)")
     parser.add_argument("--paragraph-interval-secs", type=float, default=2.5, help="TXT paragraph break threshold (default: 2.5)")
     parser.add_argument("--request-interval-secs", type=float, default=30.0, help="Delay between API calls (default: 30.0)")
-    parser.add_argument("--free-tier-wait-on-429", action="store_true", help="On 429 or when 25 free-tier calls/day (PST) are reached, sleep until PST midnight in 1-hour chunks (logging remaining time) and resume. For unattended multi-day batches on the free tier.")
     parser.add_argument("--chunk-secs", type=float, default=None, help="Fixed chunk length in seconds (default: auto, pack 29m50s chunks)")
     parser.add_argument("--speakers", default=None, help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=궤도;spk:1=가람;'")
     parser.add_argument("--temp-dir", default=None, help="Directory for intermediate temp files (default: alongside output)")
@@ -162,7 +161,6 @@ def main(argv: list[str] | None = None) -> int:
                 speakers=speakers,
                 temp_dir=args.temp_dir,
                 ffsubsync_srt=args.ffsubsync_srt,
-                free_tier_wait_on_429=args.free_tier_wait_on_429,
             )
             produced_all.extend(batch.output_files())
             if any(r.status == TranscribeStatus.FAILED for r in batch.results):

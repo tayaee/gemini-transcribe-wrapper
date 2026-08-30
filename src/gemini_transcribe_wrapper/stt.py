@@ -122,17 +122,37 @@ def _log_quota_hint(exc: Exception) -> None:
     message = str(exc).lower()
     if "free_tier" in message or "daily" in message:
         logger.error(
-            "It looks like you hit the free tier daily quota (25 calls/day).\n"
-            "  - Free tier: try again tomorrow, or\n"
-            "  - Switch to a paid tier (enable billing) to keep going now."
+            "It looks like you hit the free tier daily quota (25 calls/day)."
         )
     else:
         logger.error(
-            "It looks like you hit a short-term rate limit.\n"
-            "  - Free tier: wait a bit and retry, or\n"
-            "  - Switch to a paid tier (enable billing) for higher limits."
+            "It looks like you hit a short-term rate limit."
         )
     logger.error(_QUOTA_HINT)
+    # Retry suggestions. We do NOT retry automatically — the user decides.
+    # Short-term 429: Gemini usually suggests waiting ~1 minute. Daily quota:
+    # wait until PST midnight for the counter to reset.
+    from .usage_counter import seconds_until_pst_midnight
+
+    seconds_left = seconds_until_pst_midnight()
+    if seconds_left <= 60:
+        logger.error(
+            "To retry: wait about 1 minute, then re-run. "
+            "PST midnight is less than a minute away, so quota resets soon."
+        )
+    else:
+        hours = int(seconds_left // 3600)
+        minutes = int((seconds_left % 3600) // 60)
+        logger.error(
+            "To retry: wait about 1 minute for a short-term 429, "
+            "or wait %dh %dm until PST midnight for the daily quota to reset, "
+            "then re-run.",
+            hours,
+            minutes,
+        )
+    logger.error(
+        "Switching to a paid tier (enable billing) removes the free-tier limits."
+    )
 
 
 class TranscribeClient:
@@ -141,7 +161,6 @@ class TranscribeClient:
         api_key: str | None = None,
         language: str = "ko-KR",
         enable_diarization: bool = True,
-        free_tier_wait_on_429: bool = False,
     ) -> None:
         # Resolve the effective key from env vars early so the daily usage
         # counter (incremented per API call) and the genai.Client use the
@@ -159,7 +178,6 @@ class TranscribeClient:
         )
         self.language = language
         self.enable_diarization = enable_diarization
-        self.free_tier_wait_on_429 = free_tier_wait_on_429
         self.api_logs: list[dict[str, Any]] = []
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
@@ -395,35 +413,15 @@ def transcribe_chunks_sequential(
     client: TranscribeClient,
     chunks: list[Path],
     request_interval_secs: float = 30.0,
-    free_tier_wait_on_429: bool = False,
 ) -> list[TranscriptionResult]:
     """Transcribe each chunk in order, reusing valid checkpoints (skip API + skip sleep).
 
-    With ``free_tier_wait_on_429=True``:
-    - Before each chunk, if today's PST count has already reached the free-tier
-      daily limit, sleep until PST midnight before the next API call.
-    - On a 429 (quota) error, sleep until PST midnight and retry the same chunk.
-
-    The wait is performed in 1-hour chunks with the remaining time logged, so a
-    long multi-day batch can be left running unattended.
+    Checkpoints short-circuit any further work for a chunk (no API call, no
+    sleep). For chunks that need a real API call, exceptions propagate to
+    the caller immediately — there is no automatic retry or quota wait.
     """
-    from .usage_counter import (
-        FREE_TIER_DAILY_LIMIT,
-        count_today,
-        sleep_until_pst_midnight,
-    )
-
     results: list[TranscriptionResult] = []
     for idx, chunk in enumerate(chunks):
-        if free_tier_wait_on_429 and count_today() >= FREE_TIER_DAILY_LIMIT:
-            logger.warning(
-                "Free-tier daily quota reached (%d/%d calls today, PST); "
-                "waiting until PST midnight before next chunk.",
-                count_today(),
-                FREE_TIER_DAILY_LIMIT,
-            )
-            sleep_until_pst_midnight()
-
         meta = checkpoint_path(chunk)
         existing = load_checkpoint(meta)
         if existing is not None:
@@ -432,22 +430,9 @@ def transcribe_chunks_sequential(
             continue
 
         logger.info("Chunk %d/%d: transcribing %s", idx + 1, len(chunks), chunk.name)
-        # On 429 with --free-tier-wait-on-429, sleep until PST midnight and retry.
-        # Other exceptions propagate immediately to the caller.
-        while True:
-            try:
-                result = client.transcribe_chunk(chunk, chunk_index=idx)
-                break
-            except Exception as exc:
-                if free_tier_wait_on_429 and _is_quota_error(exc):
-                    logger.warning(
-                        "Hit 429 with --free-tier-wait-on-429 (chunk %d); "
-                        "sleeping until PST midnight and retrying.",
-                        idx,
-                    )
-                    sleep_until_pst_midnight()
-                    continue
-                raise
+        # Single API attempt; any exception (including 429) propagates to the
+        # caller. The caller prints retry suggestions (see _log_quota_hint).
+        result = client.transcribe_chunk(chunk, chunk_index=idx)
 
         save_checkpoint(meta, result)
         results.append(result)
