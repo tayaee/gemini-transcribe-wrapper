@@ -51,8 +51,8 @@ if not errorlevel 1 (
 if "%REMOTE%" == "" (
     echo DEBUG: No prior release on PyPI ^^(this will be the first publish^^).
 ) else if "%REMOTE%" == "%VERSION%" (
-    echo Error: PyPI already has %VERSION%. Bump version in pyproject.toml first.
-    exit /b 1
+    echo Notice: PyPI already has %VERSION%. Skipping publish.
+    exit /b 0
 ) else (
     echo DEBUG: PyPI latest is %REMOTE%, local is %VERSION%. OK to publish.
 )

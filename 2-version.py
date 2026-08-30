@@ -260,12 +260,13 @@ def apply_bump(level):
     should, reason = decide_bump(current, latest_tag, latest_pypi)
     if not should:
         print(f"Skipping bump: {reason}")
-        return
+        return bool(latest_pypi and compare_versions(current, latest_pypi) > 0)
 
     new_version = bump_version(current, level)
     new_text = text[: match.start(1)] + new_version + text[match.end(1):]
     PYPROJECT.write_text(new_text, encoding="utf-8")
     print(f"{current} -> {new_version}  ({reason})")
+    return True
 
 
 def main(argv):
@@ -282,8 +283,8 @@ def main(argv):
         raise SystemExit(
             f"Error: bump level must be one of {VALID_LEVELS} (got '{level}')"
         )
-    apply_bump(level)
-    return 0
+    ok = apply_bump(level)
+    return 0 if ok else 2
 
 
 if __name__ == "__main__":
