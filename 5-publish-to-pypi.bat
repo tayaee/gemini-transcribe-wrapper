@@ -74,7 +74,7 @@ echo Staging pyproject.toml (version bump)...
 git add pyproject.toml
 
 echo Building package (lock + dist)...
-call build.bat
+call 3-build.bat
 if errorlevel 1 (
     echo Error: Build failed.
     exit /b 1

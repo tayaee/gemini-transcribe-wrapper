@@ -54,7 +54,7 @@ echo "Staging pyproject.toml (version bump)..."
 git add pyproject.toml
 
 echo "Building package (lock + dist)..."
-./build.sh
+./3-build.sh
 
 echo "Staging uv.lock (sync from build)..."
 git add uv.lock
