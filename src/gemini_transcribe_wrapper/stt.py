@@ -157,12 +157,39 @@ def _log_quota_hint(exc: Exception) -> None:
     )
 
 
+_LAST_API_CALL_MONOTONIC: float | None = None
+
+
+def reset_api_rate_limiter() -> None:
+    """Reset the module-level last API call timestamp (for testing)."""
+    global _LAST_API_CALL_MONOTONIC
+    _LAST_API_CALL_MONOTONIC = None
+
+
+def _throttle_api_call(request_interval_secs: float) -> None:
+    """Enforce minimum interval between consecutive STT API calls (free tier: 2 RPM)."""
+    global _LAST_API_CALL_MONOTONIC
+    if request_interval_secs > 0 and _LAST_API_CALL_MONOTONIC is not None:
+        elapsed = time.monotonic() - _LAST_API_CALL_MONOTONIC
+        if elapsed < request_interval_secs:
+            sleep_secs = request_interval_secs - elapsed
+            logger.info(
+                "Free-tier rate limit: %.1fs elapsed since last API call (< %.0fs interval); sleeping %.1fs.",
+                elapsed,
+                request_interval_secs,
+                sleep_secs,
+            )
+            time.sleep(sleep_secs)
+    _LAST_API_CALL_MONOTONIC = time.monotonic()
+
+
 class TranscribeClient:
     def __init__(
         self,
         api_key: str | None = None,
         language: str = "ko-KR",
         enable_diarization: bool = True,
+        request_interval_secs: float = 30.0,
     ) -> None:
         # Resolve the effective key from env vars early so the daily usage
         # counter (incremented per API call) and the genai.Client use the
@@ -180,6 +207,7 @@ class TranscribeClient:
         )
         self.language = language
         self.enable_diarization = enable_diarization
+        self.request_interval_secs = request_interval_secs
         self.api_logs: list[dict[str, Any]] = []
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
@@ -215,8 +243,14 @@ class TranscribeClient:
             entry["error"] = error
         self.api_logs.append(entry)
 
-    def transcribe_chunk(self, chunk_mp3: Path, chunk_index: int = 0) -> TranscriptionResult:
+    def transcribe_chunk(
+        self,
+        chunk_mp3: Path,
+        chunk_index: int = 0,
+    ) -> TranscriptionResult:
         """Transcribe a single MP3 chunk with a single API attempt (no retries)."""
+        _throttle_api_call(getattr(self, "request_interval_secs", 30.0))
+
         started_at = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
         uploaded = self.client.files.upload(file=str(chunk_mp3))
         try:
@@ -445,9 +479,11 @@ def transcribe_chunks_sequential(
     """Transcribe each chunk in order, reusing valid checkpoints (skip API + skip sleep).
 
     Checkpoints short-circuit any further work for a chunk (no API call, no
-    sleep). For chunks that need a real API call, exceptions propagate to
-    the caller immediately — there is no automatic retry or quota wait.
+    sleep). For chunks that need a real API call, rate limiting is enforced
+    dynamically before each API call via _throttle_api_call.
     """
+    if hasattr(client, "request_interval_secs"):
+        client.request_interval_secs = request_interval_secs
     results: list[TranscriptionResult] = []
     for idx, chunk in enumerate(chunks):
         meta = checkpoint_path(chunk)
@@ -464,10 +500,6 @@ def transcribe_chunks_sequential(
 
         save_checkpoint(meta, result)
         results.append(result)
-
-        if idx < len(chunks) - 1 and request_interval_secs > 0:
-            logger.info("Waiting %.0fs before next chunk (free-tier quota)", request_interval_secs)
-            time.sleep(request_interval_secs)
     return results
 
 

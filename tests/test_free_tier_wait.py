@@ -259,5 +259,34 @@ def test_transcribe_chunks_sequential_propagates_429_without_retry(tmp_path, mon
     assert sleeps == []  # no auto-wait triggered
 
 
+def test_throttle_api_call_enforces_interval(monkeypatch):
+    stt.reset_api_rate_limiter()
+    sleeps: list[float] = []
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+
+    # First call: no previous call, no sleep
+    stt._throttle_api_call(30.0)
+    assert sleeps == []
+
+    # Second call right after: sleeps ~30s
+    stt._throttle_api_call(30.0)
+    assert len(sleeps) == 1
+    assert 29.0 <= sleeps[0] <= 30.0
+
+    stt.reset_api_rate_limiter()
+
+
+def test_throttle_api_call_no_sleep_when_interval_zero(monkeypatch):
+    stt.reset_api_rate_limiter()
+    sleeps: list[float] = []
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+
+    stt._throttle_api_call(0.0)
+    stt._throttle_api_call(0.0)
+    assert sleeps == []
+
+    stt.reset_api_rate_limiter()
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

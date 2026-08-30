@@ -113,7 +113,7 @@ def test_stt_increments_counter_per_api_call(cache):
         files = FakeFiles()
         interactions = FakeInteractions()
 
-    client = stt.TranscribeClient(api_key=api_key)
+    client = stt.TranscribeClient(api_key=api_key, request_interval_secs=0.0)
     client.client = cast(Any, FakeClient())
     chunk = Path(cache) / "chunk_000.mp3"
     chunk.write_bytes(b"fake-mp3")

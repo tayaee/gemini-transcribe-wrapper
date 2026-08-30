@@ -407,6 +407,7 @@ def _process_one(
             api_key=gemini_api_key,
             language=language,
             enable_diarization=diarize,
+            request_interval_secs=request_interval_secs,
         )
         results = transcribe_chunks_sequential(
             client,
