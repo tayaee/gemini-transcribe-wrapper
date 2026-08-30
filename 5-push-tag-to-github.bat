@@ -42,26 +42,25 @@ if errorlevel 1 (
 )
 echo DEBUG: GitHub auth OK.
 
-echo Staging pyproject.toml (version bump)...
+echo + git add pyproject.toml
 git add pyproject.toml
 
-echo Building package (lock + dist)...
+echo + call 3-build.bat
 call 3-build.bat
 if errorlevel 1 (
     echo Error: Build failed.
     exit /b 1
 )
 
-echo Staging uv.lock (sync from build)...
+echo + git add uv.lock
 git add uv.lock
 
+echo + git status
 git status
-
-echo Press ENTER to commit, tag, and push to GitHub...
-pause
 
 git diff --cached --quiet
 if errorlevel 1 (
+    echo + git commit -m "Version %VERSION%"
     git commit -m "Version %VERSION%"
     if errorlevel 1 (
         echo Error: Git commit failed.
@@ -71,16 +70,17 @@ if errorlevel 1 (
 
 git rev-parse "v%VERSION%" >nul 2>&1
 if errorlevel 1 (
+    echo + git tag "v%VERSION%"
     git tag "v%VERSION%"
-    echo Created tag v%VERSION%.
 )
 
-echo Pushing branch and tag to GitHub...
+echo + git push origin HEAD
 git push origin HEAD
 if errorlevel 1 (
     echo Error: Git push branch failed.
     exit /b 1
 )
+echo + git push origin "v%VERSION%"
 git push origin "v%VERSION%"
 if errorlevel 1 (
     echo Error: Git push tag failed.

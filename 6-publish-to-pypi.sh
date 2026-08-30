@@ -50,11 +50,12 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 echo "DEBUG: GitHub auth OK ($(gh api user -q .login 2>/dev/null || echo unknown))."
 
-echo "Building package (lock + dist)..."
+echo + ./3-build.sh
 ./3-build.sh
 
 read -r -p "Press ENTER to publish version $LOCAL to PyPI..."
 
+echo + uv -q publish
 uv -q publish
 
 echo "Done. Successfully published version $LOCAL to PyPI."

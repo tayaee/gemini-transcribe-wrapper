@@ -23,30 +23,29 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 echo "DEBUG: GitHub auth OK ($(gh api user -q .login 2>/dev/null || echo unknown))."
 
-echo "Staging pyproject.toml (version bump)..."
+echo + git add pyproject.toml
 git add pyproject.toml
 
-echo "Building package (lock + dist)..."
+echo + ./3-build.sh
 ./3-build.sh
 
-echo "Staging uv.lock (sync from build)..."
+echo + git add uv.lock
 git add uv.lock
 
+echo + git status
 git status
 
-# read -r -p "Press ENTER to commit, tag, and push to GitHub..."
-
 if ! git diff --cached --quiet; then
+    echo + git commit -m "Version $LOCAL"
     git commit -m "Version $LOCAL"
 fi
 
 if ! git rev-parse "v$LOCAL" >/dev/null 2>&1; then
+    echo + git tag "v$LOCAL"
     git tag "v$LOCAL"
-    echo "Created tag v$LOCAL."
 fi
 
-echo "Pushing branch and tag to GitHub..."
+echo + git push origin HEAD
 git push origin HEAD
+echo + git push origin "v$LOCAL"
 git push origin "v$LOCAL"
-
-# echo "Done. Pushed v$LOCAL to GitHub."

@@ -35,14 +35,16 @@ if errorlevel 1 (
 )
 # echo DEBUG: GitHub auth OK.
 
-echo + git add -A
-git add -A
+echo + git add -u
+git add -u
+
 git diff --cached --quiet
 if not errorlevel 1 (
     echo Nothing to commit ^(working tree clean, no staged changes^).
     exit /b 0
 )
 
+echo + git status
 git status
 
 # echo Press ENTER to commit and push to GitHub...

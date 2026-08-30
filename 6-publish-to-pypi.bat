@@ -70,7 +70,7 @@ if errorlevel 1 (
 )
 echo DEBUG: GitHub auth OK.
 
-echo Building package (lock + dist)...
+echo + call 3-build.bat
 call 3-build.bat
 if errorlevel 1 (
     echo Error: Build failed.
