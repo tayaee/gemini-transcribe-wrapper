@@ -263,7 +263,7 @@ class TranscribeClient:
         api_key: str | None = None,
         language: str = "ko-KR",
         enable_diarization: bool = True,
-        request_interval_secs: float = 30.0,
+        request_interval_secs: float = 60.0,
         custom_vocabulary: list[str] | None = None,
         source_file: str | Path | None = None,
     ) -> None:
@@ -330,7 +330,7 @@ class TranscribeClient:
         chunk_duration_secs: float | None = None,
     ) -> TranscriptionResult:
         """Transcribe a single MP3 chunk with a single API attempt (no retries)."""
-        _throttle_api_call(getattr(self, "request_interval_secs", 30.0))
+        _throttle_api_call(getattr(self, "request_interval_secs", 60.0))
 
         if source_file is not None:
             effective_source_file = str(source_file)
@@ -618,7 +618,7 @@ def save_checkpoint(meta_path: Path, result: TranscriptionResult) -> None:
 def transcribe_chunks_sequential(
     client: TranscribeClient,
     chunks: list[Path],
-    request_interval_secs: float = 30.0,
+    request_interval_secs: float = 60.0,
 ) -> list[TranscriptionResult]:
     """Transcribe each chunk in order, reusing valid checkpoints (skip API + skip sleep).
 

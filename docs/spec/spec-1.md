@@ -161,7 +161,7 @@ def gemini_transcribe(
     force: bool = False,
     line_interval_secs: float = 1.0,
     paragraph_interval_secs: float = 2.5,
-    request_interval_secs: float = 30.0,
+    request_interval_secs: float = 60.0,
     chunk_secs: float | None = None,
     speakers: dict[str, str] | None = None,
     temp_dir: str | None = "temp",

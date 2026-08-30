@@ -65,7 +65,7 @@ This wrapper automatically overcomes Google Gemini API's free tier limits and co
 - **Audio Length Limit** — depends on whether you ask for speaker diarization:
   - `--no-diarize` (default): up to ~60 min per API call. The wrapper cuts the file into 59-min logical units, each sent as one API call.
   - `--diarize`: up to ~30 min per API call. The wrapper cuts into 29-min chunks to stay under the limit with a 1-min safety margin.
-- **Rate Limit** (Max 2 RPM): Applies a monotonic rate limiter (default 30s interval) across all chunks and multi-file batches to prevent 429 rate-limit errors.
+- **Rate Limit** (Max 2 RPM): Applies a monotonic rate limiter (default 60s interval) across all chunks and multi-file batches to prevent 429 rate-limit errors.
 - **Daily Quota Tracking**: Tracks daily Pacific-time API usage locally (`~/.cache/gemini-transcribe-wrapper/usage-<sha256(key)[:12]>.json`) with masked key logging (e.g. `API calls today 2026-08-30 (PST-08:00) with key 'AIza****abcd': attempted 3 (free tier limit: ~5)`).
 - **Consolidated Temp Directory**: Intermediate chunks, converted audio, and resume checkpoints are placed inside `temp/<output_base>.gemini-work` (configurable via `--temp-dir`, default: `temp`), automatically cleaned up on success.
 - **Raw Response to Ready-to-Use Subtitles**: Converts AI transcription output directly into `.srt`, `.txt`, and (with `--diarize`) `.diarized.srt` files in a single run.

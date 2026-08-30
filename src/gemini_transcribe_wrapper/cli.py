@@ -61,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force", action="store_true", help="Re-process even if outputs exist")
     parser.add_argument("--line-interval-secs", type=float, default=1.0, help="TXT newline break threshold (default: 1.0)")
     parser.add_argument("--paragraph-interval-secs", type=float, default=2.5, help="TXT paragraph break threshold (default: 2.5)")
-    parser.add_argument("--request-interval-secs", type=float, default=30.0, help="Delay between API calls (default: 30.0)")
+    parser.add_argument("--request-interval-secs", type=float, default=60.0, help="Delay between API calls (default: 60.0)")
     parser.add_argument("--chunk-secs", type=float, default=None, help="Fixed chunk length in seconds (default: auto, 59-min logical units when --no-diarize, 29-min when --diarize; hard ceiling of 29 min enforced to fit the Gemini 30-min per-call limit)")
     parser.add_argument("--speakers", default=None, help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=궤도;spk:1=가람;'")
     parser.add_argument("--custom-vocabulary", default=None, help="Custom vocabulary / bias phrases (comma/semicolon separated or text file path)")
