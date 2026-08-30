@@ -70,9 +70,6 @@ if errorlevel 1 (
 )
 echo DEBUG: GitHub auth OK.
 
-echo Staging pyproject.toml (version bump)...
-git add pyproject.toml
-
 echo Building package (lock + dist)...
 call 3-build.bat
 if errorlevel 1 (
@@ -80,18 +77,9 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Staging uv.lock (sync from build)...
-git add uv.lock
+echo Press ENTER to publish package to PyPI...
+pause
 
-echo %VERSION%> release-version.txt
-echo + git add release-version.txt
-git add release-version.txt
-
-echo + git status
-git status
-
-# echo Press ENTER to publish package and code...
-# pause
 echo + uv -q publish
 uv -q publish
 if errorlevel 1 (
@@ -99,9 +87,4 @@ if errorlevel 1 (
     exit /b 1
 )
 
-git add -u
-git commit -m "Version %VERSION%"
-git tag v%VERSION%
-git push origin --tags
-
-echo Done. Successfully published version %VERSION%.
+echo Done. Successfully published version %VERSION% to PyPI.

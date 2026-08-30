@@ -59,15 +59,31 @@ git status
 
 echo Press ENTER to commit, tag, and push to GitHub...
 pause
-git commit -m "Version %VERSION%"
+
+git diff --cached --quiet
 if errorlevel 1 (
-    echo Error: Git commit failed.
+    git commit -m "Version %VERSION%"
+    if errorlevel 1 (
+        echo Error: Git commit failed.
+        exit /b 1
+    )
+)
+
+git rev-parse "v%VERSION%" >nul 2>&1
+if errorlevel 1 (
+    git tag "v%VERSION%"
+    echo Created tag v%VERSION%.
+)
+
+echo Pushing branch and tag to GitHub...
+git push origin HEAD
+if errorlevel 1 (
+    echo Error: Git push branch failed.
     exit /b 1
 )
-git tag v%VERSION%
-git push origin --tags
+git push origin "v%VERSION%"
 if errorlevel 1 (
-    echo Error: Git push failed.
+    echo Error: Git push tag failed.
     exit /b 1
 )
 

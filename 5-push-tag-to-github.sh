@@ -36,8 +36,17 @@ git status
 
 # read -r -p "Press ENTER to commit, tag, and push to GitHub..."
 
-git commit -m "Version $LOCAL"
-git tag "v$LOCAL"
-git push origin --tags
+if ! git diff --cached --quiet; then
+    git commit -m "Version $LOCAL"
+fi
+
+if ! git rev-parse "v$LOCAL" >/dev/null 2>&1; then
+    git tag "v$LOCAL"
+    echo "Created tag v$LOCAL."
+fi
+
+echo "Pushing branch and tag to GitHub..."
+git push origin HEAD
+git push origin "v$LOCAL"
 
 # echo "Done. Pushed v$LOCAL to GitHub."

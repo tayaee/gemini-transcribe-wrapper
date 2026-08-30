@@ -26,17 +26,15 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 echo "DEBUG: GitHub auth OK ($(gh api user -q .login 2>/dev/null || echo unknown))."
 
-echo + git add -u
-git add -u
+echo + git add -A
+git add -A
 if git diff --cached --quiet; then
     echo "Nothing to commit (working tree clean, no staged changes)."
-    exit 1
+    exit 0
 fi
 
 echo + git status
 git status
-
-# read -r -p "Press ENTER to commit and push to GitHub..."
 
 echo + git commit -m "$MSG"
 git commit -m "$MSG"

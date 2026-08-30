@@ -50,28 +50,11 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 echo "DEBUG: GitHub auth OK ($(gh api user -q .login 2>/dev/null || echo unknown))."
 
-echo "Staging pyproject.toml (version bump)..."
-git add pyproject.toml
-
 echo "Building package (lock + dist)..."
 ./3-build.sh
 
-echo "Staging uv.lock (sync from build)..."
-git add uv.lock
-
-echo $LOCAL > release-version.txt
-echo + git add release-version.txt
-git add release-version.txt
-
-git status
-
-read -r -p "Press ENTER to publish package and code..."
+read -r -p "Press ENTER to publish version $LOCAL to PyPI..."
 
 uv -q publish
 
-git add -u
-git commit -m "Version $LOCAL"
-git tag "v$LOCAL"
-git push origin --tags
-
-echo "Done. Successfully published version $LOCAL."
+echo "Done. Successfully published version $LOCAL to PyPI."
