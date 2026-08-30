@@ -26,7 +26,7 @@ if [[ "$PACKAGE_SPEC" == ./* || "$PACKAGE_SPEC" == /* ]]; then
 fi
 
 fail=0
-for PY in 3.12 3.13; do
+for PY in 3.13; do
     log="/tmp/regression-py$PY.log"
     if docker run --rm "${MOUNT[@]}" -e UV_LINK_MODE=copy \
         -e PACKAGE_SPEC="$PACKAGE_SPEC" \

@@ -21,7 +21,6 @@ from gemini_transcribe_wrapper.format import (
     sanitize_words,
 )
 from gemini_transcribe_wrapper.stt import (
-    DEFAULT_KO_CUSTOM_VOCABULARY,
     TranscribeClient,
     TranscriptionResult,
     Word,
@@ -278,7 +277,11 @@ def test_srt_and_txt_with_su_replacement():
     assert "su" not in txt
 
 
-def test_custom_vocabulary_in_transcribe_client():
+def test_custom_vocabulary_is_not_sent_to_api():
+    """custom_vocabulary is incompatible with timestamps (Gemini API rejects the
+    combination, see error 400: 'custom_vocabulary is incompatible with timestamps').
+    We always need word-level timestamps for SRT, so the vocab must not be sent.
+    The Korean '수' bug is handled by fix_korean_su_text post-processing instead."""
     client = TranscribeClient(
         api_key="fake-key",
         language="ko-KR",
@@ -287,14 +290,8 @@ def test_custom_vocabulary_in_transcribe_client():
     gen_config = client._generation_config()
     tc = gen_config.transcription_config
     assert tc is not None
-    vocab = getattr(tc, "custom_vocabulary", None)
-    assert vocab is not None
-    # Must include default Korean phrases (~ 수 있~ / ~ 수 없~)
-    for phrase in DEFAULT_KO_CUSTOM_VOCABULARY:
-        assert phrase in vocab
-    # Must include user-specified phrases
-    assert "특수용어A" in vocab
-    assert "특수용어B" in vocab
+    # custom_vocabulary must NOT be set on the API config
+    assert getattr(tc, "custom_vocabulary", None) is None
 
 
 if __name__ == "__main__":
@@ -309,5 +306,5 @@ if __name__ == "__main__":
     test_fix_korean_su_text()
     test_sanitize_words_korean_su_followed_by_iss_or_eops()
     test_srt_and_txt_with_su_replacement()
-    test_custom_vocabulary_in_transcribe_client()
+    test_custom_vocabulary_is_not_sent_to_api()
     print("PASS: format sanitization tests")

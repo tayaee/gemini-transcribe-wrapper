@@ -52,15 +52,17 @@ class TranscriptionResult:
 
 
 DEFAULT_KO_CUSTOM_VOCABULARY: list[str] = [
-    # ~ 수 있~ / ~ 수 없~
+    # Kept for reference only — no longer sent to the API.
+    # Gemini 3.5 Transcribe rejects custom_vocabulary when timestamps are
+    # requested ("custom_vocabulary is incompatible with timestamps"), and
+    # the wrapper always needs word-level timestamps for SRT. The Korean '수'
+    # 받아쓰기 bug is handled by fix_korean_su_text post-processing instead.
     "수 있다",
     "수 없다",
-    # ~ 수도 / ~ 수가
     "수도 있다",
     "수도 없다",
     "수가 있다",
     "수가 없다",
-    # ~ 수밖에
     "수밖에",
     "수밖에 없다",
 ]
@@ -296,16 +298,6 @@ class TranscribeClient:
         mode["timestamp_granularities"] = ["word"]
         transcription["mode"] = mode
 
-        vocab: list[str] = []
-        if self.language and self.language.lower().startswith("ko"):
-            vocab.extend(DEFAULT_KO_CUSTOM_VOCABULARY)
-        if self.custom_vocabulary:
-            for item in self.custom_vocabulary:
-                if item not in vocab:
-                    vocab.append(item)
-        if vocab:
-            transcription["custom_vocabulary"] = vocab
-
         return _gaos_interactions.GenerationConfig(
             transcription_config=_gaos_interactions.TranscriptionConfig(**transcription)
         )
@@ -341,9 +333,9 @@ class TranscribeClient:
         _throttle_api_call(getattr(self, "request_interval_secs", 30.0))
 
         if source_file is not None:
-            effective_source_file = str(Path(source_file).resolve())
+            effective_source_file = str(source_file)
         elif getattr(self, "source_file", None):
-            effective_source_file = str(Path(str(self.source_file)).resolve())
+            effective_source_file = str(self.source_file)
         elif chunk_mp3 is not None and isinstance(chunk_mp3, (str, Path)):
             effective_source_file = str(Path(chunk_mp3).resolve())
         else:

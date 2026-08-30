@@ -15,20 +15,20 @@ if not exist "%LOGDIR%" mkdir "%LOGDIR%"
 
 REM pyright: static type checker. Goes deeper than syntax -- flags wrong types,
 REM missing attributes, bad overload resolution before the code runs.
-call :run_one run-pyright.sh "static type checker (wrong types, missing attrs)" scripts\run-pyright.sh
+call :run_one run-pyright.bat "static type checker (wrong types, missing attrs)" scripts\run-pyright.bat
 
 REM ruff: fast linter. Enforces style and flags likely bugs (unused imports,
 REM shadowed builtins, etc.). run-ruff.bat wraps `ruff check` (non-mutating).
-call :run_one run-ruff.sh "fast linter (style + likely-bug patterns)" scripts\run-ruff.sh
+call :run_one run-ruff.bat "fast linter (style + likely-bug patterns)" scripts\run-ruff.bat
 
 REM semgrep: pattern-based static analysis. Configured with --config auto
 REM --error on src/ + tests/, so any finding fails the gate. Acts as the
 REM security review (CWE top 25, secrets, dangerous APIs).
-call :run_one run-semgrep.sh "security scan (CWE top 25, secrets, dangerous APIs)" scripts\run-semgrep.sh
+call :run_one run-semgrep.bat "security scan (CWE top 25, secrets, dangerous APIs)" scripts\run-semgrep.bat
 
 REM pytest: actual test execution. The only step that exercises runtime
 REM behavior -- the earlier gates are all static.
-call :run_one run-pytest.sh "unit tests (runtime correctness of src/ + tests/)" scripts\run-pytest.sh
+call :run_one run-pytest.bat "unit tests (runtime correctness of src/ + tests/)" scripts\run-pytest.bat
 
 REM regression: end-to-end against a packaged install. With PACKAGE_SPEC=/src
 REM here it installs the local source into a fresh Python 3.10/3.13 Docker
@@ -36,7 +36,7 @@ REM container and runs `gtw --version` -- catches issues that only surface
 REM after install (entry point wiring, missing deps, packaging metadata).
 REM Set PACKAGE_SPEC=<PyPI-name> to verify a real release instead.
 set PACKAGE_SPEC=/src
-call :run_one run-regression-tests.sh "end-to-end against installed package (local source)" scripts\run-regression-tests.sh
+call :run_one run-regression-tests.bat "end-to-end against installed package (local source)" scripts\run-regression-tests.bat
 set PACKAGE_SPEC=
 
 echo.
@@ -57,7 +57,7 @@ exit /b 1
 set NAME=%~1
 set PURPOSE=%~2
 set SCRIPT=%~3
-echo === %NAME%: %PURPOSE% ===
+echo === %NAME%: %PURPOSE% (%SCRIPT%) ===
 call %SCRIPT% > "%LOGDIR%\cqg-%NAME%.log" 2>&1
 if errorlevel 1 (
     echo FAIL: %NAME%

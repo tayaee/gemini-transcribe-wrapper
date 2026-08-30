@@ -33,7 +33,7 @@ def main() -> None:
         sys.exit(1)
 
     example_dir = Path(__file__).resolve().parent
-    input_file = example_dir / "안될과학 개똥벌레.mp4"
+    input_file = example_dir / "Jackson Hall Speech 20260828.mp4"
 
     # Check if sample media exists
     if not input_file.exists():
