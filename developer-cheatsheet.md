@@ -1,11 +1,17 @@
 # Developer cheatsheet
 
 1. Add feature in `src/` and `tests/`.
-2. Run `./code-quality-gate.sh` — every gate must PASS.
-3. Bump `version` in `pyproject.toml`.
-4. Run `./build.sh` to sync `uv.lock` and rebuild `dist/`, then `git add pyproject.toml uv.lock`.
-5. Run `./publish-to-pypi.sh` — confirms version differs from latest PyPI, publishes, commits, tags `v<version>`, pushes to GitHub.
-6. Verify the tag at `https://github.com/tayaee/gemini-transcribe-wrapper/releases/tag/v<version>`.
-7. Verify the release at `https://pypi.org/project/gemini-transcribe-wrapper/#history`.
-8. Install the new version: `uvx tool install --python 3.13 gemini-transcribe-wrapper@latest --force`.
-9. Confirm with `gtw -v` that the installed version matches.
+2. Run `./1-code-quality-gate.sh` (or `1-code-quality-gate.bat`) — all 5 gates must PASS.
+3. (Optional) Push feature commits to GitHub during development:
+   ```bash
+   ./4-push-changes-to-github.sh "Implement feature X"
+   ```
+4. Release to GitHub and PyPI (one-click automated pipeline):
+   ```bash
+   ./release.sh "Release message"
+   ```
+   This automatically runs quality gates, commits pending staged changes, bumps version (`2-version`), builds (`3-build`), pushes commit & tag `v<version>` to GitHub (`5-push-tag`), and publishes to PyPI (`6-publish-to-pypi`).
+5. Verify the tag at `https://github.com/tayaee/gemini-transcribe-wrapper/releases/tag/v<version>`.
+6. Verify the release at `https://pypi.org/project/gemini-transcribe-wrapper/#history`.
+7. Install the new version: `uv tool install --python 3.13 gemini-transcribe-wrapper@latest --force`.
+8. Confirm with `gtw -v` that the installed version matches.

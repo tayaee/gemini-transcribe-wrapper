@@ -77,8 +77,8 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Press ENTER to publish package to PyPI...
-pause
+REM echo Press ENTER to publish package to PyPI...
+REM pause
 
 echo + uv -q publish
 uv -q publish

@@ -53,7 +53,7 @@ echo "DEBUG: GitHub auth OK ($(gh api user -q .login 2>/dev/null || echo unknown
 echo + ./3-build.sh
 ./3-build.sh
 
-read -r -p "Press ENTER to publish version $LOCAL to PyPI..."
+# read -r -p "Press ENTER to publish version $LOCAL to PyPI..."
 
 echo + uv -q publish
 uv -q publish

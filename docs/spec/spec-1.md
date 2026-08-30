@@ -145,29 +145,35 @@ System dependencies are eliminated by dynamically managing binaries and librarie
 ### 5.1. Python API
 
 ```python
-from typing import List, Optional
+from gemini_transcribe_wrapper.models import BatchTranscribeResult
 
 def gemini_transcribe(
     input_file: str,
-    output_dir: Optional[str] = None,
-    output_base: Optional[str] = None,
-    gemini_api_key: Optional[str] = None,
+    output_dir: str | None = None,
+    output_base: str | None = None,
+    gemini_api_key: str | None = None,
     language: str = "ko-KR",
-    spk: bool = True,
-    srt: bool = True,
-    txt: bool = True,
-    metadata: bool = False,
+    diarize: bool = False,
+    create_srt: bool = True,
+    create_txt: bool = True,
+    create_metadata_json: bool = False,
+    create_transcript_json: bool = True,
     force: bool = False,
-    line_interval_secs: float = 2.0,
-    paragraph_interval_secs: float = 5.0,
+    line_interval_secs: float = 1.0,
+    paragraph_interval_secs: float = 2.5,
     request_interval_secs: float = 30.0,
-) -> List[str]:
+    chunk_secs: float | None = None,
+    speakers: dict[str, str] | None = None,
+    temp_dir: str | None = "temp",
+    ffsubsync_srt: bool = False,
+) -> BatchTranscribeResult:
     """
     Transcribe a multimedia file using Gemini 3.5 Transcribe.
     Zero-config cross-platform (auto ffmpeg/ffsubsync dependencies).
     
     Returns:
-        List of paths to the successfully generated final output files.
+        BatchTranscribeResult with per-input TranscribeResult items (input, output, leftover, status, error).
     """
     ...
+```
 
