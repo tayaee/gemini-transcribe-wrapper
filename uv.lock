@@ -480,7 +480,7 @@ wheels = [
 
 [[package]]
 name = "gemini-transcribe-wrapper"
-version = "0.0.24"
+version = "0.0.25"
 source = { editable = "." }
 dependencies = [
     { name = "ffsubsync" },
