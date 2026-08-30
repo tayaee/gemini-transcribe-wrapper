@@ -33,7 +33,7 @@ if errorlevel 1 (
     echo Error: Not logged in to GitHub. Run "gh auth login" first.
     exit /b 1
 )
-# echo DEBUG: GitHub auth OK.
+REM echo DEBUG: GitHub auth OK.
 
 echo + git add -u
 git add -u
@@ -47,8 +47,8 @@ if not errorlevel 1 (
 echo + git status
 git status
 
-# echo Press ENTER to commit and push to GitHub...
-# pause
+REM echo Press ENTER to commit and push to GitHub...
+REM pause
 
 echo + git commit -m "%MSG%"
 git commit -m "%MSG%"
@@ -64,4 +64,4 @@ if errorlevel 1 (
     exit /b 1
 )
 
-# echo Done. Pushed commit to GitHub.
+REM echo Done. Pushed commit to GitHub.
