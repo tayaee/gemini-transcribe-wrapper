@@ -37,9 +37,26 @@ git status
 
 if ! git diff --cached --quiet; then
     SUMMARY=""
-    if [ -x "./scripts/commit-message.sh" ]; then
-        SUMMARY="$(./scripts/commit-message.sh 2>/dev/null || true)"
+    PREV_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+    if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" = "v$LOCAL" ]; then
+        PREV_TAG="$(git describe --tags --abbrev=0 "$PREV_TAG^" 2>/dev/null || true)"
     fi
+
+    COMMITS=""
+    if [ -n "$PREV_TAG" ]; then
+        COMMITS="$(git log "${PREV_TAG}..HEAD" --pretty=format:"%s" 2>/dev/null || true)"
+    else
+        COMMITS="$(git log -n 5 --pretty=format:"%s" 2>/dev/null || true)"
+    fi
+
+    if [ -n "$COMMITS" ] && [ -x "./scripts/commit-message.sh" ]; then
+        SUMMARY="$(./scripts/commit-message.sh --from-log "$COMMITS" 2>/dev/null || true)"
+    fi
+
+    if [ -z "$SUMMARY" ] && [ -n "$COMMITS" ]; then
+        SUMMARY="$(echo "$COMMITS" | head -n 1)"
+    fi
+
     if [ -n "$SUMMARY" ]; then
         COMMIT_MSG="Version $LOCAL: $SUMMARY"
     else

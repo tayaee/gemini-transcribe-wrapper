@@ -5,28 +5,40 @@
 set -e
 cd "$(dirname "$0")/.."
 
-PROVIDER="$1"
+if [ "$1" = "--from-log" ] || [ "$1" = "-l" ]; then
+    COMMITS_INPUT="$2"
+    PROVIDER="$3"
+    if [ -z "$COMMITS_INPUT" ]; then
+        echo ""
+        exit 0
+    fi
+    PROMPT="Generate a concise, 1-line release summary in English (imperative mood, max 70 chars, no markdown, no backticks, no quotes, no prefix like 'commit:', no explanation, do not include version number) summarizing the following commit messages:
 
-# Gather git status & diff (staged + tracked modified)
-STATUS="$(git status --short 2>/dev/null || true)"
-DIFF="$(git diff --cached 2>/dev/null || true)"
-if [ -z "$DIFF" ]; then
-    DIFF="$(git diff 2>/dev/null || true)"
-fi
+$COMMITS_INPUT"
+else
+    PROVIDER="$1"
 
-if [ -z "$STATUS" ] && [ -z "$DIFF" ]; then
-    echo ""
-    exit 0
-fi
+    # Gather git status & diff (staged + tracked modified)
+    STATUS="$(git status --short 2>/dev/null || true)"
+    DIFF="$(git diff --cached 2>/dev/null || true)"
+    if [ -z "$DIFF" ]; then
+        DIFF="$(git diff 2>/dev/null || true)"
+    fi
 
-# Truncate diff if too long
-TRUNCATED_DIFF="$(echo "$DIFF" | head -n 120)"
+    if [ -z "$STATUS" ] && [ -z "$DIFF" ]; then
+        echo ""
+        exit 0
+    fi
 
-PROMPT="Generate a concise, 1-line git commit message summary in English (imperative mood, max 70 chars, no markdown, no backticks, no quotes, no prefix like 'commit:', no explanation) describing the following code changes:
+    # Truncate diff if too long
+    TRUNCATED_DIFF="$(echo "$DIFF" | head -n 120)"
+
+    PROMPT="Generate a concise, 1-line git commit message summary in English (imperative mood, max 70 chars, no markdown, no backticks, no quotes, no prefix like 'commit:', no explanation) describing the following code changes:
 
 $STATUS
 
 $TRUNCATED_DIFF"
+fi
 
 run_provider() {
     local p="$1"

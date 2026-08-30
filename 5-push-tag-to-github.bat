@@ -61,8 +61,35 @@ git status
 git diff --cached --quiet
 if errorlevel 1 (
     set "SUMMARY="
-    if exist "%~dp0scripts\commit-message.bat" (
-        for /F "usebackq delims=" %%S in (`call "%~dp0scripts\commit-message.bat" 2^>nul`) do set "SUMMARY=%%S"
+    set "PREV_TAG="
+    for /F "delims=" %%T in ('git describe --tags --abbrev=0 2^>nul') do set "PREV_TAG=%%T"
+    if "!PREV_TAG!" == "v%VERSION%" (
+        set "PREV_TAG="
+        for /F "delims=" %%T in ('git describe --tags --abbrev=0 "v%VERSION%^^" 2^>nul') do set "PREV_TAG=%%T"
+    )
+    set "COMMITS="
+    if not "!PREV_TAG!" == "" (
+        for /F "delims=" %%C in ('git log "!PREV_TAG!..HEAD" --pretty^=format:"%%s" 2^>nul') do (
+            if "!COMMITS!" == "" (
+                set "COMMITS=%%C"
+            ) else (
+                set "COMMITS=!COMMITS!, %%C"
+            )
+        )
+    ) else (
+        for /F "delims=" %%C in ('git log -n 5 --pretty^=format:"%%s" 2^>nul') do (
+            if "!COMMITS!" == "" (
+                set "COMMITS=%%C"
+            ) else (
+                set "COMMITS=!COMMITS!, %%C"
+            )
+        )
+    )
+    if not "!COMMITS!" == "" if exist "%~dp0scripts\commit-message.bat" (
+        for /F "usebackq delims=" %%S in (`call "%~dp0scripts\commit-message.bat" --from-log "!COMMITS!" 2^>nul`) do set "SUMMARY=%%S"
+    )
+    if "!SUMMARY!" == "" if not "!COMMITS!" == "" (
+        for /F "tokens=1 delims=," %%F in ("!COMMITS!") do set "SUMMARY=%%F"
     )
     if not "!SUMMARY!" == "" (
         set "COMMIT_MSG=Version %VERSION%: !SUMMARY!"

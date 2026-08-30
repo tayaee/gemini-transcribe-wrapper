@@ -2,6 +2,27 @@
 setlocal enabledelayedexpansion
 cd /d "%~dp0.."
 
+if "%~1" == "--from-log" (
+    set "COMMITS_INPUT=%~2"
+    set "PROVIDER=%~3"
+    if "!COMMITS_INPUT!" == "" (
+        echo.
+        exit /b 0
+    )
+    set "PROMPT=Generate a concise, 1-line release summary in English (imperative mood, max 70 chars, no markdown, no backticks, no quotes, no prefix like 'commit:', no explanation, do not include version number) summarizing the following commit messages: !COMMITS_INPUT!"
+    goto :exec_prov
+)
+if "%~1" == "-l" (
+    set "COMMITS_INPUT=%~2"
+    set "PROVIDER=%~3"
+    if "!COMMITS_INPUT!" == "" (
+        echo.
+        exit /b 0
+    )
+    set "PROMPT=Generate a concise, 1-line release summary in English (imperative mood, max 70 chars, no markdown, no backticks, no quotes, no prefix like 'commit:', no explanation, do not include version number) summarizing the following commit messages: !COMMITS_INPUT!"
+    goto :exec_prov
+)
+
 set "PROVIDER=%~1"
 
 set "STATUS="
@@ -26,6 +47,7 @@ if "!STATUS!" == "" if "!DIFF!" == "" (
 
 set "PROMPT=Generate a concise, 1-line git commit message summary in English (imperative mood, max 70 chars, no markdown, no backticks, no quotes, no prefix like 'commit:', no explanation) describing the following code changes: !STATUS! !DIFF!"
 
+:exec_prov
 set "MSG="
 
 if not "%PROVIDER%" == "" (
