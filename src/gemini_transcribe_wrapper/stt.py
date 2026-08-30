@@ -231,34 +231,83 @@ def _log_quota_hint(exc: Exception) -> None:
     )
 
 
-_LAST_API_CALL_MONOTONIC: float | None = None
+_LAST_API_COMPLETION_MONOTONIC: float | None = None
+_LAST_API_COMPLETION_WALL: float | None = None
 
 
 def reset_api_rate_limiter() -> None:
-    """Reset the module-level last API call completion timestamp (for testing)."""
-    global _LAST_API_CALL_MONOTONIC
-    _LAST_API_CALL_MONOTONIC = None
+    """Reset in-memory and on-disk rate limiter timestamps (for testing)."""
+    global _LAST_API_COMPLETION_MONOTONIC, _LAST_API_COMPLETION_WALL
+    _LAST_API_COMPLETION_MONOTONIC = None
+    _LAST_API_COMPLETION_WALL = None
+    try:
+        from .usage_counter import cache_dir
+
+        cd = cache_dir()
+        for p in cd.glob("last_api_completion*.json"):
+            try:
+                p.unlink(missing_ok=True)
+            except OSError:
+                pass
+    except Exception:  # noqa: BLE001, S110
+        pass
 
 
-def record_api_call_completed() -> None:
+def record_api_call_completed(api_key: str | None = None) -> None:
     """Record that an STT API call and its cleanup have completed."""
-    global _LAST_API_CALL_MONOTONIC
-    _LAST_API_CALL_MONOTONIC = time.monotonic()
+    global _LAST_API_COMPLETION_MONOTONIC, _LAST_API_COMPLETION_WALL
+    now_mono = time.monotonic()
+    now_wall = time.time()
+    _LAST_API_COMPLETION_MONOTONIC = now_mono
+    _LAST_API_COMPLETION_WALL = now_wall
+    try:
+        from .usage_counter import _key_hash, cache_dir
+
+        cd = cache_dir()
+        cd.mkdir(parents=True, exist_ok=True)
+        kh = _key_hash(api_key)
+        filename = f"last_api_completion-{kh}.json" if kh else "last_api_completion.json"
+        path = cd / filename
+        path.write_text(json.dumps({"completed_at": now_wall}), encoding="utf-8")
+    except Exception:  # noqa: BLE001, S110
+        pass
 
 
-def _throttle_api_call(request_interval_secs: float) -> None:
-    """Enforce minimum cooldown after the previous STT API call completed (free tier: 2 RPM)."""
-    if request_interval_secs > 0 and _LAST_API_CALL_MONOTONIC is not None:
-        elapsed = time.monotonic() - _LAST_API_CALL_MONOTONIC
-        if elapsed < request_interval_secs:
-            sleep_secs = request_interval_secs - elapsed
-            logger.info(
-                "Free-tier rate limit: %.1fs elapsed since last API call completed (< %.0fs interval); sleeping %.1fs.",
-                elapsed,
-                request_interval_secs,
-                sleep_secs,
-            )
-            time.sleep(sleep_secs)
+def _get_last_completion_elapsed(api_key: str | None = None) -> float | None:
+    """Return elapsed seconds since last API completion, or None if no record."""
+    if _LAST_API_COMPLETION_MONOTONIC is not None:
+        return time.monotonic() - _LAST_API_COMPLETION_MONOTONIC
+    try:
+        from .usage_counter import _key_hash, cache_dir
+
+        cd = cache_dir()
+        kh = _key_hash(api_key)
+        filename = f"last_api_completion-{kh}.json" if kh else "last_api_completion.json"
+        path = cd / filename
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            completed_at = float(data.get("completed_at", 0.0))
+            if completed_at > 0:
+                return max(0.0, time.time() - completed_at)
+    except Exception:  # noqa: BLE001, S110
+        pass
+    return None
+
+
+def _throttle_api_call(request_interval_secs: float, api_key: str | None = None) -> None:
+    """Enforce minimum cooldown (e.g. 60s) after the previous STT API call completed."""
+    if request_interval_secs <= 0:
+        return
+    elapsed = _get_last_completion_elapsed(api_key)
+    if elapsed is not None and elapsed < request_interval_secs:
+        sleep_secs = request_interval_secs - elapsed
+        logger.info(
+            "Free-tier rate limit: %.1fs elapsed since last API call completed (< %.0fs interval); sleeping %.1fs.",
+            elapsed,
+            request_interval_secs,
+            sleep_secs,
+        )
+        time.sleep(sleep_secs)
 
 
 class TranscribeClient:
@@ -333,8 +382,10 @@ class TranscribeClient:
         source_file: str | Path | None = None,
         chunk_duration_secs: float | None = None,
     ) -> TranscriptionResult:
-        """Transcribe a single MP3 chunk with a single API attempt (no retries)."""
-        _throttle_api_call(getattr(self, "request_interval_secs", 60.0))
+        _throttle_api_call(
+            getattr(self, "request_interval_secs", 60.0),
+            api_key=getattr(self, "api_key", None),
+        )
 
         if source_file is not None:
             effective_source_file = str(source_file)
@@ -449,7 +500,7 @@ class TranscribeClient:
                         self.client.files.delete(name=name)
                 except Exception:  # noqa: BLE001, S110 - best-effort cleanup
                     pass
-            record_api_call_completed()
+            record_api_call_completed(api_key=getattr(self, "api_key", None))
 
 
 def checkpoint_path(chunk_mp3: Path) -> Path:

@@ -295,5 +295,32 @@ def test_throttle_api_call_no_sleep_when_interval_zero(monkeypatch):
     stt.reset_api_rate_limiter()
 
 
+def test_throttle_api_call_persists_across_process_cache(monkeypatch, tmp_path):
+    monkeypatch.setenv("GTW_CACHE_DIR", str(tmp_path))
+    stt.reset_api_rate_limiter()
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+
+    base_time = 1_000_000.0
+    monkeypatch.setattr(stt.time, "time", lambda: base_time)
+
+    # Process 1 finishes an API call at base_time
+    stt.record_api_call_completed(api_key="fake-key-1")
+
+    # Simulate Process 2 starting fresh (clearing in-memory timestamps)
+    stt._LAST_API_COMPLETION_MONOTONIC = None
+    stt._LAST_API_COMPLETION_WALL = None
+
+    # Process 2 starts 10s after Process 1 completed
+    monkeypatch.setattr(stt.time, "time", lambda: base_time + 10.0)
+    stt._throttle_api_call(60.0, api_key="fake-key-1")
+
+    assert len(sleeps) == 1
+    assert 49.0 <= sleeps[0] <= 51.0
+
+    stt.reset_api_rate_limiter()
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
