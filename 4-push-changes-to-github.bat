@@ -45,11 +45,15 @@ git status
 
 echo Press ENTER to commit and push to GitHub...
 pause
+
+echo + git commit -m "%MSG%"
 git commit -m "%MSG%"
 if errorlevel 1 (
     echo Error: Git commit failed.
     exit /b 1
 )
+
+echo + git push origin HEAD
 git push origin HEAD
 if errorlevel 1 (
     echo Error: Git push failed.

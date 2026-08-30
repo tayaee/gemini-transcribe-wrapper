@@ -39,7 +39,10 @@ git status
 
 read -r -p "Press ENTER to commit and push to GitHub..."
 
+echo + git commit -m "$MSG"
 git commit -m "$MSG"
+
+echo + git push origin HEAD
 git push origin HEAD
 
 echo "Done. Pushed commit to GitHub."
