@@ -19,6 +19,9 @@ echo "=========================================="
 echo " Starting Release Pipeline"
 echo "=========================================="
 
+echo ""
+echo commit-message: $*
+
 # 1. Quality Gate
 echo
 echo "=== Step 1/5: Running Code Quality Gate ==="
@@ -73,11 +76,19 @@ echo "=== Step 4/5: Building package & pushing tag to GitHub ==="
 echo + ./5-push-tag-to-github.sh
 ./5-push-tag-to-github.sh
 
-# 5. Publish to PyPI
+# 5. PyPI Publishing (delegated to GitHub Actions Trusted Publishing)
 echo
-echo "=== Step 5/5: Publishing package to PyPI ==="
-echo + ./6-publish-to-pypi.sh
-./6-publish-to-pypi.sh
+echo "=== Step 5/5: PyPI Publishing via GitHub Actions (Trusted Publishing) ==="
+echo "Git tag pushed. GitHub Actions workflow 'Publish to PyPI' has been triggered."
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    echo "Tracking GitHub Actions workflow execution..."
+    sleep 3
+    RUN_ID="$(gh run list --workflow=publish.yml --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
+    if [ -n "$RUN_ID" ]; then
+        gh run watch "$RUN_ID" || true
+    fi
+fi
+echo "Track online: https://github.com/tayaee/gemini-transcribe-wrapper/actions"
 
 echo
 echo "=========================================="

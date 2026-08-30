@@ -19,6 +19,9 @@ echo ==========================================
 echo  Starting Release Pipeline
 echo ==========================================
 
+echo.
+echo commit-message: %*
+
 REM 1. Quality Gate
 echo.
 echo === Step 1/5: Running Code Quality Gate ===
@@ -74,12 +77,11 @@ echo + call 5-push-tag-to-github.bat
 call "%~dp05-push-tag-to-github.bat"
 if errorlevel 1 exit /b 1
 
-REM 5. Publish to PyPI
+REM 5. PyPI Publishing (delegated to GitHub Actions Trusted Publishing)
 echo.
-echo === Step 5/5: Publishing package to PyPI ===
-echo + call 6-publish-to-pypi.bat
-call "%~dp06-publish-to-pypi.bat"
-if errorlevel 1 exit /b 1
+echo === Step 5/5: PyPI Publishing via GitHub Actions (Trusted Publishing) ===
+echo Git tag pushed. GitHub Actions workflow 'Publish to PyPI' has been triggered.
+echo Track online: https://github.com/tayaee/gemini-transcribe-wrapper/actions
 
 echo.
 echo ==========================================
