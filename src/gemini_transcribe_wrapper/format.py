@@ -85,15 +85,36 @@ def group_words_to_cues(words: list[Word], max_gap: float = 1.5) -> list[Cue]:
 
 
 def _split_words_into_cues(words: list[Word]) -> list[Cue]:
-    """Split a word group into Cues of at most MAX_WORDS_PER_CUE words each."""
+    """Split a word group into Cues so each fits in :data:`MAX_LINES_PER_CUE` lines.
+
+    Splits when either the word count exceeds :data:`MAX_WORDS_PER_CUE` or
+    the greedy wrap of the joined text would exceed :data:`MAX_LINES_PER_CUE`
+    lines. The wrap simulation is what keeps ``split_cue_text`` from
+    silently truncating trailing lines: a 9-word Korean phrase like
+    "가장 하단에 요렇게 나오는 것들을 확인하실 수 있을 겝니다." easily fits in
+    12 words but wraps to 3 lines, so a plain width check would still let
+    ``format_srt`` drop the "겝니다." line entirely. Simulating the same
+    greedy fill that ``split_cue_text`` uses catches that case.
+    """
     if not words:
         return []
-    if len(words) <= MAX_WORDS_PER_CUE:
-        return [_words_to_cue(words)]
-    return [
-        _words_to_cue(words[i : i + MAX_WORDS_PER_CUE])
-        for i in range(0, len(words), MAX_WORDS_PER_CUE)
-    ]
+
+    def _line_count(ws: list[Word]) -> int:
+        # Use the uncapped wrapper so we see the true line count; split_cue_text
+        # would silently truncate at MAX_LINES_PER_CUE and hide overflow.
+        return len(wrap_cue_text(_join_words(ws)))
+
+    cues: list[Cue] = []
+    start = 0
+    # Invariant: words[start:i] fits in MAX_LINES_PER_CUE lines. We try to
+    # add words[i] and close the cue BEFORE adding it would push us over.
+    for i in range(1, len(words) + 1):
+        candidate = words[start:i]
+        if (i - start) > MAX_WORDS_PER_CUE or _line_count(candidate) > MAX_LINES_PER_CUE:
+            cues.append(_words_to_cue(words[start:i - 1]))
+            start = i - 1
+    cues.append(_words_to_cue(words[start:]))
+    return cues
 
 
 def _words_to_cue(words: list[Word]) -> Cue:
@@ -119,6 +140,19 @@ def _join_words(words: list[Word]) -> str:
 
 def split_cue_text(text: str) -> list[str]:
     """Split cue text into <=2 lines of <=15 chars, preferring word boundaries."""
+    lines = wrap_cue_text(text)
+    return lines[:MAX_LINES_PER_CUE]
+
+
+def wrap_cue_text(text: str) -> list[str]:
+    """Wrap cue text into as many lines as needed, each <= MAX_CHARS_PER_LINE width.
+
+    Unlike :func:`split_cue_text`, this does not cap the output at
+    :data:`MAX_LINES_PER_CUE`: callers that need to emit a single cue should
+    truncate via :func:`split_cue_text`, but internal splitting logic uses
+    this uncapped version so it can see the true line count and rebalance
+    before any content is silently dropped.
+    """
     text = text.strip()
     if not text:
         return []
@@ -147,7 +181,7 @@ def split_cue_text(text: str) -> list[str]:
     lines: list[str] = []
     for line in text.split("\n"):
         lines.extend(_wrap_line(line))
-    return lines[:MAX_LINES_PER_CUE]
+    return lines
 
 
 def format_srt(cues: list[Cue]) -> str:

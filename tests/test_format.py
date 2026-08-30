@@ -133,6 +133,43 @@ def test_srt_full_content_for_long_continuous_speech():
     assert "w99" in srt, "last word missing"
 
 
+def test_korean_phrase_not_truncated_to_two_lines():
+    """Regression: a Korean phrase that fits in MAX_WORDS_PER_CUE but wraps to
+    3 lines must still emit the trailing word in the SRT (it used to be
+    silently dropped by split_cue_text's [:MAX_LINES_PER_CUE] slice).
+
+    The real-world example was the last sentence of a 16-minute lecture:
+    "가장 하단에 요렇게 나오는 것들을 확인하실 수 있을 겝니다." — the SRT
+    ended at "있을" while .transcript.json and .txt correctly contained
+    "겝니다.".
+    """
+    K_W1 = chr(0xAC00) + chr(0xC7A5)
+    K_W2 = chr(0xD558) + chr(0xB2E8) + chr(0xC5D0)
+    K_W3 = chr(0xC694) + chr(0xB807) + chr(0xAC8C)
+    K_W4 = chr(0xB098) + chr(0xC624) + chr(0xB294)
+    K_W5 = chr(0xAC83) + chr(0xB4E4) + chr(0xC744)
+    K_W6 = chr(0xD655) + chr(0xC778) + chr(0xD558) + chr(0xC2E4)
+    K_W7 = chr(0xC218)
+    K_W8 = chr(0xC788) + chr(0xC744)
+    K_TRAIL = chr(0xAC9D) + chr(0xB2C8) + chr(0xB2E4) + "."
+    words = [
+        Word(K_W1, 0.0, 0.2),
+        Word(K_W2, 0.2, 0.5),
+        Word(K_W3, 0.5, 0.8),
+        Word(K_W4, 0.8, 1.1),
+        Word(K_W5, 1.1, 1.4),
+        Word(K_W6, 1.4, 1.7),
+        Word(K_W7, 1.7, 1.9),
+        Word(K_W8, 1.9, 2.1),
+        Word(K_TRAIL, 2.1, 2.5),
+    ]
+    cues = group_words_to_cues(words)
+    srt = format_srt(cues)
+    assert K_TRAIL in srt, (
+        f"trailing word {K_TRAIL!r} was truncated from the SRT:\n{srt}"
+    )
+
+
 if __name__ == "__main__":
     test_sanitize_swaps_swapped_timestamps()
     test_sanitize_keeps_normal_word_intact()
@@ -141,4 +178,5 @@ if __name__ == "__main__":
     test_format_srt_includes_full_transcript_after_fix()
     test_continuous_speech_splits_into_many_cues()
     test_srt_full_content_for_long_continuous_speech()
+    test_korean_phrase_not_truncated_to_two_lines()
     print("PASS: format sanitization tests")
