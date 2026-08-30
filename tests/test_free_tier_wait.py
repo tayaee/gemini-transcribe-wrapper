@@ -222,14 +222,15 @@ def test_quota_hint_silent_for_non_quota_errors(caplog):
 # --- transcribe_chunks_sequential no longer waits on 429 ------------------
 
 
-class _ImmediateClient:
+class _ImmediateClient(stt.TranscribeClient):
     """Fails on first call, never retries (used to verify no auto-wait)."""
 
     def __init__(self) -> None:
         self.api_logs: list[dict] = []
         self.calls = 0
+        self.api_key = "fake"
 
-    def transcribe_chunk(self, chunk_mp3: Path, chunk_index: int = 0):
+    def transcribe_chunk(self, chunk_mp3: Path | None, chunk_index: int = 0) -> stt.TranscriptionResult:
         self.calls += 1
         raise RuntimeError("429 quota exceeded")
 

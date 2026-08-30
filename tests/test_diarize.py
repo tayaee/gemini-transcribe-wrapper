@@ -142,6 +142,7 @@ def test_diarize_off_emits_plain_transcript_only(tmp_path):
     assert result.results[0].status.value == "success"
     out = result.results[0].output
     assert out.diarized_srt is None
+    assert out.srt is not None and out.txt is not None
     assert Path(out.srt).name == "input.srt"
     assert Path(out.txt).name == "input.txt"
 
@@ -166,6 +167,7 @@ def test_diarize_on_emits_diarized_outputs(tmp_path):
     assert result.results[0].status.value == "success"
     out = result.results[0].output
     assert out.diarized_srt is not None
+    assert out.srt is not None and out.txt is not None
     assert Path(out.diarized_srt).name == "input.diarized.srt"
     assert Path(out.srt).name == "input.srt"
     assert Path(out.txt).name == "input.txt"
@@ -394,6 +396,7 @@ def test_legacy_plain_transcript_is_migrated_on_diarize_run(tmp_path):
     # The migration itself is a plain os.replace: simulate it and verify
     # both names behave correctly afterwards.
     import os as _os
+    assert chosen is not None and migrate_to is not None
     _os.replace(chosen, migrate_to)
     assert not legacy.exists()
     assert migrate_to.exists()

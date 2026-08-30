@@ -24,9 +24,14 @@ logger = logging.getLogger(__name__)
 
 
 def merge_cues(
-    results: list[TranscriptionResult], chunk_secs: list[float] | tuple[float, ...]
+    results: list[TranscriptionResult],
+    chunk_secs: list[float] | tuple[float, ...] | float = (),
 ) -> list[Cue]:
     """Merge per-chunk word cues, offsetting each chunk by its start time."""
+    if isinstance(chunk_secs, (int, float)):
+        durations: list[float] | tuple[float, ...] = [float(chunk_secs)] * len(results)
+    else:
+        durations = chunk_secs
     all_words = []
     cum = 0.0
     for idx, res in enumerate(results):
@@ -40,8 +45,8 @@ def merge_cues(
                     speaker=w.speaker,
                 )
             )
-        if idx < len(chunk_secs):
-            cum += float(chunk_secs[idx])
+        if idx < len(durations):
+            cum += float(durations[idx])
     if not all_words:
         return []
     return group_words_to_cues(all_words)

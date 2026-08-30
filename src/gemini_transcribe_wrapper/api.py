@@ -669,7 +669,7 @@ def _render_from_transcript(
 def _warn_unmapped_speakers(
     echo: TranscribeInput,
     results: list,
-    chunk_secs: float,
+    chunk_secs: list[float] | tuple[float, ...] | float,
     out_dir: Path,
     out_stem: str,
     speaker_map: dict[str, str],

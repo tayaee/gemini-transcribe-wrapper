@@ -118,7 +118,7 @@ def compute_split_plan(
     always enforced.
     """
     user_specified = chunk_secs is not None and chunk_secs > 0
-    if user_specified:
+    if chunk_secs is not None and chunk_secs > 0:
         num_chunks = max(1, round(total_secs / chunk_secs))
     else:
         if total_secs <= max_chunk_secs:
