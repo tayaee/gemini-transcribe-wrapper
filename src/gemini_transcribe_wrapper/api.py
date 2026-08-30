@@ -159,6 +159,7 @@ def gemini_transcribe(
     temp_dir: str | None = "temp",
     ffsubsync_srt: bool = False,
     custom_vocabulary: list[str] | None = None,
+    audit_jsonl: str | Path | None = None,
 ) -> BatchTranscribeResult:
     """Transcribe a multimedia file using Gemini 3.5 Transcribe.
 
@@ -212,6 +213,8 @@ def gemini_transcribe(
             the full audio via ffsubsync for manual comparison. The main
             .srt/.diarized.srt keep the raw transcript timestamps (default:
             off).
+        audit_jsonl: Optional custom path for JSONL audit logging. Defaults to
+            ``<os-temp>/google_transcribe_wrapper_audit.jsonl``.
 
     Returns:
         BatchTranscribeResult with per-input TranscribeResult items. Each item
@@ -253,6 +256,7 @@ def gemini_transcribe(
                 temp_dir=temp_dir,
                 ffsubsync_srt=ffsubsync_srt,
                 custom_vocabulary=custom_vocabulary,
+                audit_jsonl=audit_jsonl,
             )
         )
     return BatchTranscribeResult(results=results)
@@ -279,6 +283,7 @@ def _process_one(
     temp_dir: str | None,
     ffsubsync_srt: bool,
     custom_vocabulary: list[str] | None = None,
+    audit_jsonl: str | Path | None = None,
 ) -> TranscribeResult:
     input_file = Path(input_path)
 
@@ -293,6 +298,7 @@ def _process_one(
         language=language,
         diarize=diarize,
         tier=tier,
+        audit_jsonl=str(audit_jsonl) if audit_jsonl else None,
         create_srt=create_srt,
         create_txt=create_txt,
         create_metadata_json=create_metadata_json,
@@ -424,6 +430,7 @@ def _process_one(
             tier=tier,
             custom_vocabulary=custom_vocabulary,
             source_file=str(input_file.resolve()),
+            audit_jsonl=audit_jsonl,
         )
         results = transcribe_chunks_sequential(
             client,

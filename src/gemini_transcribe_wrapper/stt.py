@@ -324,6 +324,7 @@ class TranscribeClient:
         tier: str = "free",
         custom_vocabulary: list[str] | None = None,
         source_file: str | Path | None = None,
+        audit_jsonl: str | Path | None = None,
     ) -> None:
         # Resolve the effective key from env vars early so the daily usage
         # counter (incremented per API call) and the genai.Client use the
@@ -345,6 +346,7 @@ class TranscribeClient:
         self.tier = tier
         self.custom_vocabulary = list(custom_vocabulary) if custom_vocabulary else None
         self.source_file = str(Path(source_file).resolve()) if source_file else None
+        self.audit_jsonl = Path(audit_jsonl) if audit_jsonl else get_audit_log_path()
         self.api_logs: list[dict[str, Any]] = []
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
@@ -459,6 +461,7 @@ class TranscribeClient:
                     api_http_status_code=200,
                     api_key=getattr(self, "api_key", None),
                     timestamp=iso_ts,
+                    log_path=getattr(self, "audit_jsonl", None),
                 )
                 return TranscriptionResult(text=text, words=words)
             except Exception as exc:
@@ -471,6 +474,7 @@ class TranscribeClient:
                     api_http_status_code=status_code,
                     api_key=getattr(self, "api_key", None),
                     timestamp=iso_ts,
+                    log_path=getattr(self, "audit_jsonl", None),
                 )
                 _log_quota_hint(exc)
                 if not _is_quota_error(exc):
@@ -497,6 +501,7 @@ class TranscribeClient:
                     api_http_status_code=status_code,
                     api_key=getattr(self, "api_key", None),
                     timestamp=iso_ts,
+                    log_path=getattr(self, "audit_jsonl", None),
                 )
             raise
         finally:

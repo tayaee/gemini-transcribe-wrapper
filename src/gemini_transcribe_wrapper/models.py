@@ -43,6 +43,10 @@ class TranscribeInput(BaseModel):
     force: bool = Field(False, description="Whether re-processing was forced.")
     temp_dir: str | None = Field("temp", description="Temp dir used for intermediate files.")
     tier: str = Field("free", description="Pricing tier: 'free' (default) or 'paid'.")
+    audit_jsonl: str | None = Field(
+        None,
+        description="Path to JSONL audit log file (default: <os-temp>/google_transcribe_wrapper_audit.jsonl).",
+    )
     line_interval_secs: float = Field(1.0, description="TXT newline break gap (s).")
     paragraph_interval_secs: float = Field(2.5, description="TXT paragraph break gap (s).")
     request_interval_secs: float = Field(60.0, description="Delay between API calls (s).")

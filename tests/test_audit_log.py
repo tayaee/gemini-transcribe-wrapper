@@ -143,3 +143,15 @@ def test_transcribe_chunk_logs_audit_on_success_and_failure(tmp_path, monkeypatc
     assert r_err["audio_chunk_playtime_s"] == 120.0
     assert r_err["api_processing_time_s"] == -1
     assert r_err["api_http_status_code"] == 429
+
+
+def test_cli_parser_audit_jsonl_default_and_custom(tmp_path):
+    from gemini_transcribe_wrapper import cli
+
+    parser = cli.build_parser()
+    args_default = parser.parse_args(["sample.mp4"])
+    assert args_default.audit_jsonl == str(stt.get_audit_log_path())
+
+    custom_path = str(tmp_path / "custom_audit.jsonl")
+    args_custom = parser.parse_args(["sample.mp4", "--audit-jsonl", custom_path])
+    assert args_custom.audit_jsonl == custom_path

@@ -12,6 +12,7 @@ from pathlib import Path
 from . import __version__
 from .api import QuotaExceededError, gemini_transcribe
 from .models import TranscribeStatus
+from .stt import get_audit_log_path
 from .usage_counter import usage_summary_line
 
 
@@ -67,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--speakers", default=None, help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=궤도;spk:1=가람;'")
     parser.add_argument("--custom-vocabulary", default=None, help="Custom vocabulary / bias phrases (comma/semicolon separated or text file path)")
     parser.add_argument("--temp-dir", default="temp", help="Directory for intermediate temp files (default: temp)")
+    parser.add_argument("--audit-jsonl", default=str(get_audit_log_path()), help=f"Path to JSONL audit log file (default: {get_audit_log_path()})")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
     return parser
 
@@ -182,6 +184,7 @@ def main(argv: list[str] | None = None) -> int:
                 temp_dir=args.temp_dir,
                 ffsubsync_srt=args.ffsubsync_srt,
                 custom_vocabulary=custom_vocab,
+                audit_jsonl=args.audit_jsonl,
             )
             produced_all.extend(batch.output_files())
             if any(r.status == TranscribeStatus.FAILED for r in batch.results):
