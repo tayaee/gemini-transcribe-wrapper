@@ -60,8 +60,17 @@ git status
 
 git diff --cached --quiet
 if errorlevel 1 (
-    echo + git commit -m "Version %VERSION%"
-    git commit -m "Version %VERSION%"
+    set "SUMMARY="
+    if exist "%~dp0scripts\commit-message.bat" (
+        for /F "usebackq delims=" %%S in (`call "%~dp0scripts\commit-message.bat" 2^>nul`) do set "SUMMARY=%%S"
+    )
+    if not "!SUMMARY!" == "" (
+        set "COMMIT_MSG=Version %VERSION%: !SUMMARY!"
+    ) else (
+        set "COMMIT_MSG=Version %VERSION%"
+    )
+    echo + git commit -m "!COMMIT_MSG!"
+    git commit -m "!COMMIT_MSG!"
     if errorlevel 1 (
         echo Error: Git commit failed.
         exit /b 1

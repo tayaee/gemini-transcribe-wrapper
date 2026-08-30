@@ -1,4 +1,4 @@
-"""Unit tests for 2-version.py decision logic.
+"""Unit tests for bump_version.py decision logic.
 
 Covers the bump-gating rules, especially the corner case where PyPI is
 ahead of the latest git tag (a user published without tagging first) —
@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SPEC_PATH = REPO_ROOT / "2-version.py"
+SPEC_PATH = REPO_ROOT / "scripts" / "bump_version.py"
 spec = importlib.util.spec_from_file_location("gtw_version", SPEC_PATH)
 assert spec is not None and spec.loader is not None
 gtw_version = importlib.util.module_from_spec(spec)

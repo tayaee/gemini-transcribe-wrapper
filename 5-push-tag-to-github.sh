@@ -36,8 +36,17 @@ echo + git status
 git status
 
 if ! git diff --cached --quiet; then
-    echo + git commit -m "Version $LOCAL"
-    git commit -m "Version $LOCAL"
+    SUMMARY=""
+    if [ -x "./scripts/commit-message.sh" ]; then
+        SUMMARY="$(./scripts/commit-message.sh 2>/dev/null || true)"
+    fi
+    if [ -n "$SUMMARY" ]; then
+        COMMIT_MSG="Version $LOCAL: $SUMMARY"
+    else
+        COMMIT_MSG="Version $LOCAL"
+    fi
+    echo + git commit -m "$COMMIT_MSG"
+    git commit -m "$COMMIT_MSG"
 fi
 
 if ! git rev-parse "v$LOCAL" >/dev/null 2>&1; then

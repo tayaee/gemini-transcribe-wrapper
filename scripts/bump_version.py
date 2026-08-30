@@ -21,9 +21,9 @@ bumping. This makes the script safe to chain into release automation
 to ship").
 
 Usage (via uv so PEP 723 metadata is honored):
-    uv run 2-version.py                 # print the current version
-    uv run 2-version.py bump [level]    # bump if pending changes exist
-                                        # (level: major|minor|patch, default: patch)
+    uv run scripts/bump_version.py              # print the current version
+    uv run scripts/bump_version.py bump [level] # bump if pending changes exist
+                                                # (level: major|minor|patch, default: patch)
 
 The companion ``2-version.sh`` / ``2-version.bat`` wrappers invoke
 ``uv run`` so users can just run ``./2-version.sh [bump [level]]``.
@@ -36,7 +36,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-PYPROJECT = Path(__file__).resolve().parent / "pyproject.toml"
+PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 TAG_PREFIX = "v"
 SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"', re.MULTILINE)
@@ -276,7 +276,7 @@ def main(argv):
     if argv[1] != "bump":
         raise SystemExit(
             f"Error: unknown command '{argv[1]}'. "
-            f"Usage: 2-version.py [bump [major|minor|patch]]"
+            f"Usage: bump_version.py [bump [major|minor|patch]]"
         )
     level = argv[2] if len(argv) > 2 else "patch"
     if level not in VALID_LEVELS:

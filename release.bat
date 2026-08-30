@@ -22,6 +22,11 @@ echo + git add -u
 git add -u
 git diff --cached --quiet >nul 2>&1
 if errorlevel 1 (
+    if "!MSG!" == "" (
+        if exist "%~dp0scripts\commit-message.bat" (
+            for /F "usebackq delims=" %%S in (`call "%~dp0scripts\commit-message.bat" 2^>nul`) do set "MSG=%%S"
+        )
+    )
     if "!MSG!" == "" set "MSG=Update codebase before release"
     echo Staged changes detected; pushing to GitHub...
     echo + call 4-push-changes-to-github.bat !MSG!

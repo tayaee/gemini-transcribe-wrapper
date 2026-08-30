@@ -20,7 +20,13 @@ echo "=== Step 2/5: Checking for pending code changes ==="
 echo + git add -u
 git add -u
 if ! git diff --cached --quiet; then
-    TARGET_MSG="${MSG:-Update codebase before release}"
+    TARGET_MSG="$MSG"
+    if [ -z "$TARGET_MSG" ] && [ -x "./scripts/commit-message.sh" ]; then
+        TARGET_MSG="$(./scripts/commit-message.sh 2>/dev/null || true)"
+    fi
+    if [ -z "$TARGET_MSG" ]; then
+        TARGET_MSG="Update codebase before release"
+    fi
     echo "Staged changes detected; pushing to GitHub..."
     echo + ./4-push-changes-to-github.sh "$TARGET_MSG"
     ./4-push-changes-to-github.sh "$TARGET_MSG"
