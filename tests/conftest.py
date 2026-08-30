@@ -4,6 +4,13 @@ from __future__ import annotations
 
 import pytest
 
+try:
+    import static_ffmpeg
+
+    static_ffmpeg.add_paths()
+except Exception:  # noqa: BLE001, S110 - best-effort environment init
+    pass
+
 
 @pytest.fixture(autouse=True)
 def isolate_unit_test_environment(monkeypatch):

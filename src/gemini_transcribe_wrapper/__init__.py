@@ -3,6 +3,13 @@
 from importlib import metadata
 from pathlib import Path
 
+try:
+    import static_ffmpeg
+
+    static_ffmpeg.add_paths()
+except Exception:  # noqa: BLE001, S110 - best-effort environment init
+    pass
+
 from .api import gemini_transcribe
 from .models import (
     BatchTranscribeResult,
