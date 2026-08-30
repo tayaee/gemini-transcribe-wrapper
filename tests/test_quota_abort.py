@@ -101,6 +101,7 @@ def test_cli_exits_with_code_2_on_quota(monkeypatch, tmp_path):
 
     src = _make_audio(tmp_path)
 
+    monkeypatch.setenv("GEMINI_API_KEY", "fake_key_for_testing")
     monkeypatch.setattr(api, "TranscribeClient", _QuotaHitClient)
     monkeypatch.setattr(sys, "argv", ["gtw", str(src)])
 

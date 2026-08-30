@@ -31,7 +31,7 @@ REM behavior -- the earlier gates are all static.
 call :run_one run-pytest.bat "unit tests (runtime correctness of src/ + tests/)" scripts\run-pytest.bat
 
 REM regression: end-to-end against a packaged install. With PACKAGE_SPEC=/src
-REM here it installs the local source into a fresh Python 3.10/3.13 Docker
+REM here it installs the local source into a fresh Python 3.12 Docker
 REM container and runs `gtw --version` -- catches issues that only surface
 REM after install (entry point wiring, missing deps, packaging metadata).
 REM Set PACKAGE_SPEC=<PyPI-name> to verify a real release instead.

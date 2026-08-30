@@ -1,17 +1,42 @@
-# Developer cheatsheet
+# Developer Cheatsheet
 
-1. Add feature in `src/` and `tests/`.
-2. Run `./1-code-quality-gate.sh` (or `1-code-quality-gate.bat`) — all 5 gates must PASS.
-3. (Optional) Push feature commits to GitHub during development:
+### 1. Daily Development & Quality Gates
+1. Edit code in `src/` and `tests/`.
+2. Verify quality gates:
    ```bash
-   ./4-push-changes-to-github.sh "Implement feature X"
+   ./1-code-quality-gate.sh
    ```
-4. Release to GitHub and PyPI (one-click automated pipeline):
+
+---
+
+### 2. Workflow Scenarios
+
+#### Scenario A: Push Changes to GitHub (Accumulate commits without releasing)
+```bash
+git add <files>
+./4-push-changes-to-github.sh "Commit message"
+```
+
+#### Scenario B: Publish Release to PyPI (All changes already pushed)
+```bash
+./release.sh
+```
+*Bumps version, creates Git tag `vX.Y.Z`, pushes tag to GitHub, and GitHub Actions automatically publishes to PyPI.*
+
+#### Scenario C: Publish Release to PyPI (With final pending changes)
+```bash
+git add <files>   # optional if modifying only existing tracked files
+./release.sh "Final change description"
+```
+*Automatically commits & pushes pending changes, bumps version, creates & pushes Git tag, and GitHub Actions publishes to PyPI.*
+
+---
+
+### 3. Post-Release Verification & Update
+1. Track GitHub Actions build & publish: `https://github.com/tayaee/gemini-transcribe-wrapper/actions`
+2. Verify package on PyPI: `https://pypi.org/project/gemini-transcribe-wrapper/#history`
+3. Update local CLI tool (supports Python 3.10–3.13; 3.12 recommended):
    ```bash
-   ./release.sh "Release message"
+   uv tool install --python 3.12 gemini-transcribe-wrapper@latest --force
+   gtw -v
    ```
-   This automatically runs quality gates, commits pending staged changes, bumps version (`2-version`), builds (`3-build`), pushes commit & tag `v<version>` to GitHub (`5-push-tag`), and publishes to PyPI (`6-publish-to-pypi`).
-5. Verify the tag at `https://github.com/tayaee/gemini-transcribe-wrapper/releases/tag/v<version>`.
-6. Verify the release at `https://pypi.org/project/gemini-transcribe-wrapper/#history`.
-7. Install the new version: `uv tool install --python 3.13 gemini-transcribe-wrapper@latest --force`.
-8. Confirm with `gtw -v` that the installed version matches.

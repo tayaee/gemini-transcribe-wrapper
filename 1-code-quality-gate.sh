@@ -58,7 +58,7 @@ run_one run-pytest.sh \
     ./scripts/run-pytest.sh
 
 # regression: end-to-end against a packaged install. With PACKAGE_SPEC=/src
-# here it installs the local source into a fresh Python 3.10/3.13 Docker
+# here it installs the local source into a fresh Python 3.12 Docker
 # container and runs `gtw --version` -- catches issues that only surface
 # after install (entry point wiring, missing deps, packaging metadata).
 # Set PACKAGE_SPEC=<PyPI-name> to verify a real release instead.

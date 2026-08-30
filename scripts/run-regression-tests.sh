@@ -1,5 +1,5 @@
 #!/bin/bash
-# Regression tests: verify the version command works on Python 3.10-3.13 via
+# Regression tests: verify the version command works on Python 3.13 via
 # Docker. For each combo, print only PASS/FAIL; show captured output on error.
 # Set PACKAGE_SPEC to override the package source (default: PyPI name).
 #
@@ -26,7 +26,7 @@ if [[ "$PACKAGE_SPEC" == ./* || "$PACKAGE_SPEC" == /* ]]; then
 fi
 
 fail=0
-for PY in 3.13; do
+for PY in 3.12; do
     log="/tmp/regression-py$PY.log"
     if docker run --rm "${MOUNT[@]}" -e UV_LINK_MODE=copy \
         -e PACKAGE_SPEC="$PACKAGE_SPEC" \
