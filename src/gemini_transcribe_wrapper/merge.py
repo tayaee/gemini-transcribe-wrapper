@@ -18,7 +18,7 @@ from .format import (
     format_srt,
     group_words_to_cues,
 )
-from .stt import TranscriptionResult, Word
+from .stt import MODEL_ID, TranscriptionResult, Word
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +239,7 @@ def _merged_result(
 def build_metadata_json(
     results: list[TranscriptionResult],
     chunk_secs: list[float] | tuple[float, ...],
+    model: str = MODEL_ID,
 ) -> str:
     """Build merged .metadata.json content from chunk transcription results.
 
@@ -267,7 +268,7 @@ def build_metadata_json(
         if idx < len(chunk_secs):
             cum += float(chunk_secs[idx])
     return json.dumps(
-        {"model": "gemini-3.5-transcribe", "chunks": chunks},
+        {"model": model, "chunks": chunks},
         ensure_ascii=False,
         indent=2,
     )

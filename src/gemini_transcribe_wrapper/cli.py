@@ -15,7 +15,7 @@ from click.testing import CliRunner
 from . import __version__
 from .api import QuotaExceededError, gemini_transcribe
 from .models import TranscribeStatus
-from .stt import get_audit_log_path
+from .stt import MODEL_ID, get_audit_log_path
 from .usage_counter import usage_summary_line
 
 
@@ -29,6 +29,7 @@ class TranscribeOptions:
     output_base: str | None = None
     gemini_api_key: str | None = None
     language: str = "ko-KR"
+    model: str = MODEL_ID
     diarize: bool = False
     srt: bool = True
     txt: bool = True
@@ -88,6 +89,12 @@ def _make_command() -> click.Command:
         "--language",
         default="ko-KR",
         help="BCP-47 language code (default: ko-KR)",
+    )
+    @click.option(
+        "--model",
+        default=MODEL_ID,
+        show_default=True,
+        help="Gemini audio model id to use for transcription",
     )
     @click.option(
         "--diarize/--no-diarize",
@@ -201,6 +208,7 @@ def _make_command() -> click.Command:
         output_base: str | None,
         gemini_api_key: str | None,
         language: str,
+        model: str,
         diarize: bool,
         srt: bool,
         txt: bool,
@@ -227,6 +235,7 @@ def _make_command() -> click.Command:
                 output_base=output_base,
                 gemini_api_key=gemini_api_key,
                 language=language,
+                model=model,
                 diarize=diarize,
                 srt=srt,
                 txt=txt,
@@ -320,6 +329,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.extend(["--gemini-api-key", str(opts.gemini_api_key)])
     if opts.language:
         tokens.extend(["--language", str(opts.language)])
+    if opts.model:
+        tokens.extend(["--model", str(opts.model)])
 
     tokens.append("--diarize" if opts.diarize else "--no-diarize")
     tokens.append("--srt" if opts.srt else "--no-srt")
@@ -428,6 +439,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 output_base=opts.output_base,
                 gemini_api_key=opts.gemini_api_key,
                 language=opts.language,
+                model=opts.model,
                 diarize=opts.diarize,
                 tier=opts.tier,
                 create_srt=opts.srt,

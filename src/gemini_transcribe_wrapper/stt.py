@@ -410,6 +410,7 @@ class TranscribeClient:
         custom_vocabulary: list[str] | None = None,
         source_file: str | Path | None = None,
         audit_jsonl: str | Path | None = None,
+        model: str = MODEL_ID,
     ) -> None:
         # Resolve the effective key from env vars early so the daily usage
         # counter (incremented per API call) and the genai.Client use the
@@ -432,6 +433,7 @@ class TranscribeClient:
         self.custom_vocabulary = list(custom_vocabulary) if custom_vocabulary else None
         self.source_file = str(Path(source_file).resolve()) if source_file else None
         self.audit_jsonl = Path(audit_jsonl) if audit_jsonl else get_audit_log_path()
+        self.model = model
         self.api_logs: list[dict[str, Any]] = []
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
@@ -518,7 +520,7 @@ class TranscribeClient:
                 # First attempt
                 try:
                     interaction = self.client.interactions.create(
-                        model=MODEL_ID,
+                        model=self.model,
                         input=[
                             {
                                 "type": "audio",
@@ -552,7 +554,7 @@ class TranscribeClient:
                     attempt_start = time.monotonic()  # reset so duration reflects the retry
                     try:
                         interaction = self.client.interactions.create(
-                            model=MODEL_ID,
+                            model=self.model,
                             input=[
                                 {
                                     "type": "audio",

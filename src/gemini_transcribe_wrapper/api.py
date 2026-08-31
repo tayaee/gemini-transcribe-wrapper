@@ -23,6 +23,7 @@ from .models import (
     TranscribeStatus,
 )
 from .stt import (
+    MODEL_ID,
     TranscribeClient,
     load_transcript,
     load_transcript_chunk_secs,
@@ -160,6 +161,7 @@ def gemini_transcribe(
     ffsubsync_srt: bool = False,
     custom_vocabulary: list[str] | None = None,
     audit_jsonl: str | Path | None = None,
+    model: str = MODEL_ID,
 ) -> BatchTranscribeResult:
     """A free video transcription CLI using gemini-3.5-transcribe that outputs .diarized.srt, .srt, and .txt files.
 
@@ -372,6 +374,7 @@ def _process_one(
                     line_interval_secs=line_interval_secs,
                     paragraph_interval_secs=paragraph_interval_secs,
                     speakers=speakers,
+                    model=model,
                 )
             except Exception as exc:  # noqa: BLE001 - fall through to full re-run
                 logger.warning("Re-render from transcript failed (%s); re-transcribing", exc)
@@ -432,6 +435,7 @@ def _process_one(
             custom_vocabulary=custom_vocabulary,
             source_file=str(input_file.resolve()),
             audit_jsonl=audit_jsonl,
+            model=model,
         )
         results = transcribe_chunks_sequential(
             client,
@@ -492,7 +496,7 @@ def _process_one(
         if create_metadata_json:
             metadata_tmp = ctx.work_dir / f"{ctx.output_base}.metadata.json.tmp"
             metadata_tmp.write_text(
-                build_metadata_json(results, plan.chunk_secs), encoding="utf-8"
+                build_metadata_json(results, plan.chunk_secs, model=model), encoding="utf-8"
             )
             tmp_map["metadata_json_tmp"] = metadata_tmp
             final_map["metadata_json"] = out_dir / f"{ctx.output_base}.metadata.json"
@@ -598,6 +602,7 @@ def _render_from_transcript(
     line_interval_secs: float,
     paragraph_interval_secs: float,
     speakers: dict[str, str] | None,
+    model: str = MODEL_ID,
 ) -> TranscribeResult:
     """Regenerate .diarized.srt/.srt/.txt from a transcript (no API call)."""
     results = load_transcript(transcript_path)
@@ -640,7 +645,7 @@ def _render_from_transcript(
         if create_metadata_json:
             metadata_tmp = work / f"{out_stem}.metadata.json.tmp"
             metadata_tmp.write_text(
-                build_metadata_json(results, chunk_secs), encoding="utf-8"
+                build_metadata_json(results, chunk_secs, model=model), encoding="utf-8"
             )
             tmp_map["metadata_json_tmp"] = metadata_tmp
             final_map["metadata_json"] = out_dir / f"{out_stem}.metadata.json"
