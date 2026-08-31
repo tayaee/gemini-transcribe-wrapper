@@ -195,7 +195,7 @@ def gemini_transcribe(
             filename picks up a ``.diarized.`` prefix when ``diarize`` is on.
         force: Re-process even if all outputs already exist.
         line_interval_secs / paragraph_interval_secs: TXT break gaps.
-        request_interval_secs: Delay between STT API calls. Defaults to 60.0s for
+        request_interval_secs: Delay between STT API calls. Defaults to 120.0s for
             "free" tier, 0.0s for "paid" tier.
         chunk_secs: Optional fixed chunk length in seconds. Overrides the
             default for the chosen ``diarize`` mode (59 min off, 29 min on).
@@ -228,7 +228,7 @@ def gemini_transcribe(
             exhaustion. Aborts the batch immediately instead of continuing.
     """
     effective_interval = (
-        (0.0 if tier == "paid" else 60.0)
+        (0.0 if tier == "paid" else 120.0)
         if request_interval_secs is None
         else float(request_interval_secs)
     )

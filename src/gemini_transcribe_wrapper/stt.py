@@ -121,6 +121,23 @@ def _is_quota_error(exc: Exception) -> bool:
     return False
 
 
+_RETRY_AFTER_RE = re.compile(r"please retry in\s+(\d+(?:\.\d+)?)\s*s", re.IGNORECASE)
+
+
+def _parse_retry_after_seconds(message: str) -> float | None:
+    """Parse Gemini's ``Please retry in Xs`` hint from an error message.
+
+    Returns the seconds as a float, or ``None`` if the hint is not present.
+    """
+    m = _RETRY_AFTER_RE.search(message or "")
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except (ValueError, IndexError):
+        return None
+
+
 def _sanitize_audit_token(value: str) -> str:
     """Lowercase and strip filesystem-unsafe characters from a path component.
 
@@ -370,7 +387,7 @@ class TranscribeClient:
         api_key: str | None = None,
         language: str = "ko-KR",
         enable_diarization: bool = True,
-        request_interval_secs: float = 60.0,
+        request_interval_secs: float = 120.0,
         tier: str = "free",
         custom_vocabulary: list[str] | None = None,
         source_file: str | Path | None = None,
@@ -441,7 +458,7 @@ class TranscribeClient:
         chunk_duration_secs: float | None = None,
     ) -> TranscriptionResult:
         _throttle_api_call(
-            getattr(self, "request_interval_secs", 60.0),
+            getattr(self, "request_interval_secs", 120.0),
             api_key=getattr(self, "api_key", None),
             tier=getattr(self, "tier", "free"),
         )
@@ -480,17 +497,57 @@ class TranscribeClient:
                 from .usage_counter import increment_today
 
                 increment_today(api_key=self.api_key)
-                interaction = self.client.interactions.create(
-                    model=MODEL_ID,
-                    input=[
-                        {
-                            "type": "audio",
-                            "uri": uploaded.uri,
-                            "mime_type": "audio/mpeg",
-                        }
-                    ],
-                    generation_config=self._generation_config(),
-                )
+                # First attempt
+                try:
+                    interaction = self.client.interactions.create(
+                        model=MODEL_ID,
+                        input=[
+                            {
+                                "type": "audio",
+                                "uri": uploaded.uri,
+                                "mime_type": "audio/mpeg",
+                            }
+                        ],
+                        generation_config=self._generation_config(),
+                    )
+                except Exception as first_exc:
+                    # 429 retry: if Gemini hints "Please retry in Xs",
+                    # sleep X+10s and retry once. If retry also fails, re-raise
+                    # the original exception so existing error handling runs.
+                    retry_after = (
+                        _parse_retry_after_seconds(str(first_exc))
+                        if _is_quota_error(first_exc)
+                        else None
+                    )
+                    if retry_after is None or retry_after <= 0:
+                        raise
+                    sleep_secs = retry_after + 10.0
+                    logger.info(
+                        "429 with 'Please retry in %.1fs' hint; "
+                        "sleeping %.1fs then retrying once.",
+                        retry_after,
+                        sleep_secs,
+                    )
+                    time.sleep(sleep_secs)
+                    attempt_start = time.monotonic()  # reset so duration reflects the retry
+                    try:
+                        interaction = self.client.interactions.create(
+                            model=MODEL_ID,
+                            input=[
+                                {
+                                    "type": "audio",
+                                    "uri": uploaded.uri,
+                                    "mime_type": "audio/mpeg",
+                                }
+                            ],
+                            generation_config=self._generation_config(),
+                        )
+                    except Exception:  # noqa: BLE001 - re-raise original, not this one
+                        # Retry also failed; re-raise the original error
+                        raise first_exc from None
+                    logger.info(
+                        "429 retry succeeded via cooldown; continuing."
+                    )
                 duration = time.monotonic() - attempt_start
                 text = getattr(interaction, "output_text", None) or ""
                 words = _extract_words(interaction)
@@ -736,7 +793,7 @@ def save_checkpoint(meta_path: Path, result: TranscriptionResult) -> None:
 def transcribe_chunks_sequential(
     client: TranscribeClient,
     chunks: list[Path],
-    request_interval_secs: float = 60.0,
+    request_interval_secs: float = 120.0,
 ) -> list[TranscriptionResult]:
     """Transcribe each chunk in order, reusing valid checkpoints (skip API + skip sleep).
 

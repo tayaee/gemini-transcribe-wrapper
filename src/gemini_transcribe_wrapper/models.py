@@ -52,7 +52,7 @@ class TranscribeInput(BaseModel):
     )
     line_interval_secs: float = Field(1.0, description="TXT newline break gap (s).")
     paragraph_interval_secs: float = Field(2.5, description="TXT paragraph break gap (s).")
-    request_interval_secs: float = Field(60.0, description="Delay between API calls (s).")
+    request_interval_secs: float = Field(120.0, description="Delay between API calls (s).")
 
 
 class TranscribeOutput(BaseModel):

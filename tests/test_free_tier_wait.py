@@ -1,16 +1,20 @@
 """Test PST-midnight wait helpers and STT 429-hint behavior.
 
-The ``--free-tier-wait-on-429`` flag was removed: 429s now propagate
-immediately. The hint logged by :func:`stt._log_quota_hint` tells the user
-how to retry. ``sleep_until_pst_midnight`` is retained as a library helper
-(still used by the CLI's Ctrl-C handling) and the PST-midnight time helpers
-are tested directly here.
+When the Gemini API returns a 429 containing ``Please retry in Xs``,
+:func:`stt._parse_retry_after_seconds` extracts ``X`` and
+:func:`stt.TranscribeClient.transcribe_chunk` sleeps ``X + 10`` seconds then
+retries the call once. 429s without the hint, or 429s whose retry also fails,
+propagate immediately so :func:`stt._log_quota_hint` runs as before.
+``sleep_until_pst_midnight`` is retained as a library helper (still used by
+the CLI's Ctrl-C handling) and the PST-midnight time helpers are tested
+directly here.
 """
 
 import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -337,6 +341,161 @@ def test_throttle_api_call_bypasses_for_paid_tier(monkeypatch):
     assert len(sleeps) == 1
 
     stt.reset_api_rate_limiter()
+
+
+# --- 429 "Please retry in Xs" retry-once behavior --------------------------
+
+
+class _QuotaClient(stt.TranscribeClient):
+    """Test client: ``interactions.create`` follows a scripted list of side_effects."""
+
+    def __init__(self, side_effects: list) -> None:
+        self.api_key = "AIzaSyDummyKey12345678"
+        self.api_logs: list[dict] = []
+        self.request_interval_secs = 0.0
+
+        mock_upload = MagicMock()
+        mock_upload.uri = "files/test"
+        mock_upload.name = "files/test"
+        self.client = MagicMock()
+        self.client.files.upload = MagicMock(return_value=mock_upload)
+        self.client.files.delete = MagicMock()
+
+        mock_step = MagicMock()
+        mock_step.type = "model_output"
+        mock_content = MagicMock()
+        mock_content.type = "text"
+        mock_content.annotations = []
+        mock_step.content = [mock_content]
+        ok_interaction = MagicMock()
+        ok_interaction.steps = [mock_step]
+        ok_interaction.output_text = "안녕하세요"
+
+        # Sentinel: pass _SENTINEL_OK to mean "return the successful interaction".
+        _SENTINEL_OK = object()
+
+        effects = list(side_effects)
+        self._effects = effects
+        self._ok = ok_interaction
+        self._SENTINEL_OK = _SENTINEL_OK
+        self.calls = 0
+
+        def _create(**_kwargs):
+            self.calls += 1
+            if self.calls - 1 < len(self._effects):
+                fx = self._effects[self.calls - 1]
+                if isinstance(fx, Exception):
+                    raise fx
+                if fx is _SENTINEL_OK:
+                    return self._ok
+                return fx
+            return self._ok
+
+        self.client.interactions.create = MagicMock(side_effect=_create)
+
+    def _generation_config(self):  # type: ignore[override]
+        return MagicMock()
+
+
+def _retry_msg(seconds: float) -> str:
+    return (
+        "Error code: 429 - {'error': {'message': 'You exceeded your current quota. "
+        f"\\nPlease retry in {seconds}s.', 'code': 'too_many_requests'}}"
+    )
+
+
+def test_parse_retry_after_seconds_extracts_hints():
+    assert stt._parse_retry_after_seconds(_retry_msg(53.07)) == pytest.approx(53.07)
+    assert stt._parse_retry_after_seconds("Please retry in 42s.") == 42.0
+    assert stt._parse_retry_after_seconds("no hint here") is None
+    assert stt._parse_retry_after_seconds("") is None
+    # Case-insensitive
+    assert stt._parse_retry_after_seconds("PLEASE RETRY IN 17s") == 17.0
+
+
+def test_transcribe_chunk_retries_on_429_with_retry_hint(tmp_path, monkeypatch, caplog):
+    """First 429 with 'Please retry in Xs' → sleep X+10s → retry → succeed."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+
+    first_exc = RuntimeError(_retry_msg(30.0))
+    # Build the client first so we can grab its _SENTINEL_OK for the retry step.
+    client = _QuotaClient(side_effects=[first_exc])
+    client._effects.append(client._SENTINEL_OK)
+
+    chunk_mp3 = tmp_path / "chunk_000.mp3"
+    chunk_mp3.write_bytes(b"dummy audio data")
+
+    with caplog.at_level(logging.INFO):
+        result = client.transcribe_chunk(
+            chunk_mp3,
+            chunk_index=0,
+            source_file="/input.mp4",
+            chunk_duration_secs=120.0,
+        )
+
+    assert result.text == "안녕하세요"
+    assert client.calls == 2  # first attempt + one retry
+    assert sleeps == [pytest.approx(40.0)]  # 30 + 10
+    # One log line on success (per user spec)
+    cooldown_logs = [
+        rec.message for rec in caplog.records
+        if "succeeded via cooldown" in rec.message
+    ]
+    assert len(cooldown_logs) == 1
+    sleeping_logs = [
+        rec.message for rec in caplog.records
+        if "sleeping 40.0s then retrying once" in rec.message
+    ]
+    assert len(sleeping_logs) == 1
+
+
+def test_transcribe_chunk_does_not_retry_on_429_without_retry_hint(tmp_path, monkeypatch):
+    """429 with no 'Please retry in Xs' → propagate immediately, no sleep, no retry."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+
+    client = _QuotaClient(side_effects=[RuntimeError("429 plain error, no hint")])
+
+    chunk_mp3 = tmp_path / "chunk_000.mp3"
+    chunk_mp3.write_bytes(b"dummy audio data")
+
+    with pytest.raises(RuntimeError, match="429"):
+        client.transcribe_chunk(
+            chunk_mp3,
+            chunk_index=0,
+            source_file="/input.mp4",
+            chunk_duration_secs=120.0,
+        )
+
+    assert client.calls == 1
+    assert sleeps == []
+
+
+def test_transcribe_chunk_re_raises_original_on_retry_failure(tmp_path, monkeypatch):
+    """Retry also fails → re-raise the ORIGINAL 429, not the second exception."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+
+    first_exc = RuntimeError(_retry_msg(10.0))
+    second_exc = RuntimeError("still failing after retry")
+    client = _QuotaClient(side_effects=[first_exc, second_exc])
+
+    chunk_mp3 = tmp_path / "chunk_000.mp3"
+    chunk_mp3.write_bytes(b"dummy audio data")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        client.transcribe_chunk(
+            chunk_mp3,
+            chunk_index=0,
+            source_file="/input.mp4",
+            chunk_duration_secs=120.0,
+        )
+
+    # The original (first) error is the one that propagates
+    assert "Please retry in 10.0s" in str(excinfo.value)
+    assert client.calls == 2
+    assert sleeps == [pytest.approx(20.0)]  # 10 + 10
 
 
 if __name__ == "__main__":

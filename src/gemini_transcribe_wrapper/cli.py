@@ -156,7 +156,7 @@ def _make_command() -> click.Command:
         "--request-interval-secs",
         type=float,
         default=None,
-        help="Delay between API calls (default: 60.0 for free tier, 0.0 for paid tier)",
+        help="Delay between API calls (default: 120.0 for free tier, 0.0 for paid tier)",
     )
     @click.option(
         "--chunk-secs",
@@ -355,7 +355,7 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.extend(["--paragraph-interval-secs", str(opts.paragraph_interval_secs)])
 
     effective_interval = (
-        (0.0 if opts.tier == "paid" else 60.0)
+        (0.0 if opts.tier == "paid" else 120.0)
         if opts.request_interval_secs is None
         else float(opts.request_interval_secs)
     )
