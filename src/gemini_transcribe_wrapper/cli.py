@@ -394,7 +394,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
 
     logging.basicConfig(
         level=logging.DEBUG if opts.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
+        format="%(asctime)s %(levelname)s %(filename)s:%(lineno)s %(message)s",
     )
 
     start_time = time.monotonic()
