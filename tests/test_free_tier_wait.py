@@ -2,7 +2,7 @@
 
 When the Gemini API returns a 429 containing ``Please retry in Xs``,
 :func:`stt._parse_retry_after_seconds` extracts ``X`` and
-:func:`stt.TranscribeClient.transcribe_chunk` sleeps ``X + 10`` seconds then
+:func:`stt.TranscribeClient.transcribe_chunk` sleeps ``X + 60`` seconds then
 retries the call once. 429s without the hint, or 429s whose retry also fails,
 propagate immediately so :func:`stt._log_quota_hint` runs as before.
 ``sleep_until_pst_midnight`` is retained as a library helper (still used by
@@ -458,7 +458,7 @@ def test_parse_retry_after_seconds_extracts_hints():
 
 
 def test_transcribe_chunk_retries_on_429_with_retry_hint(tmp_path, monkeypatch, caplog):
-    """First 429 with 'Please retry in Xs' → sleep X+10s → retry → succeed."""
+    """First 429 with 'Please retry in Xs' → sleep X+60s → retry → succeed."""
     sleeps: list[float] = []
     monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
 
@@ -480,7 +480,7 @@ def test_transcribe_chunk_retries_on_429_with_retry_hint(tmp_path, monkeypatch, 
 
     assert result.text == "안녕하세요"
     assert client.calls == 2  # first attempt + one retry
-    assert sleeps == [pytest.approx(40.0)]  # 30 + 10
+    assert sleeps == [pytest.approx(90.0)]  # 30 + 60
     # One log line on success (per user spec)
     cooldown_logs = [
         rec.message for rec in caplog.records
@@ -489,7 +489,7 @@ def test_transcribe_chunk_retries_on_429_with_retry_hint(tmp_path, monkeypatch, 
     assert len(cooldown_logs) == 1
     sleeping_logs = [
         rec.message for rec in caplog.records
-        if "sleeping 40.0s then retrying once" in rec.message
+        if "sleeping 30.0+60 secs then retrying once" in rec.message
     ]
     assert len(sleeping_logs) == 1
 
@@ -539,7 +539,7 @@ def test_transcribe_chunk_re_raises_original_on_retry_failure(tmp_path, monkeypa
     # The original (first) error is the one that propagates
     assert "Please retry in 10.0s" in str(excinfo.value)
     assert client.calls == 2
-    assert sleeps == [pytest.approx(20.0)]  # 10 + 10
+    assert sleeps == [pytest.approx(70.0)]  # 10 + 60
 
 
 if __name__ == "__main__":

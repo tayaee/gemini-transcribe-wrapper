@@ -526,7 +526,7 @@ class TranscribeClient:
                     )
                 except Exception as first_exc:
                     # 429 retry: if Gemini hints "Please retry in Xs",
-                    # sleep X+10s and retry once. If retry also fails, re-raise
+                    # sleep X+60s and retry once. If retry also fails, re-raise
                     # the original exception so existing error handling runs.
                     retry_after = (
                         _parse_retry_after_seconds(str(first_exc))
@@ -535,12 +535,12 @@ class TranscribeClient:
                     )
                     if retry_after is None or retry_after <= 0:
                         raise
-                    sleep_secs = retry_after + 10.0
+                    sleep_secs = retry_after + 60.0
                     logger.info(
                         "429 with 'Please retry in %.1fs' hint; "
-                        "sleeping %.1fs then retrying once.",
+                        "sleeping %.1f+60 secs then retrying once.",
                         retry_after,
-                        sleep_secs,
+                        retry_after,
                     )
                     time.sleep(sleep_secs)
                     attempt_start = time.monotonic()  # reset so duration reflects the retry
