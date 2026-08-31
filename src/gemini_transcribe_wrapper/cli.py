@@ -1,13 +1,16 @@
-"""CLI entry point for gemini-transcribe."""
+"""CLI entry point for gemini-transcribe (Click-based)."""
 
 from __future__ import annotations
 
-import argparse
 import logging
 import os
 import sys
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import click
+from click.testing import CliRunner
 
 from . import __version__
 from .api import QuotaExceededError, gemini_transcribe
@@ -16,44 +19,262 @@ from .stt import get_audit_log_path
 from .usage_counter import usage_summary_line
 
 
-def build_parser() -> argparse.ArgumentParser:
-    # Use the invoked command name (gemini-transcribe or the gt shortcut) as prog.
-    prog = Path(sys.argv[0]).name or "gemini-transcribe"
-    parser = argparse.ArgumentParser(
-        prog=prog,
-        description=f"{prog} v{__version__} - Zero-config Gemini 3.5 "
-        "Transcribe wrapper (auto ffmpeg/ffsubsync).",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        add_help=True,
+@dataclass
+class TranscribeOptions:
+    """All CLI options resolved into a structured object (replaces argparse.Namespace)."""
+
+    path: list[str] = field(default_factory=list)
+    version: bool = False
+    output_dir: str | None = None
+    output_base: str | None = None
+    gemini_api_key: str | None = None
+    language: str = "ko-KR"
+    diarize: bool = False
+    srt: bool = True
+    txt: bool = True
+    metadata_json: bool = False
+    transcript_json: bool = True
+    ffsubsync_srt: bool = False
+    force: bool = False
+    tier: str = "free"
+    line_interval_secs: float = 1.0
+    paragraph_interval_secs: float = 2.5
+    request_interval_secs: float | None = None
+    chunk_secs: float | None = None
+    speakers: str | None = None
+    custom_vocabulary: str | None = None
+    temp_dir: str = "temp"
+    audit_jsonl: str | None = None
+    verbose: bool = False
+
+
+_DEFAULT_AUDIT_JSONL = str(get_audit_log_path())
+
+
+def _make_command() -> click.Command:
+    """Build the Click command. The callback appends TranscribeOptions to _LAST_OPTIONS."""
+
+    @click.command(
+        context_settings={"help_option_names": ["-h", "--help"]},
+        help=(
+            f"gemini-transcribe v{__version__} - "
+            "A free video transcription CLI using gemini-3.5-transcribe that "
+            "outputs .diarized.srt, .srt, and .txt files."
+        ),
     )
-    parser.add_argument(
-        "-v", "--version",
-        action="store_true",
+    @click.option(
+        "-v",
+        "--version",
+        is_flag=True,
+        default=False,
         help="Show version and exit",
     )
-    parser.add_argument("path", nargs="*", help="Input file or glob pattern (*.mp4, *.mp3, ...)")
-    parser.add_argument("--output-dir", default=None, help="Directory for output files (default: alongside input)")
-    parser.add_argument("--output-base", default=None, help="Base name for output files (default: input stem)")
-    parser.add_argument("--gemini-api-key", default=None, help="Gemini API key (default: $GEMINI_API_KEY)")
-    parser.add_argument("--language", default="ko-KR", help="BCP-47 language code (default: ko-KR)")
-    parser.add_argument("--diarize", action=argparse.BooleanOptionalAction, default=False, help="Enable speaker diarization (default: off). When on, the wrapper uses 29-min chunks for better diarization accuracy and emits .diarized.* outputs. When off, it cuts the file into 59-min logical units (each split into 2x 29-min API calls to stay under the 30-min per-call limit), keeping free-tier API usage low.")
-    parser.add_argument("--srt", action=argparse.BooleanOptionalAction, default=True, help="Generate .srt subtitles (default: on)")
-    parser.add_argument("--txt", action=argparse.BooleanOptionalAction, default=True, help="Generate .txt transcript text (default: on)")
-    parser.add_argument("--metadata-json", action=argparse.BooleanOptionalAction, default=False, help="Keep .metadata.json output (default: off)")
-    parser.add_argument("--transcript-json", action=argparse.BooleanOptionalAction, default=True, help="Keep <base>.transcript.json for later re-render (default: on)")
-    parser.add_argument("--ffsubsync-srt", action="store_true", help="Also write <base>.ffsubsync.srt aligned to audio (default: off)")
-    parser.add_argument("--force", action="store_true", help="Re-process even if outputs exist")
-    parser.add_argument("--tier", choices=["free", "paid"], default="free", help="Gemini API pricing tier (default: free). When 'free', enforces 60s cooldown between API calls; when 'paid', rate limiting is disabled unless overridden by --request-interval-secs.")
-    parser.add_argument("--line-interval-secs", type=float, default=1.0, help="TXT newline break threshold (default: 1.0)")
-    parser.add_argument("--paragraph-interval-secs", type=float, default=2.5, help="TXT paragraph break threshold (default: 2.5)")
-    parser.add_argument("--request-interval-secs", type=float, default=None, help="Delay between API calls (default: 60.0 for free tier, 0.0 for paid tier)")
-    parser.add_argument("--chunk-secs", type=float, default=None, help="Fixed chunk length in seconds (default: auto, 59-min logical units when --no-diarize, 29-min when --diarize; hard ceiling of 29 min enforced to fit the Gemini 30-min per-call limit)")
-    parser.add_argument("--speakers", default=None, help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=궤도;spk:1=가람;'")
-    parser.add_argument("--custom-vocabulary", default=None, help="Custom vocabulary / bias phrases (comma/semicolon separated or text file path)")
-    parser.add_argument("--temp-dir", default="temp", help="Directory for intermediate temp files (default: temp)")
-    parser.add_argument("--audit-jsonl", default=str(get_audit_log_path()), help=f"Path to JSONL audit log file (default: {get_audit_log_path()})")
-    parser.add_argument("--verbose", action="store_true", help="Verbose logging")
-    return parser
+    @click.option(
+        "--output-dir",
+        default=None,
+        help="Directory for output files (default: alongside input)",
+    )
+    @click.option(
+        "--output-base",
+        default=None,
+        help="Base name for output files (default: input stem)",
+    )
+    @click.option(
+        "--gemini-api-key",
+        default=None,
+        help="Gemini API key (default: $GEMINI_API_KEY)",
+    )
+    @click.option(
+        "--language",
+        default="ko-KR",
+        help="BCP-47 language code (default: ko-KR)",
+    )
+    @click.option(
+        "--diarize/--no-diarize",
+        default=False,
+        help=(
+            "Enable speaker diarization (default: off). When on, the wrapper uses 29-min "
+            "chunks for better diarization accuracy and emits .diarized.* outputs. When "
+            "off, it cuts the file into 59-min logical units (each split into 2x 29-min "
+            "API calls to stay under the 30-min per-call limit), keeping free-tier API "
+            "usage low."
+        ),
+    )
+    @click.option(
+        "--srt/--no-srt",
+        default=True,
+        help="Generate .srt subtitles (default: on)",
+    )
+    @click.option(
+        "--txt/--no-txt",
+        default=True,
+        help="Generate .txt transcript text (default: on)",
+    )
+    @click.option(
+        "--metadata-json/--no-metadata-json",
+        default=False,
+        help="Keep .metadata.json output (default: off)",
+    )
+    @click.option(
+        "--transcript-json/--no-transcript-json",
+        default=True,
+        help="Keep <base>.transcript.json for later re-render (default: on)",
+    )
+    @click.option(
+        "--ffsubsync-srt/--no-ffsubsync-srt",
+        default=False,
+        help="Also write <base>.ffsubsync.srt aligned to audio (default: off)",
+    )
+    @click.option(
+        "--force/--no-force",
+        default=False,
+        help="Re-process even if outputs exist",
+    )
+    @click.option(
+        "--tier",
+        type=click.Choice(["free", "paid"], case_sensitive=False),
+        default="free",
+        help=(
+            "Gemini API pricing tier (default: free). When 'free', enforces 60s "
+            "cooldown between API calls; when 'paid', rate limiting is disabled "
+            "unless overridden by --request-interval-secs."
+        ),
+    )
+    @click.option(
+        "--line-interval-secs",
+        type=float,
+        default=1.0,
+        help="TXT newline break threshold (default: 1.0)",
+    )
+    @click.option(
+        "--paragraph-interval-secs",
+        type=float,
+        default=2.5,
+        help="TXT paragraph break threshold (default: 2.5)",
+    )
+    @click.option(
+        "--request-interval-secs",
+        type=float,
+        default=None,
+        help="Delay between API calls (default: 60.0 for free tier, 0.0 for paid tier)",
+    )
+    @click.option(
+        "--chunk-secs",
+        type=float,
+        default=None,
+        help=(
+            "Fixed chunk length in seconds (default: auto, 59-min logical units when "
+            "--no-diarize, 29-min when --diarize; hard ceiling of 29 min enforced to "
+            "fit the Gemini 30-min per-call limit)"
+        ),
+    )
+    @click.option(
+        "--speakers",
+        default=None,
+        help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=궤도;spk:1=가람;'",
+    )
+    @click.option(
+        "--custom-vocabulary",
+        default=None,
+        help="Custom vocabulary / bias phrases (comma/semicolon separated or text file path)",
+    )
+    @click.option(
+        "--temp-dir",
+        default="temp",
+        help="Directory for intermediate temp files (default: temp)",
+    )
+    @click.option(
+        "--audit-jsonl",
+        default=_DEFAULT_AUDIT_JSONL,
+        help=f"Path to JSONL audit log file (default: {_DEFAULT_AUDIT_JSONL})",
+    )
+    @click.option(
+        "--verbose/--no-verbose",
+        default=False,
+        help="Verbose logging",
+    )
+    @click.argument("path", nargs=-1)
+    def _root(
+        path: tuple[str, ...],
+        version: bool,
+        output_dir: str | None,
+        output_base: str | None,
+        gemini_api_key: str | None,
+        language: str,
+        diarize: bool,
+        srt: bool,
+        txt: bool,
+        metadata_json: bool,
+        transcript_json: bool,
+        ffsubsync_srt: bool,
+        force: bool,
+        tier: str,
+        line_interval_secs: float,
+        paragraph_interval_secs: float,
+        request_interval_secs: float | None,
+        chunk_secs: float | None,
+        speakers: str | None,
+        custom_vocabulary: str | None,
+        temp_dir: str,
+        audit_jsonl: str,
+        verbose: bool,
+    ) -> None:
+        _LAST_OPTIONS.append(
+            TranscribeOptions(
+                path=list(path),
+                version=version,
+                output_dir=output_dir,
+                output_base=output_base,
+                gemini_api_key=gemini_api_key,
+                language=language,
+                diarize=diarize,
+                srt=srt,
+                txt=txt,
+                metadata_json=metadata_json,
+                transcript_json=transcript_json,
+                ffsubsync_srt=ffsubsync_srt,
+                force=force,
+                tier=tier,
+                line_interval_secs=line_interval_secs,
+                paragraph_interval_secs=paragraph_interval_secs,
+                request_interval_secs=request_interval_secs,
+                chunk_secs=chunk_secs,
+                speakers=speakers,
+                custom_vocabulary=custom_vocabulary,
+                temp_dir=temp_dir,
+                audit_jsonl=audit_jsonl,
+                verbose=verbose,
+            )
+        )
+
+    return _root
+
+
+app = _make_command()
+
+# Container used to ferry the callback's return value out of Click's CliRunner,
+# which doesn't expose the callback's return value on the Result object.
+_LAST_OPTIONS: list[TranscribeOptions] = []
+
+
+def build_options(argv: list[str] | None = None) -> TranscribeOptions:
+    """Parse argv into a TranscribeOptions without running the main logic. For testability."""
+    argv_list = list(argv) if argv is not None else []
+    runner = CliRunner()
+    _LAST_OPTIONS.clear()
+    result = runner.invoke(
+        app,
+        argv_list,
+        prog_name="gemini-transcribe",
+        catch_exceptions=True,
+    )
+    if result.exit_code != 0:
+        if result.exception and not isinstance(result.exception, SystemExit):
+            raise result.exception
+        raise SystemExit(result.exit_code)
+    if not _LAST_OPTIONS:
+        raise RuntimeError(f"Failed to parse options: {result.output!r}")
+    return _LAST_OPTIONS[-1]
 
 
 def parse_custom_vocabulary(spec: str | None) -> list[str] | None:
@@ -65,6 +286,7 @@ def parse_custom_vocabulary(spec: str | None) -> list[str] | None:
         lines = [line.strip() for line in p.read_text(encoding="utf-8").splitlines()]
         return [line for line in lines if line]
     import re
+
     raw_items = re.split(r"[,;]", spec)
     items = [item.strip() for item in raw_items if item.strip()]
     return items if items else None
@@ -88,58 +310,58 @@ def parse_speakers(spec: str) -> dict[str, str]:
     return mapping
 
 
-def format_cli_command(prog: str, args: argparse.Namespace) -> str:
+def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
     """Format the full command line with all resolved effective options."""
     tokens: list[str] = [prog]
 
-    if getattr(args, "tier", None):
-        tokens.extend(["--tier", str(args.tier)])
-    if getattr(args, "gemini_api_key", None):
-        tokens.extend(["--gemini-api-key", str(args.gemini_api_key)])
-    if getattr(args, "language", None):
-        tokens.extend(["--language", str(args.language)])
+    if opts.tier:
+        tokens.extend(["--tier", str(opts.tier)])
+    if opts.gemini_api_key:
+        tokens.extend(["--gemini-api-key", str(opts.gemini_api_key)])
+    if opts.language:
+        tokens.extend(["--language", str(opts.language)])
 
-    tokens.append("--diarize" if getattr(args, "diarize", False) else "--no-diarize")
-    tokens.append("--srt" if getattr(args, "srt", True) else "--no-srt")
-    tokens.append("--txt" if getattr(args, "txt", True) else "--no-txt")
-    tokens.append("--transcript-json" if getattr(args, "transcript_json", True) else "--no-transcript-json")
-    tokens.append("--metadata-json" if getattr(args, "metadata_json", False) else "--no-metadata-json")
+    tokens.append("--diarize" if opts.diarize else "--no-diarize")
+    tokens.append("--srt" if opts.srt else "--no-srt")
+    tokens.append("--txt" if opts.txt else "--no-txt")
+    tokens.append("--transcript-json" if opts.transcript_json else "--no-transcript-json")
+    tokens.append("--metadata-json" if opts.metadata_json else "--no-metadata-json")
 
-    if getattr(args, "ffsubsync_srt", False):
+    if opts.ffsubsync_srt:
         tokens.append("--ffsubsync-srt")
-    if getattr(args, "force", False):
+    if opts.force:
         tokens.append("--force")
-    if getattr(args, "verbose", False):
+    if opts.verbose:
         tokens.append("--verbose")
 
-    if getattr(args, "output_dir", None) is not None:
-        tokens.extend(["--output-dir", str(args.output_dir)])
-    if getattr(args, "output_base", None) is not None:
-        tokens.extend(["--output-base", str(args.output_base)])
-    if getattr(args, "temp_dir", None) is not None:
-        tokens.extend(["--temp-dir", str(args.temp_dir)])
-    if getattr(args, "audit_jsonl", None) is not None:
-        tokens.extend(["--audit-jsonl", str(args.audit_jsonl)])
-    if getattr(args, "speakers", None):
-        tokens.extend(["--speakers", str(args.speakers)])
-    if getattr(args, "custom_vocabulary", None):
-        tokens.extend(["--custom-vocabulary", str(args.custom_vocabulary)])
-    if getattr(args, "chunk_secs", None) is not None:
-        tokens.extend(["--chunk-secs", str(args.chunk_secs)])
+    if opts.output_dir is not None:
+        tokens.extend(["--output-dir", str(opts.output_dir)])
+    if opts.output_base is not None:
+        tokens.extend(["--output-base", str(opts.output_base)])
+    if opts.temp_dir is not None:
+        tokens.extend(["--temp-dir", str(opts.temp_dir)])
+    if opts.audit_jsonl is not None:
+        tokens.extend(["--audit-jsonl", str(opts.audit_jsonl)])
+    if opts.speakers:
+        tokens.extend(["--speakers", str(opts.speakers)])
+    if opts.custom_vocabulary:
+        tokens.extend(["--custom-vocabulary", str(opts.custom_vocabulary)])
+    if opts.chunk_secs is not None:
+        tokens.extend(["--chunk-secs", str(opts.chunk_secs)])
 
-    if getattr(args, "line_interval_secs", None) is not None:
-        tokens.extend(["--line-interval-secs", str(args.line_interval_secs)])
-    if getattr(args, "paragraph_interval_secs", None) is not None:
-        tokens.extend(["--paragraph-interval-secs", str(args.paragraph_interval_secs)])
+    if opts.line_interval_secs is not None:
+        tokens.extend(["--line-interval-secs", str(opts.line_interval_secs)])
+    if opts.paragraph_interval_secs is not None:
+        tokens.extend(["--paragraph-interval-secs", str(opts.paragraph_interval_secs)])
 
     effective_interval = (
-        (0.0 if getattr(args, "tier", "free") == "paid" else 60.0)
-        if getattr(args, "request_interval_secs", None) is None
-        else float(args.request_interval_secs)
+        (0.0 if opts.tier == "paid" else 60.0)
+        if opts.request_interval_secs is None
+        else float(opts.request_interval_secs)
     )
     tokens.extend(["--request-interval-secs", str(effective_interval)])
 
-    for p in getattr(args, "path", []):
+    for p in opts.path:
         tokens.append(str(p))
 
     if sys.platform == "win32":
@@ -156,22 +378,11 @@ def _resolve_api_key(cli_key: str | None) -> str | None:
     return cli_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 
 
-def main(argv: list[str] | None = None) -> int:
-    # Load .env (GEMINI_API_KEY etc.) if present in cwd
-    try:
-        from dotenv import load_dotenv
+def _run(opts: TranscribeOptions, prog: str) -> int:
+    """Execute the parsed options. Returns exit code."""
+    effective_key = _resolve_api_key(opts.gemini_api_key)
 
-        load_dotenv()
-    except ImportError:  # pragma: no cover
-        pass
-
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    prog = Path(sys.argv[0]).name or "gemini-transcribe"
-    effective_key = _resolve_api_key(args.gemini_api_key)
-
-    if args.version:
+    if opts.version:
         print(f"{prog} {__version__}")
         if not effective_key:
             print(
@@ -182,56 +393,57 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=logging.DEBUG if opts.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
     start_time = time.monotonic()
 
-    if not args.path:
-        parser.print_usage()
+    if not opts.path:
+        print(f"Usage: {prog} [OPTIONS] PATH [PATH ...]")
+        print(f"Try '{prog} --help' for more information.")
         return 1
 
-    logging.getLogger(__name__).info("+ %s", format_cli_command(prog, args))
+    logging.getLogger(__name__).info("+ %s", format_cli_command(prog, opts))
 
     produced_all: list[str] = []
     failed = False
     quota_exceeded = False
 
     speakers: dict[str, str] | None = None
-    if args.speakers:
+    if opts.speakers:
         try:
-            speakers = parse_speakers(args.speakers)
+            speakers = parse_speakers(opts.speakers)
         except ValueError as exc:
             logging.getLogger(__name__).error("Error: %s", exc)
             return 1
 
-    custom_vocab = parse_custom_vocabulary(args.custom_vocabulary)
+    custom_vocab = parse_custom_vocabulary(opts.custom_vocabulary)
 
-    for pattern in args.path:
+    for pattern in opts.path:
         try:
             batch = gemini_transcribe(
                 input_file=pattern,
-                output_dir=args.output_dir,
-                output_base=args.output_base,
-                gemini_api_key=args.gemini_api_key,
-                language=args.language,
-                diarize=args.diarize,
-                tier=args.tier,
-                create_srt=args.srt,
-                create_txt=args.txt,
-                create_metadata_json=args.metadata_json,
-                create_transcript_json=args.transcript_json,
-                force=args.force,
-                line_interval_secs=args.line_interval_secs,
-                paragraph_interval_secs=args.paragraph_interval_secs,
-                request_interval_secs=args.request_interval_secs,
-                chunk_secs=args.chunk_secs,
+                output_dir=opts.output_dir,
+                output_base=opts.output_base,
+                gemini_api_key=opts.gemini_api_key,
+                language=opts.language,
+                diarize=opts.diarize,
+                tier=opts.tier,
+                create_srt=opts.srt,
+                create_txt=opts.txt,
+                create_metadata_json=opts.metadata_json,
+                create_transcript_json=opts.transcript_json,
+                force=opts.force,
+                line_interval_secs=opts.line_interval_secs,
+                paragraph_interval_secs=opts.paragraph_interval_secs,
+                request_interval_secs=opts.request_interval_secs,
+                chunk_secs=opts.chunk_secs,
                 speakers=speakers,
-                temp_dir=args.temp_dir,
-                ffsubsync_srt=args.ffsubsync_srt,
+                temp_dir=opts.temp_dir,
+                ffsubsync_srt=opts.ffsubsync_srt,
                 custom_vocabulary=custom_vocab,
-                audit_jsonl=args.audit_jsonl,
+                audit_jsonl=opts.audit_jsonl,
             )
             produced_all.extend(batch.output_files())
             if any(r.status == TranscribeStatus.FAILED for r in batch.results):
@@ -253,9 +465,7 @@ def main(argv: list[str] | None = None) -> int:
             failed = True
 
     elapsed = time.monotonic() - start_time
-    logging.getLogger(__name__).info(
-        "Total elapsed time: %.1fs", elapsed
-    )
+    logging.getLogger(__name__).info("Total elapsed time: %.1fs", elapsed)
 
     print(usage_summary_line(api_key=effective_key))
 
@@ -267,6 +477,50 @@ def main(argv: list[str] | None = None) -> int:
         logging.getLogger(__name__).info("No output files were produced.")
         return 1
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point. Parses argv with Click and runs the transcription logic.
+
+    On parse error / help: prints to stdout and raises ``SystemExit`` (matches
+    the old argparse-based behavior so external scripts keep working).
+    """
+    # Load .env (GEMINI_API_KEY etc.) if present in cwd
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:  # pragma: no cover
+        pass
+
+    argv_list = list(argv) if argv is not None else sys.argv[1:]
+    prog_name = Path(sys.argv[0]).name or "gemini-transcribe"
+
+    runner = CliRunner()
+    _LAST_OPTIONS.clear()
+    result = runner.invoke(
+        app,
+        argv_list,
+        prog_name=prog_name,
+        catch_exceptions=True,
+    )
+
+    if result.exit_code != 0:
+        if result.output:
+            sys.stdout.write(result.output)
+        if result.exception and not isinstance(result.exception, SystemExit):
+            raise result.exception
+        raise SystemExit(result.exit_code)
+
+    if not _LAST_OPTIONS:
+        # Help was shown; forward the help text to stdout and raise SystemExit(0)
+        # to match argparse's behavior so external scripts that catch SystemExit
+        # keep working.
+        if result.output:
+            sys.stdout.write(result.output)
+        raise SystemExit(0)
+
+    return _run(_LAST_OPTIONS[-1], prog_name)
 
 
 if __name__ == "__main__":

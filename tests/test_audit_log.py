@@ -191,28 +191,35 @@ def test_transcribe_chunk_logs_audit_on_success_and_failure(tmp_path, monkeypatc
 def test_cli_parser_audit_jsonl_default_and_custom(tmp_path):
     from gemini_transcribe_wrapper import cli
 
-    parser = cli.build_parser()
-    args_default = parser.parse_args(["sample.mp4"])
-    assert args_default.audit_jsonl == str(stt.get_audit_log_path())
+    opts_default = cli.build_options(["sample.mp4"])
+    assert opts_default.audit_jsonl == str(stt.get_audit_log_path())
 
     custom_path = str(tmp_path / "custom_audit.jsonl")
-    args_custom = parser.parse_args(["sample.mp4", "--audit-jsonl", custom_path])
-    assert args_custom.audit_jsonl == custom_path
+    opts_custom = cli.build_options(["sample.mp4", "--audit-jsonl", custom_path])
+    assert opts_custom.audit_jsonl == custom_path
 
 
 def test_format_cli_command_quotes_spaces():
     from gemini_transcribe_wrapper import cli
 
-    parser = cli.build_parser()
-    args = parser.parse_args([
+    opts = cli.build_options([
         "path with space/file name.mp4",
         "--tier", "paid",
         "--output-dir", "out dir",
     ])
-    cmd = cli.format_cli_command("gtw", args)
+    cmd = cli.format_cli_command("gtw", opts)
     assert cmd.startswith("gtw ")
     assert "--tier paid" in cmd
     assert "file name.mp4" in cmd
+
+
+def test_build_options_accepts_flag_after_path():
+    """Click/Typer variadic args are greedy; pre-processor must route flags to the front."""
+    from gemini_transcribe_wrapper import cli
+
+    opts = cli.build_options(["sample.mp4", "--tier", "paid"])
+    assert opts.path == ["sample.mp4"]
+    assert opts.tier == "paid"
 
 
 def test_cli_main_logs_effective_command(caplog, monkeypatch):

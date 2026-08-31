@@ -161,9 +161,9 @@ def gemini_transcribe(
     custom_vocabulary: list[str] | None = None,
     audit_jsonl: str | Path | None = None,
 ) -> BatchTranscribeResult:
-    """Transcribe a multimedia file using Gemini 3.5 Transcribe.
+    """A free video transcription CLI using gemini-3.5-transcribe that outputs .diarized.srt, .srt, and .txt files.
 
-    Zero-config cross-platform (auto ffmpeg/ffsubsync dependencies).
+    Cross-platform (auto ffmpeg/ffsubsync dependencies).
 
     Args:
         input_file: Input file path or glob pattern.

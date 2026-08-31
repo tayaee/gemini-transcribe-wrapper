@@ -1,4 +1,4 @@
-"""gemini-transcribe-wrapper: Zero-config Gemini 3.5 Transcribe wrapper."""
+"""A free video transcription CLI using gemini-3.5-transcribe that outputs .diarized.srt, .srt, and .txt files."""
 
 from importlib import metadata
 from pathlib import Path

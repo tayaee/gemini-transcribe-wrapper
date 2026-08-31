@@ -652,6 +652,7 @@ name = "gemini-transcribe-wrapper"
 version = "0.0.44"
 source = { editable = "." }
 dependencies = [
+    { name = "click" },
     { name = "ffsubsync" },
     { name = "filelock" },
     { name = "google-genai" },
@@ -670,6 +671,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "click", specifier = ">=8.0.0" },
     { name = "ffsubsync", specifier = ">=0.4.24" },
     { name = "filelock", specifier = ">=3.0.0" },
     { name = "google-genai", specifier = ">=1.0.0" },

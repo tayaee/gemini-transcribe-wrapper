@@ -1,6 +1,6 @@
 # gemini-transcribe-wrapper
 
-Transcribe hours of audio for free with Google AI model `gemini-3.5-transcribe` — auto-chunked, rate-limit aware, and exported straight to SRT and TXT (with optional speaker diarization).
+A free video transcription CLI using gemini-3.5-transcribe that outputs .diarized.srt, .srt, and .txt files.
 
 ## Quick Start
 
