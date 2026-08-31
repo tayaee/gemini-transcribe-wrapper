@@ -1,0 +1,23 @@
+# gitleaks configuration for the quality gate (scripts/run-gitleaks.sh).
+# Extends the upstream default ruleset; this file only adds allowlists,
+# so every default secret rule stays active.
+
+[extend]
+useDefault = true
+
+# Binary media fixtures cannot hold source secrets and are ~90 MB of the
+# tree, which dominates scan time. Skipping them takes the scan from ~12s
+# to ~1s.
+[[allowlists]]
+description = "binary media fixtures (examples/, samples/)"
+paths = ['''\.(mp4|mp3|m4a|wav|webm|mkv|mov)$''']
+
+# The test suite uses self-identifying fake Google API keys
+# (AIzaSyDummyKey12345678, AIzaSyD-1234567890abcdef). Matched on the secret
+# value alone -- deliberately NOT scoped by path: a `paths` entry here would
+# allowlist the whole of tests/ (gitleaks ORs allowlist criteria, and
+# matchCondition = "AND" is not honoured in v8.30), which would hide a real
+# key committed to a test. A real key still fails the gate anywhere.
+[[allowlists]]
+description = "self-identifying fake API keys used as test fixtures"
+regexes = ['''AIzaSy[A-Za-z0-9_-]*(Dummy|1234567890)[A-Za-z0-9_-]*''']

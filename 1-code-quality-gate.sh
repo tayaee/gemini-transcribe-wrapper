@@ -51,6 +51,21 @@ run_one run-semgrep.sh \
     "security scan (CWE top 25, secrets, dangerous APIs)" \
     ./scripts/run-semgrep.sh
 
+# pip-audit: dependency vulnerability scan. Where semgrep looks at our own
+# code, this checks the packages we pull in against the PyPI advisory
+# database, so a known CVE in a transitive dep fails the gate.
+run_one run-pip-audit.sh \
+    "dependency vulnerability scan (known CVEs in deps)" \
+    ./scripts/run-pip-audit.sh
+
+# gitleaks: secret scan. pip-audit covers known-vulnerable deps; this covers
+# credentials accidentally written into the tree. Allowlists (fake test keys,
+# binary media) live in .gitleaks.toml. Skips itself if neither a gitleaks
+# binary nor Docker is available.
+run_one run-gitleaks.sh \
+    "secret scan (credentials in the working tree)" \
+    ./scripts/run-gitleaks.sh
+
 # pytest: actual test execution. The only step that exercises runtime
 # behavior -- the earlier gates are all static.
 run_one run-pytest.sh \

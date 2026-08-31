@@ -1,6 +1,7 @@
 @echo off
-REM Code quality gate: chain pyright, ruff, semgrep, pytest, and Docker
-REM regression tests. Mirrors 1-code-quality-gate.sh. Safe to invoke from any cwd.
+REM Code quality gate: chain pyright, ruff, semgrep, pip-audit, gitleaks, pytest,
+REM and Docker regression tests. Mirrors 1-code-quality-gate.sh. Safe to invoke
+REM from any cwd.
 REM Each step displays "=== name: purpose ===" so the output is self-documenting.
 
 cd /d "%~dp0"
@@ -25,6 +26,17 @@ REM semgrep: pattern-based static analysis. Configured with --config auto
 REM --error on src/ + tests/, so any finding fails the gate. Acts as the
 REM security review (CWE top 25, secrets, dangerous APIs).
 call :run_one run-semgrep.bat "security scan (CWE top 25, secrets, dangerous APIs)" scripts\run-semgrep.bat
+
+REM pip-audit: dependency vulnerability scan. Where semgrep looks at our own
+REM code, this checks the packages we pull in against the PyPI advisory
+REM database, so a known CVE in a transitive dep fails the gate.
+call :run_one run-pip-audit.bat "dependency vulnerability scan (known CVEs in deps)" scripts\run-pip-audit.bat
+
+REM gitleaks: secret scan. pip-audit covers known-vulnerable deps; this covers
+REM credentials accidentally written into the tree. Allowlists (fake test keys,
+REM binary media) live in .gitleaks.toml. Skips itself if neither a gitleaks
+REM binary nor Docker is available.
+call :run_one run-gitleaks.bat "secret scan (credentials in the working tree)" scripts\run-gitleaks.bat
 
 REM pytest: actual test execution. The only step that exercises runtime
 REM behavior -- the earlier gates are all static.
