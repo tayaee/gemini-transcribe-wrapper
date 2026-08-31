@@ -56,10 +56,42 @@ def test_other_days_count_separately(cache):
     assert data[other_day] == 7
 
 
-def test_summary_line_embeds_pst_time_count_and_limit(cache):
+def test_summary_line_free_tier_format(cache, monkeypatch):
+    """Free-tier default: usage dashboard link + key tail + reset countdown."""
+    from datetime import datetime
+
+    base = datetime(2026, 8, 30, 19, 40, 0, tzinfo=usage_counter.PST)  # 4h20m to midnight
+    monkeypatch.setattr(usage_counter, "pst_now", lambda: base)
+
+    line = usage_counter.usage_summary_line(cache)
+    print("summary line:", line)
+    assert line.startswith("Find your free-tier usage at https://ai.dev")
+    assert "rate limits at https://ai.google.dev/gemini-api/docs/rate-limits" in line
+    assert "mid-night PST-08:00" in line
+    # 4h 20m remaining
+    assert "4 hours 20 minutes left" in line
+    # No key set -> 'unset'
+    assert "ending with 'unset'" in line
+
+
+def test_summary_line_free_tier_with_key_tail(cache):
+    """When a key is set, only the last 4 chars ('....<tail>') are exposed."""
+    key = "AIzaSyD-1234567890abcdef"
+    for _ in range(5):
+        usage_counter.increment_today(cache, api_key=key)
+    line = usage_counter.usage_summary_line(cache, api_key=key)
+    print("summary line:", line)
+    assert "ending with '....cdef'" in line
+    # Whole key must NOT leak
+    assert "AIzaSyD" not in line
+    assert "1234567890" not in line
+
+
+def test_summary_line_paid_tier_keeps_legacy_format(cache):
+    """Paid tier falls back to the original 'API calls today ...' line."""
     for _ in range(3):
         usage_counter.increment_today(cache)
-    line = usage_counter.usage_summary_line(cache)
+    line = usage_counter.usage_summary_line(cache, tier="paid")
     print("summary line:", line)
     assert line.endswith(f"(free tier limit: {FREE_TIER_DAILY_LIMIT})")
     assert "API calls today " in line
@@ -69,7 +101,7 @@ def test_summary_line_embeds_pst_time_count_and_limit(cache):
     key = "AIzaSyD-1234567890abcdef"
     for _ in range(2):
         usage_counter.increment_today(cache, api_key=key)
-    line_key = usage_counter.usage_summary_line(cache, api_key=key)
+    line_key = usage_counter.usage_summary_line(cache, api_key=key, tier="paid")
     # Legacy 3 calls + 2 key calls = 5 total migrated calls
     assert "with key 'AIza****************cdef': attempted 5" in line_key
     assert line_key.endswith(f"(free tier limit: {FREE_TIER_DAILY_LIMIT})")

@@ -163,8 +163,50 @@ def _mask_key(key: str | None) -> str:
     return f"{key[:4]}{'*' * (len(key) - 8)}{key[-4:]}"
 
 
-def usage_summary_line(cache: Path | None = None, api_key: str | None = None) -> str:
-    """One-line usage summary ending with today's count and the free tier limit."""
+def _key_tail(key: str | None) -> str:
+    """Return ``....<last 4>`` for the API key, or ``unset`` when no key is set.
+
+    Used in the free-tier summary line so the user can confirm at a glance
+    which key the daily count belongs to without exposing the full key.
+    """
+    if not key:
+        return "unset"
+    if len(key) <= 4:
+        return f" * {key}"
+    return f"....{key[-4:]}"
+
+
+def _hours_minutes_until_midnight(now: datetime | None = None) -> tuple[int, int]:
+    """Return ``(hours, minutes)`` remaining until the next PST midnight."""
+    remaining = int(seconds_until_pst_midnight(now))
+    hours, rem_min = divmod(remaining // 60, 60)
+    return int(hours), int(rem_min)
+
+
+def usage_summary_line(
+    cache: Path | None = None,
+    api_key: str | None = None,
+    tier: str = "free",
+) -> str:
+    """One-line usage summary for the active tier.
+
+    Free tier (default) — points at the Google AI dev dashboard and rate
+    limit docs, names the API key by its tail, and tells the user how long
+    until the daily free-tier quota resets at PST midnight.
+
+    Paid tier — keeps the legacy ``API calls today ...`` format so existing
+    scripts/users see the same line.
+    """
+    if tier == "free":
+        tail = _key_tail(api_key)
+        hours, minutes = _hours_minutes_until_midnight()
+        return (
+            f"Find your free-tier usage at https://ai.dev for your API key "
+            f"ending with '{tail}' and rate limits at "
+            f"https://ai.google.dev/gemini-api/docs/rate-limits. "
+            f"Your free tier limits will reset at mid-night PST-08:00 "
+            f"({hours} hours {minutes} minutes left)."
+        )
     used = count_today(cache, api_key)
     day = pst_date()
     masked = _mask_key(api_key)

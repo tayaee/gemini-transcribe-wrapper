@@ -389,7 +389,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 "Warning: GEMINI_API_KEY is not set. Set it or pass "
                 "--gemini-api-key to transcribe."
             )
-        print(usage_summary_line(api_key=effective_key))
+        print(usage_summary_line(api_key=effective_key, tier=opts.tier))
         return 0
 
     logging.basicConfig(
@@ -467,7 +467,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
     elapsed = time.monotonic() - start_time
     logging.getLogger(__name__).info("Total elapsed time: %.1fs", elapsed)
 
-    print(usage_summary_line(api_key=effective_key))
+    print(usage_summary_line(api_key=effective_key, tier=opts.tier))
 
     if quota_exceeded:
         return 2

@@ -253,7 +253,9 @@ def test_cli_version_output_has_no_blank_line(capsys):
     lines = captured.strip().splitlines()
     assert len(lines) == 2
     assert not any(line == "" for line in lines)
-    assert "API calls today" in captured
+    # Default tier is free -> new format with the ai.dev dashboard link.
+    assert "Find your free-tier usage at https://ai.dev" in captured
+    assert "rate limits at https://ai.google.dev/gemini-api/docs/rate-limits" in captured
 
 
 def test_cli_help_output_does_not_contain_usage_summary(capsys):
@@ -264,4 +266,4 @@ def test_cli_help_output_does_not_contain_usage_summary(capsys):
     assert exc_info.value.code == 0
     captured = capsys.readouterr().out
     assert "usage:" in captured.lower()
-    assert "API calls today" not in captured
+    assert "Find your free-tier usage" not in captured
