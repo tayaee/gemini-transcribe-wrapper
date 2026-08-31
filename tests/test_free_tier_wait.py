@@ -287,6 +287,50 @@ def test_throttle_api_call_enforces_interval(monkeypatch):
     stt.reset_api_rate_limiter()
 
 
+def test_throttle_api_call_log_includes_today_count_and_reset_countdown(
+    monkeypatch, tmp_path, caplog
+):
+    """The throttling log line must include today's call count and reset time."""
+    monkeypatch.setenv("GTW_CACHE_DIR", str(tmp_path))
+    stt.reset_api_rate_limiter()
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+
+    api_key = "throttle-log-test-key"
+    # Pre-populate today's count so the message embeds a real number.
+    usage_counter.increment_today(api_key=api_key)
+    usage_counter.increment_today(api_key=api_key)
+    usage_counter.increment_today(api_key=api_key)
+
+    # Pretend it's 4h20m before PST midnight so the countdown is predictable.
+    base = datetime(2026, 8, 30, 19, 40, 0, tzinfo=usage_counter.PST)
+    monkeypatch.setattr(usage_counter, "pst_now", lambda: base)
+
+    # First call establishes a completion timestamp.
+    stt._throttle_api_call(120.0, api_key=api_key)
+    stt.record_api_call_completed(api_key=api_key)
+    sleeps.clear()
+
+    # Second call (right after) must sleep and log the new format.
+    caplog.set_level(logging.INFO, logger="gemini_transcribe_wrapper.stt")
+    stt._throttle_api_call(120.0, api_key=api_key)
+
+    assert len(sleeps) == 1
+    info_lines = [
+        rec.message for rec in caplog.records
+        if "Free-tier rate limit" in rec.message
+    ]
+    assert len(info_lines) == 1
+    msg = info_lines[0]
+    assert "The # of API calls today: 3" in msg
+    # 4h20m to midnight -> "4 hours 20 minutes PST-08:00"
+    assert "4 hours 20 minutes PST-08:00" in msg
+    assert "sleeping 1" in msg  # ~120s sleep (elapsed=0.0s)
+
+    stt.reset_api_rate_limiter()
+
+
 def test_throttle_api_call_no_sleep_when_interval_zero(monkeypatch):
     stt.reset_api_rate_limiter()
     sleeps: list[float] = []
