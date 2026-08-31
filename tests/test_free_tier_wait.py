@@ -323,7 +323,7 @@ def test_throttle_api_call_log_includes_today_count_and_reset_countdown(
     ]
     assert len(info_lines) == 1
     msg = info_lines[0]
-    assert "The # of API calls today: 3" in msg
+    assert "The # of API call attempts today: 3" in msg
     # 4h20m to midnight -> "4 hours 20 minutes PST-08:00"
     assert "4 hours 20 minutes PST-08:00" in msg
     assert "sleeping 1" in msg  # ~120s sleep (elapsed=0.0s)

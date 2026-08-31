@@ -194,8 +194,8 @@ def usage_summary_line(
     limit docs, names the API key by its tail, and tells the user how long
     until the daily free-tier quota resets at PST midnight.
 
-    Paid tier — keeps the legacy ``API calls today ...`` format so existing
-    scripts/users see the same line.
+    Paid tier — keeps the legacy ``API call attempts today ...`` format so
+    existing scripts/users see the same line.
     """
     if tier == "free":
         tail = _key_tail(api_key)
@@ -211,7 +211,7 @@ def usage_summary_line(
     day = pst_date()
     masked = _mask_key(api_key)
     return (
-        f"API calls today {day} (PST-08:00) with key '{masked}': "
+        f"API call attempts today {day} (PST-08:00) with key '{masked}': "
         f"attempted {used} (free tier limit: {FREE_TIER_DAILY_LIMIT})"
     )
 

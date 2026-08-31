@@ -383,7 +383,7 @@ def _throttle_api_call(
         logger.info(
             "Free-tier rate limit: %.1fs elapsed since last API call completed "
             "(< %.0fs interval); sleeping %.1fs. "
-            "The # of API calls today: %d. "
+            "The # of API call attempts today: %d. "
             "The daily limit will reset in %d hours %d minutes PST-08:00.",
             elapsed,
             request_interval_secs,

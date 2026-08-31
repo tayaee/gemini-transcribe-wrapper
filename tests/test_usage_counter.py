@@ -88,13 +88,13 @@ def test_summary_line_free_tier_with_key_tail(cache):
 
 
 def test_summary_line_paid_tier_keeps_legacy_format(cache):
-    """Paid tier falls back to the original 'API calls today ...' line."""
+    """Paid tier falls back to the original 'API call attempts today ...' line."""
     for _ in range(3):
         usage_counter.increment_today(cache)
     line = usage_counter.usage_summary_line(cache, tier="paid")
     print("summary line:", line)
     assert line.endswith(f"(free tier limit: {FREE_TIER_DAILY_LIMIT})")
-    assert "API calls today " in line
+    assert "API call attempts today " in line
     assert "with key 'unset': attempted 3" in line
     assert "PST-08:00" in line
 
