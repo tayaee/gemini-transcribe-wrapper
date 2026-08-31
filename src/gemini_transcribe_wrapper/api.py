@@ -403,7 +403,7 @@ def _process_one(
         # generated after the source file. If any target is missing or the
         # source is newer, regenerate.
         if not force and _outputs_valid(final_paths, [input_file]):
-            logger.debug(
+            logger.info(
                 "Outputs exist and are newer than source; skipping %s "
                 "(use --force to redo)",
                 input_file,
