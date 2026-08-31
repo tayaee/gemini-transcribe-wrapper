@@ -855,10 +855,10 @@ def _outputs_valid(paths: list[Path | None], sources: list[Path]) -> bool:
 
 
 def _mask_key(key: str) -> str:
-    """Show only the first and last 4 chars of an API key."""
-    if len(key) <= 8:
-        return "*" * len(key)
-    return f"{key[:4]}{'*' * (len(key) - 8)}{key[-4:]}"
+    """Show ``****<last 4>`` for an API key (compact, no prefix leak)."""
+    if len(key) <= 4:
+        return "****"
+    return f"****{key[-4:]}"
 
 
 def _check_api_key(api_keys: list[str] | None) -> None:

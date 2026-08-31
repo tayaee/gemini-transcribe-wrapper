@@ -351,5 +351,28 @@ def test_transcribe_client_deduplicates_keys():
     assert client._api_keys == ["k1", "k2"]
 
 
+# --- compact key masking (used in the multi-key startup log) -----------
+
+
+def test_api_mask_key_shows_only_4_stars_and_last_4():
+    """Compact format: ``****<last4>`` — no first-4 leak.
+
+    The multi-key startup log line uses this to keep the line short
+    even with 9+ keys; the single-key line uses it for consistency.
+    """
+    from gemini_transcribe_wrapper.api import _mask_key
+
+    masked = _mask_key("AQ.AXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXMw9g")
+    assert masked == "****Mw9g"
+
+
+def test_api_mask_key_short_key_uses_only_stars():
+    """Keys ≤ 4 chars are fully masked."""
+    from gemini_transcribe_wrapper.api import _mask_key
+
+    assert _mask_key("abcd") == "****"
+    assert _mask_key("k1") == "****"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
