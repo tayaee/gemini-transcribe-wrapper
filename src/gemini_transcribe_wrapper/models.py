@@ -45,7 +45,10 @@ class TranscribeInput(BaseModel):
     tier: str = Field("free", description="Pricing tier: 'free' (default) or 'paid'.")
     audit_jsonl: str | None = Field(
         None,
-        description="Path to JSONL audit log file (default: <os-temp>/google_transcribe_wrapper_audit.jsonl).",
+        description=(
+            "Path to JSONL audit log file (default: "
+            "<os-temp>/gemini-transcribe-wrapper-<short-hostname>-<username>.audit.jsonl)."
+        ),
     )
     line_interval_secs: float = Field(1.0, description="TXT newline break gap (s).")
     paragraph_interval_secs: float = Field(2.5, description="TXT paragraph break gap (s).")

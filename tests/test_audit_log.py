@@ -1,4 +1,4 @@
-"""Unit tests for JSONL audit logging to <os-temp>/google_transcribe_wrapper_audit.jsonl."""
+"""Unit tests for JSONL audit logging to <os-temp>/gemini-transcribe-wrapper-<host>-<user>.audit.jsonl."""
 
 import json
 import re
@@ -13,9 +13,52 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from gemini_transcribe_wrapper import stt
 
 
+def test_sanitize_audit_token_lowercases_and_strips():
+    assert stt._sanitize_audit_token("MyHost") == "myhost"
+    assert stt._sanitize_audit_token("JANE.Doe") == "jane.doe"
+    assert stt._sanitize_audit_token("user name") == "user_name"
+    assert stt._sanitize_audit_token("../etc/passwd") == "etc_passwd"
+    assert stt._sanitize_audit_token("") == "unknown"
+    assert stt._sanitize_audit_token("___") == "unknown"
+
+
+def test_get_computer_shortname_uses_short_hostname(monkeypatch):
+    monkeypatch.setattr(stt.os, "getenv", lambda *_a, **_k: None)
+    monkeypatch.setattr(stt.socket, "gethostname", lambda: "myhost.example.com")
+    assert stt._get_computer_shortname() == "myhost"
+
+
+def test_get_computer_shortname_prefers_computername_env(monkeypatch):
+    monkeypatch.setattr(stt.os, "getenv", lambda key, default=None: "WINDOWS-PC" if key == "COMPUTERNAME" else default)
+    monkeypatch.setattr(stt.socket, "gethostname", lambda: "linux.example.com")
+    assert stt._get_computer_shortname() == "windows-pc"
+
+
+def test_get_current_username_prefers_user_env(monkeypatch):
+    monkeypatch.setattr(stt.os, "getenv", lambda key, default=None: "Alice" if key == "USER" else default)
+    assert stt._get_current_username() == "alice"
+
+
+def test_get_current_username_falls_back_to_getpass(monkeypatch):
+    monkeypatch.setattr(stt.os, "getenv", lambda *_a, **_k: None)
+    monkeypatch.setattr(stt.getpass, "getuser", lambda: "Bob")
+    assert stt._get_current_username() == "bob"
+
+
 def test_get_audit_log_path():
     p = stt.get_audit_log_path()
-    assert p.name == "google_transcribe_wrapper_audit.jsonl"
+    assert p.parent == Path(stt.tempfile.gettempdir())
+    assert p.name.startswith("gemini-transcribe-wrapper-")
+    assert p.name.endswith(".audit.jsonl")
+    # stem layout: gemini-transcribe-wrapper-<host>-<user>
+    stem = p.name[: -len(".audit.jsonl")]
+    parts = stem.split("-")
+    assert parts[0] == "gemini"
+    assert parts[1] == "transcribe"
+    assert parts[2] == "wrapper"
+    host, user = parts[3], parts[4]
+    assert host == host.lower() and re.match(r"^[a-z0-9._-]+$", host)
+    assert user == user.lower() and re.match(r"^[a-z0-9._-]+$", user)
 
 
 def test_extract_status_code():

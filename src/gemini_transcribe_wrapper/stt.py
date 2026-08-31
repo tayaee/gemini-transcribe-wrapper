@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import getpass
 import json
 import logging
 import os
 import re
+import socket
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -119,9 +121,53 @@ def _is_quota_error(exc: Exception) -> bool:
     return False
 
 
+def _sanitize_audit_token(value: str) -> str:
+    """Lowercase and strip filesystem-unsafe characters from a path component.
+
+    Keeps ASCII alphanumerics, hyphens, underscores, and dots; everything else
+    becomes ``_``. This keeps the audit log name portable across NAS, Linux,
+    macOS, and Windows shares.
+    """
+    lowered = (value or "").strip().lower()
+    sanitized = re.sub(r"[^a-z0-9._-]+", "_", lowered).strip("._-")
+    return sanitized or "unknown"
+
+
+def _get_computer_shortname() -> str:
+    """Return the local computer's short hostname (no domain), lowercased."""
+    for source in (os.getenv("COMPUTERNAME"), socket.gethostname(), "unknown"):
+        if not source:
+            continue
+        short = source.split(".")[0].strip()
+        if short:
+            return _sanitize_audit_token(short)
+    return "unknown"
+
+
+def _get_current_username() -> str:
+    """Return the current OS username, lowercased."""
+    for source in (
+        os.getenv("USER"),
+        os.getenv("USERNAME"),
+        os.getenv("LOGNAME"),
+    ):
+        if source and source.strip():
+            return _sanitize_audit_token(source)
+    try:
+        return _sanitize_audit_token(getpass.getuser())
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
 def get_audit_log_path() -> Path:
-    """Return path to <os-temp>/google_transcribe_wrapper_audit.jsonl."""
-    return Path(tempfile.gettempdir()) / "google_transcribe_wrapper_audit.jsonl"
+    """Return path to ``<os-temp>/gemini-transcribe-wrapper-<host>-<user>.audit.jsonl``.
+
+    The host and user segments are lowercased and sanitized so each
+    (computer, user) pair gets its own audit log — useful when multiple
+    users share a NAS-mounted temp directory.
+    """
+    filename = f"gemini-transcribe-wrapper-{_get_computer_shortname()}-{_get_current_username()}.audit.jsonl"
+    return Path(tempfile.gettempdir()) / filename
 
 
 def _extract_status_code(exc: Exception | None) -> int:
@@ -152,7 +198,11 @@ def append_audit_log(
     timestamp: str | None = None,
     log_path: Path | None = None,
 ) -> None:
-    """Append a single audit record to <os-temp>/google_transcribe_wrapper_audit.jsonl."""
+    """Append a single audit record to the per-host/per-user JSONL audit log.
+
+    The default path is ``<os-temp>/gemini-transcribe-wrapper-<host>-<user>.audit.jsonl``;
+    pass ``log_path`` to override.
+    """
     if timestamp is None:
         timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
     key_tail = api_key[-8:] if api_key else ""

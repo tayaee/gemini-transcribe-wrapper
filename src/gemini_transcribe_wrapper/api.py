@@ -214,7 +214,8 @@ def gemini_transcribe(
             .srt/.diarized.srt keep the raw transcript timestamps (default:
             off).
         audit_jsonl: Optional custom path for JSONL audit logging. Defaults to
-            ``<os-temp>/google_transcribe_wrapper_audit.jsonl``.
+            ``<os-temp>/gemini-transcribe-wrapper-<short-hostname>-<username>.audit.jsonl``,
+            so each (host, user) pair on a shared NAS gets its own log file.
 
     Returns:
         BatchTranscribeResult with per-input TranscribeResult items. Each item
