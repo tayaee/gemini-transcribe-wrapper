@@ -13,14 +13,14 @@ export RELEASE_GUARD=1
 set -e
 cd "$(dirname "$0")"
 
-MSG="$1"
+MSG="$*"
 
 echo "=========================================="
 echo " Starting Release Pipeline"
 echo "=========================================="
 
 echo ""
-echo commit-message: $*
+echo commit-message: [$MSG]
 
 # 1. Quality Gate
 echo
