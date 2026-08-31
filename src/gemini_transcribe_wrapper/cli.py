@@ -47,6 +47,7 @@ class TranscribeOptions:
     temp_dir: str = "temp"
     audit_jsonl: str | None = None
     verbose: bool = False
+    log_level: str = "info"
 
 
 _DEFAULT_AUDIT_JSONL = str(get_audit_log_path())
@@ -198,7 +199,16 @@ def _make_command() -> click.Command:
     @click.option(
         "--verbose/--no-verbose",
         default=False,
-        help="Verbose logging",
+        help="Shorthand for --log-level debug",
+    )
+    @click.option(
+        "--log-level",
+        type=click.Choice(
+            ["debug", "info", "warning", "error", "critical"],
+            case_sensitive=False,
+        ),
+        default="info",
+        help="Logging level (default: info)",
     )
     @click.argument("path", nargs=-1)
     def _root(
@@ -226,6 +236,7 @@ def _make_command() -> click.Command:
         temp_dir: str,
         audit_jsonl: str,
         verbose: bool,
+        log_level: str,
     ) -> None:
         _LAST_OPTIONS.append(
             TranscribeOptions(
@@ -253,6 +264,7 @@ def _make_command() -> click.Command:
                 temp_dir=temp_dir,
                 audit_jsonl=audit_jsonl,
                 verbose=verbose,
+                log_level=log_level,
             )
         )
 
@@ -344,6 +356,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.append("--force")
     if opts.verbose:
         tokens.append("--verbose")
+    elif opts.log_level != "info":
+        tokens.extend(["--log-level", opts.log_level])
 
     if opts.output_dir is not None:
         tokens.extend(["--output-dir", str(opts.output_dir)])
@@ -403,8 +417,13 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
         print(usage_summary_line(api_key=effective_key, tier=opts.tier))
         return 0
 
+    log_level = (
+        logging.DEBUG
+        if opts.verbose
+        else getattr(logging, opts.log_level.upper())
+    )
     logging.basicConfig(
-        level=logging.DEBUG if opts.verbose else logging.INFO,
+        level=log_level,
         format="%(asctime)s %(levelname)s %(filename)s:%(lineno)s %(message)s",
     )
 
