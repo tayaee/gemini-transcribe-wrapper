@@ -155,3 +155,63 @@ def test_cli_parser_audit_jsonl_default_and_custom(tmp_path):
     custom_path = str(tmp_path / "custom_audit.jsonl")
     args_custom = parser.parse_args(["sample.mp4", "--audit-jsonl", custom_path])
     assert args_custom.audit_jsonl == custom_path
+
+
+def test_format_cli_command_quotes_spaces():
+    from gemini_transcribe_wrapper import cli
+
+    parser = cli.build_parser()
+    args = parser.parse_args([
+        "path with space/file name.mp4",
+        "--tier", "paid",
+        "--output-dir", "out dir",
+    ])
+    cmd = cli.format_cli_command("gtw", args)
+    assert cmd.startswith("gtw ")
+    assert "--tier paid" in cmd
+    assert "file name.mp4" in cmd
+
+
+def test_cli_main_logs_effective_command(caplog, monkeypatch):
+    import logging
+
+    from gemini_transcribe_wrapper import cli
+
+    # Mock gemini_transcribe so it doesn't do real transcription
+    mock_batch = MagicMock()
+    mock_batch.output_files.return_value = ["my_audio.srt"]
+    mock_batch.results = []
+    monkeypatch.setattr(cli, "gemini_transcribe", lambda **kwargs: mock_batch)
+
+    with caplog.at_level(logging.INFO):
+        exit_code = cli.main(["my_audio.mp3", "--tier", "free"])
+        assert exit_code == 0
+
+    plus_logs = [rec.message for rec in caplog.records if rec.message.startswith("+ ")]
+    assert len(plus_logs) == 1
+    assert "+ " in plus_logs[0]
+    assert "my_audio.mp3" in plus_logs[0]
+    assert "--tier free" in plus_logs[0]
+
+
+def test_cli_version_output_has_no_blank_line(capsys):
+    from gemini_transcribe_wrapper import cli
+
+    exit_code = cli.main(["-v"])
+    assert exit_code == 0
+    captured = capsys.readouterr().out
+    lines = captured.strip().splitlines()
+    assert len(lines) == 2
+    assert not any(line == "" for line in lines)
+    assert "API calls today" in captured
+
+
+def test_cli_help_output_does_not_contain_usage_summary(capsys):
+    from gemini_transcribe_wrapper import cli
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["-h"])
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr().out
+    assert "usage:" in captured.lower()
+    assert "API calls today" not in captured

@@ -16,17 +16,6 @@ from .stt import get_audit_log_path
 from .usage_counter import usage_summary_line
 
 
-class _HelpAction(argparse.Action):
-    """Help action that appends the daily API usage summary as the last line."""
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        parser.print_help()
-        print()
-        # --help is processed before args parse, so only env-var keys are in scope.
-        print(usage_summary_line(api_key=_resolve_api_key(None)))
-        parser.exit()
-
-
 def build_parser() -> argparse.ArgumentParser:
     # Use the invoked command name (gemini-transcribe or the gt shortcut) as prog.
     prog = Path(sys.argv[0]).name or "gemini-transcribe"
@@ -35,13 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=f"{prog} v{__version__} - Zero-config Gemini 3.5 "
         "Transcribe wrapper (auto ffmpeg/ffsubsync).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        add_help=False,
-    )
-    parser.add_argument(
-        "-h", "--help",
-        action=_HelpAction,
-        nargs=0,
-        help="show this help message and exit",
+        add_help=True,
     )
     parser.add_argument(
         "-v", "--version",
@@ -105,6 +88,69 @@ def parse_speakers(spec: str) -> dict[str, str]:
     return mapping
 
 
+def format_cli_command(prog: str, args: argparse.Namespace) -> str:
+    """Format the full command line with all resolved effective options."""
+    tokens: list[str] = [prog]
+
+    if getattr(args, "tier", None):
+        tokens.extend(["--tier", str(args.tier)])
+    if getattr(args, "gemini_api_key", None):
+        tokens.extend(["--gemini-api-key", str(args.gemini_api_key)])
+    if getattr(args, "language", None):
+        tokens.extend(["--language", str(args.language)])
+
+    tokens.append("--diarize" if getattr(args, "diarize", False) else "--no-diarize")
+    tokens.append("--srt" if getattr(args, "srt", True) else "--no-srt")
+    tokens.append("--txt" if getattr(args, "txt", True) else "--no-txt")
+    tokens.append("--transcript-json" if getattr(args, "transcript_json", True) else "--no-transcript-json")
+    tokens.append("--metadata-json" if getattr(args, "metadata_json", False) else "--no-metadata-json")
+
+    if getattr(args, "ffsubsync_srt", False):
+        tokens.append("--ffsubsync-srt")
+    if getattr(args, "force", False):
+        tokens.append("--force")
+    if getattr(args, "verbose", False):
+        tokens.append("--verbose")
+
+    if getattr(args, "output_dir", None) is not None:
+        tokens.extend(["--output-dir", str(args.output_dir)])
+    if getattr(args, "output_base", None) is not None:
+        tokens.extend(["--output-base", str(args.output_base)])
+    if getattr(args, "temp_dir", None) is not None:
+        tokens.extend(["--temp-dir", str(args.temp_dir)])
+    if getattr(args, "audit_jsonl", None) is not None:
+        tokens.extend(["--audit-jsonl", str(args.audit_jsonl)])
+    if getattr(args, "speakers", None):
+        tokens.extend(["--speakers", str(args.speakers)])
+    if getattr(args, "custom_vocabulary", None):
+        tokens.extend(["--custom-vocabulary", str(args.custom_vocabulary)])
+    if getattr(args, "chunk_secs", None) is not None:
+        tokens.extend(["--chunk-secs", str(args.chunk_secs)])
+
+    if getattr(args, "line_interval_secs", None) is not None:
+        tokens.extend(["--line-interval-secs", str(args.line_interval_secs)])
+    if getattr(args, "paragraph_interval_secs", None) is not None:
+        tokens.extend(["--paragraph-interval-secs", str(args.paragraph_interval_secs)])
+
+    effective_interval = (
+        (0.0 if getattr(args, "tier", "free") == "paid" else 60.0)
+        if getattr(args, "request_interval_secs", None) is None
+        else float(args.request_interval_secs)
+    )
+    tokens.extend(["--request-interval-secs", str(effective_interval)])
+
+    for p in getattr(args, "path", []):
+        tokens.append(str(p))
+
+    if sys.platform == "win32":
+        import subprocess
+
+        return subprocess.list2cmdline(tokens)
+    import shlex
+
+    return shlex.join(tokens)
+
+
 def _resolve_api_key(cli_key: str | None) -> str | None:
     """Resolve the effective Gemini API key: --gemini-api-key > $GEMINI_API_KEY > $GOOGLE_API_KEY."""
     return cli_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
@@ -132,7 +178,6 @@ def main(argv: list[str] | None = None) -> int:
                 "Warning: GEMINI_API_KEY is not set. Set it or pass "
                 "--gemini-api-key to transcribe."
             )
-        print()
         print(usage_summary_line(api_key=effective_key))
         return 0
 
@@ -146,6 +191,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.path:
         parser.print_usage()
         return 1
+
+    logging.getLogger(__name__).info("+ %s", format_cli_command(prog, args))
 
     produced_all: list[str] = []
     failed = False

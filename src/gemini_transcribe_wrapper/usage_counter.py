@@ -1,6 +1,6 @@
 """Daily API usage counter persisted under ~/.cache/gemini-transcribe-wrapper/.
 
-The Gemini free tier allows ~5 API calls per day; the counter resets at
+The Gemini free tier allows ~25 API calls per day; the counter resets at
 midnight Pacific Standard Time (UTC-08:00, no DST).
 """
 
@@ -19,7 +19,7 @@ from filelock import FileLock
 
 logger = logging.getLogger(__name__)
 
-FREE_TIER_DAILY_LIMIT = "~5"
+FREE_TIER_DAILY_LIMIT = "~25"
 PST = timezone(timedelta(hours=-8))
 USAGE_FILE = "usage.json"
 _KEY_HASH_LEN = 12  # hex chars of SHA-256 used in per-key usage filenames.
