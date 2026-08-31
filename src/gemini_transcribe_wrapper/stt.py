@@ -123,6 +123,10 @@ def _is_quota_error(exc: Exception) -> bool:
 
 _RETRY_AFTER_RE = re.compile(r"please retry in\s+(\d+(?:\.\d+)?)\s*s", re.IGNORECASE)
 
+# Extra safety padding added on top of Gemini's "Please retry in Xs" hint
+# when a 429 is encountered, so the retry fires after the quota cools down.
+_RETRY_SAFETY_SECS = 120.0
+
 
 def _parse_retry_after_seconds(message: str) -> float | None:
     """Parse Gemini's ``Please retry in Xs`` hint from an error message.
@@ -526,7 +530,7 @@ class TranscribeClient:
                     )
                 except Exception as first_exc:
                     # 429 retry: if Gemini hints "Please retry in Xs",
-                    # sleep X+60s and retry once. If retry also fails, re-raise
+                    # sleep X+safety and retry once. If retry also fails, re-raise
                     # the original exception so existing error handling runs.
                     retry_after = (
                         _parse_retry_after_seconds(str(first_exc))
@@ -535,12 +539,14 @@ class TranscribeClient:
                     )
                     if retry_after is None or retry_after <= 0:
                         raise
-                    sleep_secs = retry_after + 60.0
+                    sleep_secs = retry_after + _RETRY_SAFETY_SECS
                     logger.info(
-                        "429 with 'Please retry in %.1fs' hint; "
-                        "sleeping %.1f+60 secs then retrying once.",
+                        "Caught 429 with 'Please retry in %.1fs' hint; "
+                        "sleeping %ds (hint %.1fs + safety %ds) then retrying once.",
                         retry_after,
+                        int(sleep_secs),
                         retry_after,
+                        int(_RETRY_SAFETY_SECS),
                     )
                     time.sleep(sleep_secs)
                     attempt_start = time.monotonic()  # reset so duration reflects the retry
