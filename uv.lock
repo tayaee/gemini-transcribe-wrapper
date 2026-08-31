@@ -649,7 +649,7 @@ wheels = [
 
 [[package]]
 name = "gemini-transcribe-wrapper"
-version = "0.0.51"
+version = "0.0.52"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
