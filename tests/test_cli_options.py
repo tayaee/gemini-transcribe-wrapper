@@ -125,17 +125,25 @@ def test_plural_and_singular_same_key_dedupes(caplog):
 
 
 def test_format_cli_command_emits_plural_form():
-    """Round-trip a multi-key value through format_cli_command."""
+    """Round-trip a multi-key value through format_cli_command.
+
+    The command-line log line redacts keys to ``****<last4>`` so the
+    emitted string never contains a full API key.
+    """
     opts = TranscribeOptions(
         path=["input.mp4"],
-        gemini_api_keys=["k1", "k2", "k3"],
+        gemini_api_keys=["k1aaa", "k2bbb", "k3ccc"],
         tier="free",
     )
     out = format_cli_command("gemini-transcribe", opts)
     tokens = out.split()
-    # Plural flag with the CSV value.
+    # Plural flag with the redacted CSV value (**** + last 4 chars).
     assert "--gemini-api-keys" in tokens
-    assert "k1,k2,k3" in tokens
+    assert "'****1aaa,****2bbb,****3ccc'" in out
+    # Raw keys must not appear in the emitted command.
+    assert "k1aaa" not in out
+    assert "k2bbb" not in out
+    assert "k3ccc" not in out
     # Singular alias should never be emitted as its own token.
     assert "--gemini-api-key" not in tokens
 

@@ -367,13 +367,20 @@ def parse_speakers(spec: str) -> dict[str, str]:
 
 
 def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
-    """Format the full command line with all resolved effective options."""
+    """Format the full command line with all resolved effective options.
+
+    API keys are redacted to ``****<last4>`` each (e.g. ``****Mw9g``) so
+    the emitted command-line log line never leaks full credentials.
+    """
     tokens: list[str] = [prog]
 
     if opts.tier:
         tokens.extend(["--tier", str(opts.tier)])
     if opts.gemini_api_keys:
-        tokens.extend(["--gemini-api-keys", ",".join(opts.gemini_api_keys)])
+        from .api import _mask_key
+
+        redacted = ",".join(_mask_key(k) for k in opts.gemini_api_keys)
+        tokens.extend(["--gemini-api-keys", redacted])
     if opts.language:
         tokens.extend(["--language", str(opts.language)])
     if opts.model:
