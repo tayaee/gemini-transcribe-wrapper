@@ -354,8 +354,8 @@ def test_transcribe_client_deduplicates_keys():
 # --- compact key masking (used in the multi-key startup log) -----------
 
 
-def test_api_mask_key_shows_only_4_stars_and_last_4():
-    """Compact format: ``****<last4>`` — no first-4 leak.
+def test_api_mask_key_shows_redacted_tag_and_last_4():
+    """Compact format: ``[redacted]<last4>`` — no first-4 leak.
 
     The multi-key startup log line uses this to keep the line short
     even with 9+ keys; the single-key line uses it for consistency.
@@ -363,15 +363,15 @@ def test_api_mask_key_shows_only_4_stars_and_last_4():
     from gemini_transcribe_wrapper.api import _mask_key
 
     masked = _mask_key("AQ.AXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXMw9g")
-    assert masked == "****Mw9g"
+    assert masked == "[redacted]Mw9g"
 
 
-def test_api_mask_key_short_key_uses_only_stars():
-    """Keys ≤ 4 chars are fully masked."""
+def test_api_mask_key_short_key_uses_only_redacted_tag():
+    """Keys ≤ 4 chars are fully masked with just the [redacted] tag."""
     from gemini_transcribe_wrapper.api import _mask_key
 
-    assert _mask_key("abcd") == "****"
-    assert _mask_key("k1") == "****"
+    assert _mask_key("abcd") == "[redacted]"
+    assert _mask_key("k1") == "[redacted]"
 
 
 if __name__ == "__main__":

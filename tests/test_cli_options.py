@@ -127,8 +127,8 @@ def test_plural_and_singular_same_key_dedupes(caplog):
 def test_format_cli_command_emits_plural_form():
     """Round-trip a multi-key value through format_cli_command.
 
-    The command-line log line redacts keys to ``****<last4>`` so the
-    emitted string never contains a full API key.
+    The command-line log line redacts keys to ``[redacted]<last4>`` so
+    the emitted string never contains a full API key.
     """
     opts = TranscribeOptions(
         path=["input.mp4"],
@@ -137,9 +137,9 @@ def test_format_cli_command_emits_plural_form():
     )
     out = format_cli_command("gemini-transcribe", opts)
     tokens = out.split()
-    # Plural flag with the redacted CSV value (**** + last 4 chars).
+    # Plural flag with the redacted CSV value ([redacted] + last 4 chars).
     assert "--gemini-api-keys" in tokens
-    assert "'****1aaa,****2bbb,****3ccc'" in out
+    assert "'[redacted]1aaa,[redacted]2bbb,[redacted]3ccc'" in out
     # Raw keys must not appear in the emitted command.
     assert "k1aaa" not in out
     assert "k2bbb" not in out
