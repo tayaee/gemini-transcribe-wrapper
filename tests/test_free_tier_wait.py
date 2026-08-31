@@ -397,6 +397,7 @@ class _QuotaClient(stt.TranscribeClient):
         self.api_key = "AIzaSyDummyKey12345678"
         self.api_logs: list[dict] = []
         self.request_interval_secs = 0.0
+        self.model = stt.MODEL_ID
 
         mock_upload = MagicMock()
         mock_upload.uri = "files/test"

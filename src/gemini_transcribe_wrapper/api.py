@@ -260,6 +260,7 @@ def gemini_transcribe(
                 ffsubsync_srt=ffsubsync_srt,
                 custom_vocabulary=custom_vocabulary,
                 audit_jsonl=audit_jsonl,
+                model=model,
             )
         )
     return BatchTranscribeResult(results=results)
@@ -287,6 +288,7 @@ def _process_one(
     ffsubsync_srt: bool,
     custom_vocabulary: list[str] | None = None,
     audit_jsonl: str | Path | None = None,
+    model: str = MODEL_ID,
 ) -> TranscribeResult:
     input_file = Path(input_path)
 
