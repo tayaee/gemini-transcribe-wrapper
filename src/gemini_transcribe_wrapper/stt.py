@@ -306,6 +306,24 @@ _LAST_API_COMPLETION_MONOTONIC: float | None = None
 _LAST_API_COMPLETION_WALL: float | None = None
 
 
+def _resolve_keys_from_env() -> list[str]:
+    """Resolve API keys from environment variables.
+
+    Precedence (matches the legacy single-key behavior):
+        ``$GEMINI_API_KEYS`` (comma-separated) → ``$GEMINI_API_KEY`` →
+        ``$GOOGLE_API_KEY``. Empty strings are dropped.
+    """
+    out: list[str] = []
+    plural = os.environ.get("GEMINI_API_KEYS", "")
+    if plural:
+        out.extend(part.strip() for part in plural.split(",") if part.strip())
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        val = os.environ.get(var)
+        if val and val.strip() and val.strip() not in out:
+            out.append(val.strip())
+    return out
+
+
 def reset_api_rate_limiter() -> None:
     """Reset in-memory and on-disk rate limiter timestamps (for testing)."""
     global _LAST_API_COMPLETION_MONOTONIC, _LAST_API_COMPLETION_WALL
@@ -403,6 +421,7 @@ class TranscribeClient:
     def __init__(
         self,
         api_key: str | None = None,
+        api_keys: list[str] | None = None,
         language: str = "ko-KR",
         enable_diarization: bool = True,
         request_interval_secs: float = 120.0,
@@ -412,20 +431,37 @@ class TranscribeClient:
         audit_jsonl: str | Path | None = None,
         model: str = MODEL_ID,
     ) -> None:
-        # Resolve the effective key from env vars early so the daily usage
-        # counter (incremented per API call) and the genai.Client use the
-        # same key. Without this, an env-var-only setup would tally API
-        # calls under the unscoped usage.json while ``gtw -v`` reports 0/25
-        # because the summary line reads the per-key usage-<hash>.json.
-        resolved = (
-            api_key
-            or os.environ.get("GEMINI_API_KEY")
-            or os.environ.get("GOOGLE_API_KEY")
-        )
-        self.api_key = resolved
-        self.client = (
-            genai.Client(api_key=resolved) if resolved else genai.Client()
-        )
+        # Resolve the effective key list, preserving order and dropping
+        # blanks. ``api_key`` is the legacy single-key kwarg kept for
+        # backward compatibility — it is treated as a one-element list.
+        resolved_keys: list[str] = []
+        if api_keys:
+            resolved_keys.extend(k.strip() for k in api_keys if k and k.strip())
+        if api_key and api_key.strip() and api_key.strip() not in resolved_keys:
+            resolved_keys.append(api_key.strip())
+        if not resolved_keys:
+            resolved_keys = _resolve_keys_from_env()
+        # Drop duplicates while preserving first-seen order.
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for k in resolved_keys:
+            if k not in seen:
+                seen.add(k)
+                deduped.append(k)
+        self._api_keys: list[str] = deduped
+        self._rr_index: int = 0
+        # ``self.api_key`` stays singular so existing per-call helpers
+        # (audit log, throttle, usage counter) keep working unchanged.
+        # It's updated to the active key before each call.
+        self.api_key: str | None = self._api_keys[0] if self._api_keys else None
+        self._clients: dict[str, genai.Client] = {}
+        # Build the initial client. We do NOT route through ``_client_for``
+        # because that helper reads ``self.client`` for the legacy path,
+        # which doesn't exist yet at this point in ``__init__``.
+        if self.api_key:
+            self.client = genai.Client(api_key=self.api_key)
+        else:
+            self.client = genai.Client()
         self.language = language
         self.enable_diarization = enable_diarization
         self.request_interval_secs = request_interval_secs
@@ -435,6 +471,34 @@ class TranscribeClient:
         self.audit_jsonl = Path(audit_jsonl) if audit_jsonl else get_audit_log_path()
         self.model = model
         self.api_logs: list[dict[str, Any]] = []
+
+    def _client_for(self, key: str | None) -> genai.Client:
+        """Return a ``genai.Client`` for ``key``.
+
+        Falls back to whatever ``self.client`` is currently set to when
+        no per-key cache exists. This covers two cases:
+
+        * The single-key (legacy) path — the constructor only built one
+          ``self.client`` for the active key.
+        * Test doubles that bypass ``__init__`` and pre-set ``self.client``
+          directly with a ``MagicMock``.
+
+        For multi-key, lazily builds and caches one ``genai.Client`` per
+        distinct key so round-robin doesn't pay SDK construction cost
+        on every chunk.
+        """
+        keys = getattr(self, "_api_keys", None) or []
+        cache = getattr(self, "_clients", None)
+        if cache is None or len(keys) <= 1:
+            # Legacy / test path: defer to ``self.client``.
+            return self.client
+        if not key:
+            return self.client
+        cached = cache.get(key)
+        if cached is None:
+            cached = genai.Client(api_key=key)
+            cache[key] = cached
+        return cached
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
         transcription: dict[str, Any] = {}
@@ -510,66 +574,160 @@ class TranscribeClient:
         started_at = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
         iso_ts = datetime.now().astimezone().isoformat(timespec="seconds")
         uploaded = None
+        last_quota_exc: Exception | None = None
         try:
+            keys = list(getattr(self, "_api_keys", []) or [])
+            if not keys:
+                # Legacy test client (or fully unset) — fall back to the
+                # singular ``self.api_key`` for backward compatibility.
+                legacy = getattr(self, "api_key", None)
+                if legacy:
+                    keys = [legacy]
+            if not keys:
+                raise RuntimeError(
+                    "No Gemini API keys configured. Set $GEMINI_API_KEYS, "
+                    "$GEMINI_API_KEY, or pass --gemini-api-keys."
+                )
+            # Upload once with the current key; the file URI is shared via
+            # the Files API and can be referenced by every other key's
+            # genai.Client.
+            initial_key = self.api_key or keys[0]
+            self.client = self._client_for(initial_key)
+            self.api_key = initial_key
             uploaded = self.client.files.upload(file=str(chunk_mp3))
-            attempt_start = time.monotonic()
-            try:
+
+            start_idx = getattr(self, "_rr_index", 0)
+            n = len(keys)
+
+            def _create() -> Any:
+                return self.client.interactions.create(
+                    model=self.model,
+                    input=[
+                        {
+                            "type": "audio",
+                            "uri": uploaded.uri,
+                            "mime_type": "audio/mpeg",
+                        }
+                    ],
+                    generation_config=self._generation_config(),
+                )
+
+            for offset in range(n):
+                idx = (start_idx + offset) % n
+                key = keys[idx]
+                # Install this key on the client for per-call helpers
+                # (throttle / usage counter / audit / record_api_call_completed).
+                self.client = self._client_for(key)
+                self.api_key = key
+                _throttle_api_call(
+                    getattr(self, "request_interval_secs", 120.0),
+                    api_key=key,
+                    tier=getattr(self, "tier", "free"),
+                )
                 from .usage_counter import increment_today
 
-                increment_today(api_key=self.api_key)
-                # First attempt
+                increment_today(api_key=key)
+
+                attempt_start = time.monotonic()
                 try:
-                    interaction = self.client.interactions.create(
-                        model=self.model,
-                        input=[
-                            {
-                                "type": "audio",
-                                "uri": uploaded.uri,
-                                "mime_type": "audio/mpeg",
-                            }
-                        ],
-                        generation_config=self._generation_config(),
-                    )
+                    interaction = _create()
                 except Exception as first_exc:
-                    # 429 retry: if Gemini hints "Please retry in Xs",
-                    # sleep X+safety and retry once. If retry also fails, re-raise
-                    # the original exception so existing error handling runs.
-                    retry_after = (
-                        _parse_retry_after_seconds(str(first_exc))
-                        if _is_quota_error(first_exc)
-                        else None
-                    )
-                    if retry_after is None or retry_after <= 0:
+                    # Apply the existing single-key cooldown+retry path.
+                    # If it ultimately fails for this key, fall through to
+                    # the next key; if it's not a quota error, propagate.
+                    if not _is_quota_error(first_exc):
+                        # Non-quota error (e.g. 400/500): no point trying
+                        # the next key — the request is malformed or the
+                        # service is down for everyone. Audit-log, log
+                        # the reference URL, and re-raise.
+                        status_code = _extract_status_code(first_exc)
+                        append_audit_log(
+                            input_file_path=effective_source_file,
+                            audio_chunk_file_path=effective_chunk_file,
+                            audio_chunk_playtime_s=chunk_dur,
+                            api_processing_time_s=-1.0,
+                            api_http_status_code=status_code,
+                            api_key=key,
+                            timestamp=iso_ts,
+                            log_path=getattr(self, "audit_jsonl", None),
+                        )
+                        logger.error(
+                            "Gemini API call failed. Reference: %s",
+                            MODEL_REF_URL,
+                        )
+                        self._log_api_call(
+                            chunk_index,
+                            1,
+                            started_at,
+                            time.monotonic() - attempt_start,
+                            "failed",
+                            error=str(first_exc),
+                        )
                         raise
+                    retry_after = _parse_retry_after_seconds(str(first_exc))
+                    if retry_after is None or retry_after <= 0:
+                        # 429 without retry hint: try the next key.
+                        # Audit-log this key's failure so the JSONL trail
+                        # is per-key, not aggregated.
+                        append_audit_log(
+                            input_file_path=effective_source_file,
+                            audio_chunk_file_path=effective_chunk_file,
+                            audio_chunk_playtime_s=chunk_dur,
+                            api_processing_time_s=-1.0,
+                            api_http_status_code=_extract_status_code(first_exc),
+                            api_key=key,
+                            timestamp=iso_ts,
+                            log_path=getattr(self, "audit_jsonl", None),
+                        )
+                        logger.info(
+                            "Key ...%s hit 429 without retry hint; trying next key.",
+                            key[-4:],
+                        )
+                        last_quota_exc = first_exc
+                        continue
                     sleep_secs = retry_after + _RETRY_SAFETY_SECS
                     logger.info(
-                        "Caught 429 with 'Please retry in %.1fs' hint; "
-                        "sleeping %ds (hint %.1fs + safety %ds) then retrying once.",
+                        "Caught 429 with 'Please retry in %.1fs' hint from key "
+                        "...%s; sleeping %ds (hint %.1fs + safety %ds) then "
+                        "retrying once with the same key.",
                         retry_after,
+                        key[-4:],
                         int(sleep_secs),
                         retry_after,
                         int(_RETRY_SAFETY_SECS),
                     )
                     time.sleep(sleep_secs)
-                    attempt_start = time.monotonic()  # reset so duration reflects the retry
+                    attempt_start = time.monotonic()  # reset so duration reflects retry
                     try:
-                        interaction = self.client.interactions.create(
-                            model=self.model,
-                            input=[
-                                {
-                                    "type": "audio",
-                                    "uri": uploaded.uri,
-                                    "mime_type": "audio/mpeg",
-                                }
-                            ],
-                            generation_config=self._generation_config(),
+                        interaction = _create()
+                        logger.info(
+                            "429 retry via cooldown succeeded with key ...%s.",
+                            key[-4:],
                         )
-                    except Exception:  # noqa: BLE001 - re-raise original, not this one
-                        # Retry also failed; re-raise the original error
-                        raise first_exc from None
-                    logger.info(
-                        "429 retry succeeded via cooldown; continuing."
-                    )
+                    except Exception:  # noqa: BLE001 - any retry failure falls through to next key
+                        # Retry also failed for this key; try the next key.
+                        # Audit-log this key's failure so the JSONL trail
+                        # is per-key. Preserve the *original* error so the
+                        # final raise carries the original 429 message.
+                        append_audit_log(
+                            input_file_path=effective_source_file,
+                            audio_chunk_file_path=effective_chunk_file,
+                            audio_chunk_playtime_s=chunk_dur,
+                            api_processing_time_s=-1.0,
+                            api_http_status_code=_extract_status_code(first_exc),
+                            api_key=key,
+                            timestamp=iso_ts,
+                            log_path=getattr(self, "audit_jsonl", None),
+                        )
+                        logger.info(
+                            "429 retry via cooldown failed for key ...%s; "
+                            "trying next key.",
+                            key[-4:],
+                        )
+                        last_quota_exc = first_exc
+                        continue
+
+                # Success on this key.
                 duration = time.monotonic() - attempt_start
                 text = getattr(interaction, "output_text", None) or ""
                 words = _extract_words(interaction)
@@ -579,6 +737,11 @@ class TranscribeClient:
                     text = fix_korean_su_text(text)
                 if not text and words:
                     text = " ".join(w.text for w in words)
+                # Advance the round-robin so the *next* chunk uses the
+                # following key — even if it succeeded on the first try.
+                if hasattr(self, "_rr_index"):
+                    self._rr_index = (idx + 1) % n
+
                 self._log_api_call(
                     chunk_index, 1, started_at, duration, "success"
                 )
@@ -588,37 +751,26 @@ class TranscribeClient:
                     audio_chunk_playtime_s=chunk_dur,
                     api_processing_time_s=duration,
                     api_http_status_code=200,
-                    api_key=getattr(self, "api_key", None),
+                    api_key=key,
                     timestamp=iso_ts,
                     log_path=getattr(self, "audit_jsonl", None),
                 )
                 return TranscriptionResult(text=text, words=words)
-            except Exception as exc:
-                status_code = _extract_status_code(exc)
-                append_audit_log(
-                    input_file_path=effective_source_file,
-                    audio_chunk_file_path=effective_chunk_file,
-                    audio_chunk_playtime_s=chunk_dur,
-                    api_processing_time_s=-1.0,
-                    api_http_status_code=status_code,
-                    api_key=getattr(self, "api_key", None),
-                    timestamp=iso_ts,
-                    log_path=getattr(self, "audit_jsonl", None),
-                )
-                _log_quota_hint(exc)
-                if not _is_quota_error(exc):
-                    logger.error(
-                        "Gemini API call failed. Reference: %s", MODEL_REF_URL
-                    )
-                self._log_api_call(
-                    chunk_index,
-                    1,
-                    started_at,
-                    time.monotonic() - attempt_start,
-                    "failed",
-                    error=str(exc),
-                )
-                raise
+
+            # All keys exhausted. Surface the most recent quota error.
+            # Per-key audit records were already written inside the loop,
+            # so we only log the user-facing quota hint here.
+            assert last_quota_exc is not None
+            _log_quota_hint(last_quota_exc)
+            self._log_api_call(
+                chunk_index,
+                n,
+                started_at,
+                0.0,
+                "failed",
+                error=str(last_quota_exc),
+            )
+            raise last_quota_exc
         except Exception as exc:
             if uploaded is None:
                 status_code = _extract_status_code(exc)

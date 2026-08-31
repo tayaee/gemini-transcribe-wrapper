@@ -27,7 +27,7 @@ class TranscribeOptions:
     version: bool = False
     output_dir: str | None = None
     output_base: str | None = None
-    gemini_api_key: str | None = None
+    gemini_api_keys: list[str] = field(default_factory=list)
     language: str = "ko-KR"
     model: str = MODEL_ID
     diarize: bool = False
@@ -82,9 +82,24 @@ def _make_command() -> click.Command:
         help="Base name for output files (default: input stem)",
     )
     @click.option(
-        "--gemini-api-key",
+        "--gemini-api-keys",
         default=None,
-        help="Gemini API key (default: $GEMINI_API_KEY)",
+        help=(
+            "Comma-separated list of Gemini API keys (e.g. 'k1,k2,k3'). "
+            "Keys are used in round-robin order across chunks; on a 429 "
+            "the wrapper retries with cooldown on the same key, then "
+            "falls through to the next key. "
+            "Default: $GEMINI_API_KEYS or $GEMINI_API_KEY."
+        ),
+    )
+    @click.option(
+        "--gemini-api-key",
+        "deprecated_gemini_api_key",
+        default=None,
+        help=(
+            "[DEPRECATED — use --gemini-api-keys] Single Gemini API key. "
+            "Treated as a one-element list passed to --gemini-api-keys."
+        ),
     )
     @click.option(
         "--language",
@@ -216,7 +231,8 @@ def _make_command() -> click.Command:
         version: bool,
         output_dir: str | None,
         output_base: str | None,
-        gemini_api_key: str | None,
+        gemini_api_keys: str | None,
+        deprecated_gemini_api_key: str | None,
         language: str,
         model: str,
         diarize: bool,
@@ -238,13 +254,32 @@ def _make_command() -> click.Command:
         verbose: bool,
         log_level: str,
     ) -> None:
+        # Parse the comma-separated --gemini-api-keys list. Drop blanks,
+        # preserve order, drop dupes.
+        parsed_keys: list[str] = []
+        if gemini_api_keys:
+            for part in gemini_api_keys.split(","):
+                part = part.strip()
+                if part and part not in parsed_keys:
+                    parsed_keys.append(part)
+        # The deprecated singular --gemini-api-key flag is appended last
+        # so explicit --gemini-api-keys takes precedence in ordering.
+        if deprecated_gemini_api_key and deprecated_gemini_api_key.strip():
+            v = deprecated_gemini_api_key.strip()
+            if v not in parsed_keys:
+                parsed_keys.append(v)
+            logging.getLogger(__name__).warning(
+                "--gemini-api-key is deprecated; use --gemini-api-keys=k1,k2,... "
+                "instead. Treating '%s' as a one-element list.",
+                _mask_cli_key(v),
+            )
         _LAST_OPTIONS.append(
             TranscribeOptions(
                 path=list(path),
                 version=version,
                 output_dir=output_dir,
                 output_base=output_base,
-                gemini_api_key=gemini_api_key,
+                gemini_api_keys=parsed_keys,
                 language=language,
                 model=model,
                 diarize=diarize,
@@ -337,8 +372,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
 
     if opts.tier:
         tokens.extend(["--tier", str(opts.tier)])
-    if opts.gemini_api_key:
-        tokens.extend(["--gemini-api-key", str(opts.gemini_api_key)])
+    if opts.gemini_api_keys:
+        tokens.extend(["--gemini-api-keys", ",".join(opts.gemini_api_keys)])
     if opts.language:
         tokens.extend(["--language", str(opts.language)])
     if opts.model:
@@ -398,21 +433,67 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
     return shlex.join(tokens)
 
 
-def _resolve_api_key(cli_key: str | None) -> str | None:
-    """Resolve the effective Gemini API key: --gemini-api-key > $GEMINI_API_KEY > $GOOGLE_API_KEY."""
-    return cli_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+def _resolve_api_keys(cli_keys: list[str]) -> list[str]:
+    """Resolve the effective Gemini API key list.
+
+    Precedence:
+      1. Explicit ``--gemini-api-keys`` (CLI wins, env vars are ignored
+         so users can intentionally pin a single key).
+      2. ``$GEMINI_API_KEYS`` (CSV).
+      3. ``$GEMINI_API_KEY`` (single, treated as a one-element list).
+      4. ``$GOOGLE_API_KEY`` (single, treated as a one-element list).
+
+    Order within each source is preserved and duplicates are dropped.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _add(k: object) -> None:
+        k_s = k.strip() if isinstance(k, str) else ""
+        if k_s and k_s not in seen:
+            seen.add(k_s)
+            out.append(k_s)
+
+    # 1. CLI list — authoritative when present.
+    for k in cli_keys:
+        _add(k)
+    if out:
+        return out
+
+    # 2-4. Fall back to env vars in precedence order.
+    for k in (
+        s.strip()
+        for s in os.environ.get("GEMINI_API_KEYS", "").split(",")
+        if s.strip()
+    ):
+        _add(k)
+    for env_name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        v = os.environ.get(env_name)
+        if v:
+            _add(v)
+    return out
+
+
+def _mask_cli_key(key: str) -> str:
+    """Show only the first and last 4 chars of a CLI-provided key (for warnings)."""
+    if len(key) <= 8:
+        return "*" * len(key)
+    return f"{key[:4]}{'*' * (len(key) - 8)}{key[-4:]}"
 
 
 def _run(opts: TranscribeOptions, prog: str) -> int:
     """Execute the parsed options. Returns exit code."""
-    effective_key = _resolve_api_key(opts.gemini_api_key)
+    effective_keys = _resolve_api_keys(opts.gemini_api_keys)
+    # For the -v summary line and the "no key configured" warning we
+    # only need the first key (preserves the legacy single-key UX).
+    effective_key = effective_keys[0] if effective_keys else None
 
     if opts.version:
         print(f"{prog} {__version__}")
         if not effective_key:
             print(
-                "Warning: GEMINI_API_KEY is not set. Set it or pass "
-                "--gemini-api-key to transcribe."
+                "Warning: $GEMINI_API_KEY is not set. Set it or pass "
+                "--gemini-api-keys=KEY1,KEY2,... to transcribe."
             )
         print(usage_summary_line(api_key=effective_key, tier=opts.tier))
         return 0
@@ -456,7 +537,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 input_file=pattern,
                 output_dir=opts.output_dir,
                 output_base=opts.output_base,
-                gemini_api_key=opts.gemini_api_key,
+                gemini_api_keys=effective_keys,
                 language=opts.language,
                 model=opts.model,
                 diarize=opts.diarize,

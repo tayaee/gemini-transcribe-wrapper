@@ -113,7 +113,9 @@ System dependencies are eliminated by dynamically managing binaries and librarie
 ### 4.5. Rate Limiting & Gemini 3.5 Transcribe Integration
 
 1. Authentication:
-   * Read GEMINI_API_KEY environment variable; override with --gemini-api-key option if provided.
+   * Read $GEMINI_API_KEYS (comma-separated) first; fall back to $GEMINI_API_KEY or $GOOGLE_API_KEY (single key, treated as a one-element list). CLI flags override env vars: `--gemini-api-keys=K1,K2,...` (preferred) or `--gemini-api-key=K1` (deprecated singular alias; emits a deprecation warning but is otherwise equivalent to a one-element list).
+   * Multiple keys are cycled in round-robin order across chunks, advancing the pointer after every successful chunk.
+   * On a 429 with retry hint, the wrapper sleeps (hint + 120s safety) and retries once on the same key; if the retry still 429s, it falls through to the next key. On a 429 without retry hint, the wrapper immediately tries the next key (no sleep). See [Multi-Key Strategy](../multi-key-strategy.md).
 2. Free Tier Quota Compliance:
    * Sequential execution with a mandatory 30-second wait (time.sleep(30)) after each actual API call.
    * Exponential backoff retry logic on 429/503 errors (up to 5 retries).
@@ -151,7 +153,7 @@ def gemini_transcribe(
     input_file: str,
     output_dir: str | None = None,
     output_base: str | None = None,
-    gemini_api_key: str | None = None,
+    gemini_api_keys: list[str] | None = None,
     language: str = "ko-KR",
     diarize: bool = False,
     create_srt: bool = True,

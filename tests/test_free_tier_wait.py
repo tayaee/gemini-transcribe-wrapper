@@ -484,8 +484,8 @@ def test_transcribe_chunk_retries_on_429_with_retry_hint(tmp_path, monkeypatch, 
     assert sleeps == [pytest.approx(150.0)]  # 30 + 120
     # One log line on success (per user spec)
     cooldown_logs = [
-        rec.message for rec in caplog.records
-        if "succeeded via cooldown" in rec.message
+        rec.getMessage() for rec in caplog.records
+        if "via cooldown succeeded" in rec.getMessage()
     ]
     assert len(cooldown_logs) == 1
     sleeping_logs = [

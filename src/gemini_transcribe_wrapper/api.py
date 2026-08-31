@@ -143,7 +143,8 @@ def gemini_transcribe(
     input_file: str,
     output_dir: str | None = None,
     output_base: str | None = None,
-    gemini_api_key: str | None = None,
+    gemini_api_keys: list[str] | None = None,
+    gemini_api_key: str | None = None,  # deprecated single-key alias
     language: str = "ko-KR",
     diarize: bool = False,
     tier: str = "free",
@@ -171,7 +172,17 @@ def gemini_transcribe(
         input_file: Input file path or glob pattern.
         output_dir: Directory for final output files (default: input dir).
         output_base: Base name for outputs (default: input stem).
-        gemini_api_key: Gemini API key (default: $GEMINI_API_KEY).
+        gemini_api_keys: Ordered list of Gemini API keys for round-robin
+            usage and 429 fallback (default: $GEMINI_API_KEYS, or
+            $GEMINI_API_KEY / $GOOGLE_API_KEY as a single-key fallback).
+            Each chunk consumes one key in round-robin order; on a 429
+            the wrapper retries with cooldown on the same key, then falls
+            through to the next key until either one succeeds or all
+            keys are exhausted. Each key's daily call count is tracked
+            independently.
+        gemini_api_key: Deprecated single-key alias for ``gemini_api_keys``.
+            If given, the key is appended to the list (after any explicit
+            ``gemini_api_keys`` entries). Prefer ``gemini_api_keys``.
         language: BCP-47 language code (default: "ko-KR").
         diarize: When True, enable speaker diarization in the API call and
             emit ``.diarized.*`` outputs. The wrapper then uses the shorter
@@ -229,6 +240,13 @@ def gemini_transcribe(
         QuotaExceededError: When a Gemini API call fails with HTTP 429 / quota
             exhaustion. Aborts the batch immediately instead of continuing.
     """
+    # Merge the deprecated single-key kwarg into the new list kwarg.
+    merged_keys: list[str] = []
+    if gemini_api_keys:
+        merged_keys.extend(k.strip() for k in gemini_api_keys if k and k.strip())
+    if gemini_api_key and gemini_api_key.strip() and gemini_api_key.strip() not in merged_keys:
+        merged_keys.append(gemini_api_key.strip())
+
     effective_interval = (
         (0.0 if tier == "paid" else 120.0)
         if request_interval_secs is None
@@ -242,7 +260,7 @@ def gemini_transcribe(
                 input_path=path,
                 output_dir=output_dir,
                 output_base=output_base,
-                gemini_api_key=gemini_api_key,
+                gemini_api_keys=merged_keys,
                 language=language,
                 diarize=diarize,
                 tier=tier,
@@ -270,7 +288,7 @@ def _process_one(
     input_path: str,
     output_dir: str | None,
     output_base: str | None,
-    gemini_api_key: str | None,
+    gemini_api_keys: list[str] | None,
     language: str,
     diarize: bool,
     tier: str,
@@ -399,7 +417,7 @@ def _process_one(
         ctx = _setup_workdir(input_file, out_dir, out_stem.name, temp_dir)
 
         try:
-            _check_api_key(gemini_api_key)
+            _check_api_key(gemini_api_keys)
         except RuntimeError as exc:
             logger.error("Failed processing %s: %s", input_file, exc)
             return TranscribeResult(
@@ -429,7 +447,7 @@ def _process_one(
         chunks = split_chunks(ctx.full_mp3, ctx.chunk_dir, plan)
 
         client = TranscribeClient(
-            api_key=gemini_api_key,
+            api_keys=gemini_api_keys,
             language=language,
             enable_diarization=diarize,
             request_interval_secs=request_interval_secs,
@@ -843,14 +861,47 @@ def _mask_key(key: str) -> str:
     return f"{key[:4]}{'*' * (len(key) - 8)}{key[-4:]}"
 
 
-def _check_api_key(api_key: str | None) -> None:
-    key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not key:
+def _check_api_key(api_keys: list[str] | None) -> None:
+    """Validate that at least one Gemini API key is resolvable.
+
+    Accepts a list of explicit keys; falls back to env vars
+    (``$GEMINI_API_KEYS`` → ``$GEMINI_API_KEY`` → ``$GOOGLE_API_KEY``).
+    Emits the ``Using GEMINI_API_KEY=<masked>`` log line (showing the
+    first key) and raises ``RuntimeError`` if nothing is found.
+    """
+    candidates: list[str] = []
+    if api_keys:
+        candidates.extend(k.strip() for k in api_keys if k and k.strip())
+    plural = os.environ.get("GEMINI_API_KEYS", "")
+    if plural:
+        candidates.extend(part.strip() for part in plural.split(",") if part.strip())
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        val = os.environ.get(var)
+        if val and val.strip():
+            candidates.append(val.strip())
+    # Dedupe, preserve order, drop empties.
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for k in candidates:
+        if k and k not in seen:
+            seen.add(k)
+            deduped.append(k)
+    if not deduped:
         raise RuntimeError(
-            "No Gemini API key found. Set GEMINI_API_KEY or pass --gemini-api-key."
+            "No Gemini API key found. Set $GEMINI_API_KEYS, $GEMINI_API_KEY, "
+            "or pass --gemini-api-keys=key1,key2,... (deprecated: "
+            "--gemini-api-key KEY)."
         )
     # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
-    logger.info("Using GEMINI_API_KEY=%s", _mask_key(key))  # nosemgrep
+    if len(deduped) == 1:
+        logger.info("Using GEMINI_API_KEY=%s", _mask_key(deduped[0]))  # nosemgrep
+    else:
+        masked = [_mask_key(k) for k in deduped]
+        logger.info(
+            "Using %d Gemini API keys (round-robin + 429 fallback): %s",
+            len(deduped),
+            ", ".join(masked),
+        )
 
 
 def _cleanup_workdir(ctx: WorkContext, keep_chunks: bool) -> None:

@@ -35,6 +35,8 @@ gtw -v
 gtw sample.mp4   # with `GEMINI_API_KEY` set
 # or
 gtw --gemini-api-key YOUR_API_KEY sample.mp4
+# or, with multiple keys for round-robin + 429 fallback:
+gtw --gemini-api-keys KEY1,KEY2,KEY3 sample.mp4
 ```
 
 Output (default: `--no-diarize` — no speaker labels, fewer API calls):
@@ -74,11 +76,13 @@ sample.txt
 - **Rate Limit Throttling (Max 2 RPM)**: Applies a monotonic rate limiter (default 60s interval) across all chunks and multi-file batches to prevent 429 rate-limit errors.
 - **Daily Quota Tracking**: Tracks daily Pacific-time API usage locally (`~/.cache/gemini-transcribe-wrapper/usage-<sha256(key)[:12]>.json`) with masked key logging (e.g. `API calls today 2026-08-30 (PST-08:00) with key 'AIza****abcd': attempted 3 (free tier limit: ~25)`).
 - **Free-Tier-Friendly Defaults**: `--no-diarize` is the default to maximize audio duration per API call and minimize API consumption.
-- **Graceful 429 Abort**: On HTTP 429 (rate limit or quota exhausted), calculates the exact sleep seconds until the Pacific midnight reset and aborts the batch immediately (exit code `2`) to prevent wasting quota.
+- **Multi-Key Round-Robin + 429 Fallback**: Pass several keys with `--gemini-api-keys=KEY1,KEY2,...`. The wrapper cycles keys in round-robin order across chunks; on a 429 with retry hint it cools down on the current key once and retries, then falls through to the next key. All keys exhausted → graceful abort with exit code `2`. See [Multi-Key Strategy](docs/multi-key-strategy.md) for details.
+- **Graceful 429 Abort**: On HTTP 429 (rate limit or quota exhausted) when running with a single key, calculates the exact sleep seconds until the Pacific midnight reset and aborts the batch immediately (exit code `2`) to prevent wasting quota.
 
 ## Documentation & Guides
 
 - [On Quota / Rate-Limit (HTTP 429)](docs/quota-and-rate-limits.md)
+- [Multi-Key Strategy (round-robin + 429 fallback)](docs/multi-key-strategy.md)
 - [Batch Bulk Transcribing Tip](docs/batch-transcription.md)
 - [Diarizing Tip (Speaker Labels)](docs/speaker-diarization.md)
 - [Python API Examples](examples/)
