@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -62,7 +63,9 @@ class _MultiKeyClient(stt.TranscribeClient):
         per_key_effects: dict[str, list],
     ) -> None:
         self._per_key_effects = {k: list(v) for k, v in per_key_effects.items()}
-        self.api_key = next(iter(per_key_effects))
+        # Insertion order is guaranteed by Python 3.7+ dicts; callers
+        # always pass at least one key, so cast str is safe.
+        self.api_key = cast(str, next(iter(per_key_effects)))
         self.api_logs: list[dict] = []
         self.request_interval_secs = 0.0
         self.tier = "free"
@@ -79,7 +82,9 @@ class _MultiKeyClient(stt.TranscribeClient):
         self._calls_per_key: dict[str, int] = {k: 0 for k in per_key_effects}
 
         def _create(**_kwargs):
-            active = self.api_key
+            # ``self.api_key`` is str|None on the parent; we always set it
+            # to a real key before calling, so cast to str.
+            active = cast(str, self.api_key)
             idx = self._calls_per_key[active]
             self._calls_per_key[active] = idx + 1
             self._call_order.append((active, idx + 1))

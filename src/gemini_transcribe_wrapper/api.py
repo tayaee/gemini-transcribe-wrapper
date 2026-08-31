@@ -897,7 +897,7 @@ def _check_api_key(api_keys: list[str] | None) -> None:
         logger.info("Using GEMINI_API_KEY=%s", _mask_key(deduped[0]))  # nosemgrep
     else:
         masked = [_mask_key(k) for k in deduped]
-        logger.info(
+        logger.info(  # nosemgrep
             "Using %d Gemini API keys (round-robin + 429 fallback): %s",
             len(deduped),
             ", ".join(masked),

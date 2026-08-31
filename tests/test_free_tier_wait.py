@@ -298,14 +298,15 @@ def test_throttle_api_call_log_includes_today_count_and_reset_countdown(
     monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
 
     api_key = "throttle-log-test-key"
+    # Pretend it's 4h20m before PST midnight so the countdown is
+    # predictable AND increments land on the mocked PST date.
+    base = datetime(2026, 8, 30, 19, 40, 0, tzinfo=usage_counter.PST)
+    monkeypatch.setattr(usage_counter, "pst_now", lambda: base)
+
     # Pre-populate today's count so the message embeds a real number.
     usage_counter.increment_today(api_key=api_key)
     usage_counter.increment_today(api_key=api_key)
     usage_counter.increment_today(api_key=api_key)
-
-    # Pretend it's 4h20m before PST midnight so the countdown is predictable.
-    base = datetime(2026, 8, 30, 19, 40, 0, tzinfo=usage_counter.PST)
-    monkeypatch.setattr(usage_counter, "pst_now", lambda: base)
 
     # First call establishes a completion timestamp.
     stt._throttle_api_call(120.0, api_key=api_key)

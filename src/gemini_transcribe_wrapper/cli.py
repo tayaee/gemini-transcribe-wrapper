@@ -194,7 +194,7 @@ def _make_command() -> click.Command:
     @click.option(
         "--speakers",
         default=None,
-        help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=궤도;spk:1=가람;'",
+        help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=John Doe;spk:1=Jane Doe;'",
     )
     @click.option(
         "--custom-vocabulary",
@@ -349,7 +349,7 @@ def parse_custom_vocabulary(spec: str | None) -> list[str] | None:
 
 
 def parse_speakers(spec: str) -> dict[str, str]:
-    """Parse 'spk:0=궤도;spk:1=가람;' into {'spk:0': '궤도', 'spk:1': '가람'}."""
+    """Parse 'spk:0=John Doe;spk:1=Jane Doe;' into {'spk:0': 'John Doe', 'spk:1': 'Jane Doe'}."""
     mapping: dict[str, str] = {}
     for part in spec.split(";"):
         part = part.strip()
