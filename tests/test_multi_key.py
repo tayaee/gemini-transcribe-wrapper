@@ -559,5 +559,72 @@ def test_no_throttle_sleep_between_consecutive_keys_on_429(
     assert sleeps == []
 
 
+def test_multi_input_batch_round_robin_advances_keys(tmp_path, monkeypatch):
+    """Across multiple files in a batch, each file's chunk advances the
+    round-robin key selection so File 1 uses Key 0, File 2 uses Key 1, etc.,
+    without triggering the 120s cooldown sleep between different keys.
+    """
+    from gemini_transcribe_wrapper import api
+    from gemini_transcribe_wrapper.models import TranscribeStatus
+
+    stt.reset_api_rate_limiter()
+
+    file1 = tmp_path / "file1.mp4"
+    file2 = tmp_path / "file2.mp4"
+    file3 = tmp_path / "file3.mp4"
+    file1.write_bytes(b"f1")
+    file2.write_bytes(b"f2")
+    file3.write_bytes(b"f3")
+
+    keys = ["AIzaKey00aaaaaaaa", "AIzaKey01bbbbbbbb", "AIzaKey02cccccccc"]
+    used_keys = []
+    sleeps = []
+
+    def fake_split_chunks(mp3, cdir, plan):
+        chunk = cdir / "chunk_0000.mp3"
+        chunk.parent.mkdir(parents=True, exist_ok=True)
+        chunk.write_bytes(b"chunk")
+        return [chunk]
+
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr(api, "probe_duration_secs", lambda p: 5.0)
+    monkeypatch.setattr(api, "extract_audio", lambda src, dst, force=False: dst.write_bytes(b"mp3"))
+    monkeypatch.setattr(api, "split_chunks", fake_split_chunks)
+
+    class MockClient(stt.TranscribeClient):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
+        def transcribe_chunk(self, chunk_mp3, **kwargs):
+            # Call super transcribe_chunk logic or track the selected key
+            start_idx = getattr(self, "_rr_index", 0) % len(self._live_pool)
+            chosen_key = self._live_pool[start_idx]
+            used_keys.append(chosen_key)
+            stt._throttle_api_call(120.0, api_key=chosen_key, tier="free")
+            stt.record_api_call_completed(api_key=chosen_key)
+            # Advance round robin
+            self._rr_index = (start_idx + 1) % len(self._live_pool)
+            stt._GLOBAL_RR_INDEX = self._rr_index
+            return stt.TranscriptionResult(text="ok", words=[stt.Word("ok", 0.0, 1.0)])
+
+    monkeypatch.setattr(api, "TranscribeClient", MockClient)
+
+    # Run batch with 3 files
+    batch = api.gemini_transcribe(
+        input_file=str(tmp_path / "file*.mp4"),
+        gemini_api_keys=keys,
+        tier="free",
+        request_interval_secs=120.0,
+    )
+
+    assert len(batch.results) == 3
+    assert all(r.status == TranscribeStatus.SUCCESS for r in batch.results)
+    assert used_keys == [keys[0], keys[1], keys[2]]
+    # Since each file used a different fresh key, there should be zero sleep calls!
+    assert sleeps == []
+
+    stt.reset_api_rate_limiter()
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

@@ -383,6 +383,10 @@ def _log_quota_hint(exc: Exception) -> None:
 
 _LAST_API_COMPLETION_MONOTONIC: float | None = None
 _LAST_API_COMPLETION_WALL: float | None = None
+_LAST_API_COMPLETION_MONOTONIC_BY_KEY: dict[str | None, float] = {}
+_LAST_API_COMPLETION_WALL_BY_KEY: dict[str | None, float] = {}
+_GLOBAL_RR_INDEX: int = 0
+_GLOBAL_DEAD_POOL: dict[str, float] = {}
 
 
 def _resolve_keys_from_env() -> list[str]:
@@ -406,8 +410,13 @@ def _resolve_keys_from_env() -> list[str]:
 def reset_api_rate_limiter() -> None:
     """Reset in-memory and on-disk rate limiter timestamps (for testing)."""
     global _LAST_API_COMPLETION_MONOTONIC, _LAST_API_COMPLETION_WALL
+    global _GLOBAL_RR_INDEX, _GLOBAL_DEAD_POOL
     _LAST_API_COMPLETION_MONOTONIC = None
     _LAST_API_COMPLETION_WALL = None
+    _LAST_API_COMPLETION_MONOTONIC_BY_KEY.clear()
+    _LAST_API_COMPLETION_WALL_BY_KEY.clear()
+    _GLOBAL_RR_INDEX = 0
+    _GLOBAL_DEAD_POOL.clear()
     try:
         from .usage_counter import cache_dir
 
@@ -428,6 +437,8 @@ def record_api_call_completed(api_key: str | None = None) -> None:
     now_wall = time.time()
     _LAST_API_COMPLETION_MONOTONIC = now_mono
     _LAST_API_COMPLETION_WALL = now_wall
+    _LAST_API_COMPLETION_MONOTONIC_BY_KEY[api_key] = now_mono
+    _LAST_API_COMPLETION_WALL_BY_KEY[api_key] = now_wall
     try:
         from .usage_counter import _key_hash, cache_dir
 
@@ -444,7 +455,10 @@ def record_api_call_completed(api_key: str | None = None) -> None:
 def _get_last_completion_elapsed(api_key: str | None = None) -> float | None:
     """Return elapsed seconds since last API completion, or None if no record."""
     if _LAST_API_COMPLETION_MONOTONIC is not None:
-        return time.monotonic() - _LAST_API_COMPLETION_MONOTONIC
+        if api_key in _LAST_API_COMPLETION_MONOTONIC_BY_KEY:
+            return time.monotonic() - _LAST_API_COMPLETION_MONOTONIC_BY_KEY[api_key]
+        if api_key is None:
+            return time.monotonic() - _LAST_API_COMPLETION_MONOTONIC
     try:
         from .usage_counter import _key_hash, cache_dir
 
@@ -535,13 +549,20 @@ class TranscribeClient:
         # see ``_prune_dead_pool``. This replaces the older batch model
         # (every 10 minutes, reactivate *all* cooldown keys at once) with
         # a per-key minimum 30-minute skip (issue-003, spec §4.1).
-        self._live_pool: list[str] = list(deduped)
-        self._dead_pool: dict[str, float] = {}
-        self._rr_index: int = 0
-        # ``self.api_key`` stays singular so existing per-call helpers
-        # (audit log, throttle, usage counter) keep working unchanged.
-        # It's updated to the active key before each call.
-        self.api_key: str | None = self._api_keys[0] if self._api_keys else None
+        now = time.monotonic()
+        for k, until in list(_GLOBAL_DEAD_POOL.items()):
+            if now >= until:
+                _GLOBAL_DEAD_POOL.pop(k, None)
+        self._dead_pool: dict[str, float] = {
+            k: until for k, until in _GLOBAL_DEAD_POOL.items() if k in deduped
+        }
+        self._live_pool: list[str] = [k for k in deduped if k not in self._dead_pool]
+        if self._live_pool:
+            self._rr_index: int = _GLOBAL_RR_INDEX % len(self._live_pool)
+            self.api_key: str | None = self._live_pool[self._rr_index]
+        else:
+            self._rr_index = 0
+            self.api_key = self._api_keys[0] if self._api_keys else None
         self._clients: dict[str, genai.Client] = {}
         # Build the initial client. We do NOT route through ``_client_for``
         # because that helper reads ``self.client`` for the legacy path,
@@ -673,14 +694,17 @@ class TranscribeClient:
             if self._dead_pool[k] <= now:
                 recovered.append(k)
                 del self._dead_pool[k]
+                global _GLOBAL_DEAD_POOL
+                _GLOBAL_DEAD_POOL.pop(k, None)
         if not recovered:
             return
         # Append recovered keys in their original ``_api_keys`` order so
         # round-robin fairness is preserved. Keys not in ``_api_keys``
         # (defensive) are appended after in arbitrary order.
         original = list(getattr(self, "_api_keys", []) or [])
-        ordered = [k for k in original if k in recovered]
-        extras = [k for k in recovered if k not in ordered]
+        current_and_recovered = set(self._live_pool) | set(recovered)
+        ordered = [k for k in original if k in current_and_recovered]
+        extras = [k for k in current_and_recovered if k not in ordered]
         self._live_pool = ordered + extras
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
@@ -728,11 +752,6 @@ class TranscribeClient:
         source_file: str | Path | None = None,
         chunk_duration_secs: float | None = None,
     ) -> TranscriptionResult:
-        _throttle_api_call(
-            getattr(self, "request_interval_secs", 120.0),
-            api_key=getattr(self, "api_key", None),
-            tier=getattr(self, "tier", "free"),
-        )
 
         if source_file is not None:
             effective_source_file = str(source_file)
@@ -867,6 +886,12 @@ class TranscribeClient:
                 for offset in range(len(active)):
                     idx = (start_idx + offset) % len(active)
                     key = active[idx]
+                    if offset == 0:
+                        _throttle_api_call(
+                            getattr(self, "request_interval_secs", 120.0),
+                            api_key=key,
+                            tier=getattr(self, "tier", "free"),
+                        )
                     # Install this key on the client for per-call helpers
                     # (usage counter / audit / record_api_call_completed).
                     # No ``_throttle_api_call`` here — between-key retries
@@ -959,6 +984,8 @@ class TranscribeClient:
                         # of the outer loop will move it back to live once
                         # the cooldown elapses (issue-003, spec §4.1).
                         self._dead_pool[key] = time.monotonic() + KEY_COOLDOWN_SECS
+                        global _GLOBAL_DEAD_POOL
+                        _GLOBAL_DEAD_POOL[key] = self._dead_pool[key]
                         if key in self._live_pool:
                             self._live_pool.remove(key)
                         last_quota_exc = first_exc
@@ -994,6 +1021,7 @@ class TranscribeClient:
                         self._dead_pool.setdefault(
                             bl_key, time.monotonic() + KEY_COOLDOWN_SECS
                         )
+                        _GLOBAL_DEAD_POOL[bl_key] = self._dead_pool[bl_key]
                     blacklisted_this_loop.clear()
                     # Advance the round-robin so the *next* chunk uses
                     # the following key in the (post-blacklist) live
@@ -1004,6 +1032,8 @@ class TranscribeClient:
                     if key in current_active:
                         idx_in_pool = current_active.index(key)
                         self._rr_index = (idx_in_pool + 1) % max(1, len(current_active))
+                        global _GLOBAL_RR_INDEX
+                        _GLOBAL_RR_INDEX = self._rr_index
 
                     self._log_api_call(
                         chunk_index, 1, started_at, duration, "success"
@@ -1033,6 +1063,7 @@ class TranscribeClient:
                     self._dead_pool.setdefault(
                         key, time.monotonic() + KEY_COOLDOWN_SECS
                     )
+                    _GLOBAL_DEAD_POOL[key] = self._dead_pool[key]
         except Exception as exc:
             if uploaded is None:
                 status_code = _extract_status_code(exc)

@@ -2819,12 +2819,12 @@
       {
         "chunk_index": 0,
         "attempts": 1,
-        "started_at": "2026-09-01T16:57:47",
-        "duration_secs": 8.69,
+        "started_at": "2026-09-01T19:25:49",
+        "duration_secs": 7.806,
         "status": "success"
       }
     ],
-    "total_api_secs": 8.69,
+    "total_api_secs": 7.806,
     "call_count": 1
   }
 }
