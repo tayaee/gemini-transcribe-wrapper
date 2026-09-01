@@ -242,5 +242,42 @@ def test_mask_cli_key_short_is_fully_masked():
     assert _mask_cli_key("abcdefgh") == "********"
 
 
+def test_gemini_api_keys_comma_and_semicolon():
+    """Both comma and semicolon work as separators for --gemini-api-keys."""
+    opts1 = build_options(["--gemini-api-keys", "k1,k2,k3", "input.mp4"])
+    assert opts1.gemini_api_keys == ["k1", "k2", "k3"]
+
+    opts2 = build_options(["--gemini-api-keys", "k1;k2,k3", "input.mp4"])
+    assert opts2.gemini_api_keys == ["k1", "k2", "k3"]
+
+
+def test_language_codes_comma_and_semicolon():
+    """Both comma and semicolon work as separators for --language-codes."""
+    opts1 = build_options(["--language-codes", "ko-KR,en-US,ja-JP", "input.mp4"])
+    assert opts1.language_codes == ["ko-KR", "en-US", "ja-JP"]
+
+    opts2 = build_options(["--language-codes", "ko-KR;en-US,ja-JP", "input.mp4"])
+    assert opts2.language_codes == ["ko-KR", "en-US", "ja-JP"]
+
+
+def test_custom_vocabulary_comma_and_semicolon():
+    """Both comma and semicolon work as separators for parse_custom_vocabulary."""
+    from gemini_transcribe_wrapper.cli import parse_custom_vocabulary
+
+    assert parse_custom_vocabulary("word1,word2,word3") == ["word1", "word2", "word3"]
+    assert parse_custom_vocabulary("word1;word2,word3") == ["word1", "word2", "word3"]
+
+
+def test_speakers_allows_commas_in_names():
+    """--speakers uses ONLY semicolon so names may contain commas."""
+    from gemini_transcribe_wrapper.cli import parse_speakers
+
+    mapping = parse_speakers("spk:0=Doe, John, Jr.;spk:1=Smith, Jane, Ph.D.;")
+    assert mapping == {
+        "spk:0": "Doe, John, Jr.",
+        "spk:1": "Smith, Jane, Ph.D.",
+    }
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

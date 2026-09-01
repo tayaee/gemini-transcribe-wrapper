@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -98,7 +99,7 @@ def _make_command() -> click.Command:
         "--gemini-api-keys",
         default=None,
         help=(
-            "Semicolon-separated list of Gemini API keys (e.g. 'k1;k2;k3'). "
+            "Comma- or semicolon-separated list of Gemini API keys (e.g. 'k1,k2,k3' or 'k1;k2;k3'). "
             "Keys are used in round-robin order across chunks; on a 429 "
             "the wrapper moves the key into a cooldown pool and tries the "
             "next active key. "
@@ -118,7 +119,7 @@ def _make_command() -> click.Command:
         "--language-codes",
         default="ko-KR;en-US",
         help=(
-            "Semicolon-separated BCP-47 language hints forwarded to Gemini as 'language_codes'. "
+            "Comma- or semicolon-separated BCP-47 language hints forwarded to Gemini as 'language_codes'. "
             "Default 'ko-KR;en-US'. Pass an empty string (--language-codes=\"\") to enable "
             "auto language detection (Gemini picks the spoken language). "
             "See https://ai.google.dev/gemini-api/docs/transcribe#supported-languages "
@@ -213,12 +214,16 @@ def _make_command() -> click.Command:
     @click.option(
         "--speakers",
         default=None,
-        help="Speaker name mapping for .diarized.srt, e.g. 'spk:0=John Doe;spk:1=Jane Doe;'",
+        help=(
+            "Semicolon-separated speaker name mapping for .diarized.srt, "
+            "e.g. 'spk:0=John Doe;spk:1=Jane Doe;'. (Note: only ';' is used as a "
+            "delimiter because speaker names may contain commas)."
+        ),
     )
     @click.option(
         "--custom-vocabulary",
         default=None,
-        help="Custom vocabulary / bias phrases (semicolon-separated or text file path)",
+        help="Custom vocabulary / bias phrases (comma- or semicolon-separated, or text file path)",
     )
     @click.option(
         "--custom-vocabulary-file",
@@ -282,11 +287,11 @@ def _make_command() -> click.Command:
         audit_jsonl_file: str | None,
         log_level: str,
     ) -> None:
-        # Parse the semicolon-separated --gemini-api-keys list. Drop blanks,
-        # preserve order, drop dupes.
+        # Parse the comma- or semicolon-separated --gemini-api-keys list.
+        # Drop blanks, preserve order, drop dupes.
         parsed_keys: list[str] = []
         if gemini_api_keys:
-            for part in gemini_api_keys.split(";"):
+            for part in re.split(r"[,;]", gemini_api_keys):
                 part = part.strip()
                 if part and part not in parsed_keys:
                     parsed_keys.append(part)
@@ -301,10 +306,10 @@ def _make_command() -> click.Command:
                 "instead. Treating '%s' as a one-element list.",
                 _mask_cli_key(v),
             )
-        # --language-codes is a semicolon-separated list; empty string enables auto detection.
+        # --language-codes is comma- or semicolon-separated; empty string enables auto detection.
         parsed_language_codes: list[str] = []
         if language_codes:
-            for part in language_codes.split(";"):
+            for part in re.split(r"[,;]", language_codes):
                 part = part.strip()
                 if part and part not in parsed_language_codes:
                     parsed_language_codes.append(part)
@@ -368,14 +373,14 @@ def build_options(argv: list[str] | None = None) -> TranscribeOptions:
 
 
 def parse_custom_vocabulary(spec: str | None) -> list[str] | None:
-    """Parse semicolon-delimited list or read phrases from a file."""
+    """Parse comma- or semicolon-delimited list or read phrases from a file."""
     if not spec:
         return None
     p = Path(spec)
     if p.is_file():
         lines = [line.strip() for line in p.read_text(encoding="utf-8").splitlines()]
         return [line for line in lines if line]
-    items = [item.strip() for item in spec.split(";") if item.strip()]
+    items = [item.strip() for item in re.split(r"[,;]", spec) if item.strip()]
     return items if items else None
 
 
@@ -516,7 +521,7 @@ def _resolve_api_keys(cli_keys: list[str]) -> list[str]:
     # 2-4. Fall back to env vars in precedence order.
     for k in (
         s.strip()
-        for s in os.environ.get("GEMINI_API_KEYS", "").split(";")
+        for s in re.split(r"[,;]", os.environ.get("GEMINI_API_KEYS", ""))
         if s.strip()
     ):
         _add(k)

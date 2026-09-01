@@ -5,6 +5,7 @@ from __future__ import annotations
 import glob as globlib
 import logging
 import os
+import re
 import shutil
 import tempfile
 from collections.abc import Sequence
@@ -1042,7 +1043,7 @@ def _check_api_key(api_keys: list[str] | None) -> None:
         candidates.extend(k.strip() for k in api_keys if k and k.strip())
     plural = os.environ.get("GEMINI_API_KEYS", "")
     if plural:
-        candidates.extend(part.strip() for part in plural.split(";") if part.strip())
+        candidates.extend(part.strip() for part in re.split(r"[,;]", plural) if part.strip())
     for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
         val = os.environ.get(var)
         if val and val.strip():

@@ -354,13 +354,13 @@ def _resolve_keys_from_env() -> list[str]:
     """Resolve API keys from environment variables.
 
     Precedence (matches the legacy single-key behavior):
-        ``$GEMINI_API_KEYS`` (semicolon-separated) → ``$GEMINI_API_KEY`` →
+        ``$GEMINI_API_KEYS`` (comma- or semicolon-separated) → ``$GEMINI_API_KEY`` →
         ``$GOOGLE_API_KEY``. Empty strings are dropped.
     """
     out: list[str] = []
     plural = os.environ.get("GEMINI_API_KEYS", "")
     if plural:
-        out.extend(part.strip() for part in plural.split(";") if part.strip())
+        out.extend(part.strip() for part in re.split(r"[,;]", plural) if part.strip())
     for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
         val = os.environ.get(var)
         if val and val.strip() and val.strip() not in out:
