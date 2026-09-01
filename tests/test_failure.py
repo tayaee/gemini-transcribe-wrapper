@@ -72,8 +72,8 @@ def test_checkpoint_resume():
         print("loaded checkpoint:", loaded.text, loaded.words)
 
 
-def test_temp_dir():
-    """Temp files must go under temp_dir when specified (cleaned on success)."""
+def test_temp_path():
+    """Temp files must go under temp_path when specified (cleaned on success)."""
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         src = td / "input.mp4"
@@ -81,7 +81,7 @@ def test_temp_dir():
             ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-ar", "16000", "-ac", "1", str(src)],
             capture_output=True, check=True,
         )
-        temp_dir = td / "mytemp"
+        temp_path = td / "mytemp"
 
         class FakeTranscribeClient:
             def __init__(self, *args, **kwargs):
@@ -97,19 +97,19 @@ def test_temp_dir():
         api.TranscribeClient = FakeTranscribeClient
         try:
             result = api.gemini_transcribe(
-                str(src), force=True, gemini_api_key="fake", temp_dir=str(temp_dir)
+                str(src), force=True, gemini_api_key="fake", temp_path=str(temp_path)
             )
         finally:
             api.TranscribeClient = orig
 
-        # Work dir must have been created under temp_dir and cleaned up on success.
-        print("temp_dir exists:", temp_dir.exists())
-        print("no workdir left in temp_dir:", not (temp_dir / "input.gemini-work").exists())
+        # Work dir must have been created under temp_path and cleaned up on success.
+        print("temp_path exists:", temp_path.exists())
+        print("no workdir left in temp_path:", not (temp_path / "input.gemini-work").exists())
         print("no workdir next to input:", not (td / ".input.gemini-work").exists())
         print("output:", result.output_files())
         print("leftover:", result.results[0].leftover_files())
 
-        # Failure case: workdir should remain under temp_dir and be reported.
+        # Failure case: workdir should remain under temp_path and be reported.
         class BoomClient:
             def __init__(self, *args, **kwargs):
                 pass
@@ -120,16 +120,16 @@ def test_temp_dir():
         api.TranscribeClient = BoomClient
         try:
             failed = api.gemini_transcribe(
-                str(src), force=True, gemini_api_key="fake", temp_dir=str(temp_dir)
+                str(src), force=True, gemini_api_key="fake", temp_path=str(temp_path)
             )
         finally:
             api.TranscribeClient = orig
 
-        print("failed workdir in temp_dir:", (temp_dir / "input.gemini-work").exists())
+        print("failed workdir in temp_path:", (temp_path / "input.gemini-work").exists())
         print("failed leftover work_dir:", failed.results[0].leftover.work_dir)
 
 
 if __name__ == "__main__":
     test_failure_keeps_mp3()
     test_checkpoint_resume()
-    test_temp_dir()
+    test_temp_path()

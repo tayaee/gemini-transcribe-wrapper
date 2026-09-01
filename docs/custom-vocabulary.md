@@ -59,7 +59,7 @@ internal-codename
 
 | Flag | Behavior |
 | --- | --- |
-| `--custom-vocabulary=TERM1,TERM2,...` | Inline list (or a path to a file — auto-detected by extension). Comma- or semicolon-separated. |
+| `--custom-vocabulary=TERM1;TERM2;...` | Inline list (or a path to a file — auto-detected by extension). Semicolon-separated. |
 | `--custom-vocabulary-file=PATH` | Dedicated vocabulary file path. Always treated as a file. |
 
 If both are provided, terms from both are **merged** (inline first, then
@@ -191,7 +191,7 @@ gtw --custom-vocabulary-file ko-vocab.txt lecture.mp4
 ### Combining inline list + file
 
 ```bash
-gtw --custom-vocabulary "ProjectX,ProjectY" \
+gtw --custom-vocabulary "ProjectX;ProjectY" \
     --custom-vocabulary-file extra-glossary.txt \
     sample.mp4
 # Both sources are merged; bias is applied across the combined list.

@@ -7,7 +7,7 @@ recover from 429s automatically.
 ## TL;DR
 
 ```bash
-gtw --gemini-api-keys KEY1,KEY2,KEY3 sample.mp4
+gtw --gemini-api-keys KEY1;KEY2;KEY3 sample.mp4
 ```
 
 That's it. The wrapper:
@@ -31,9 +31,9 @@ That's it. The wrapper:
 
 | Flag | Status | Behavior |
 | --- | --- | --- |
-| `--gemini-api-keys=K1,K2,...` | **Preferred** | Comma-separated list. Whitespace and blanks are stripped; duplicates are removed. |
+| `--gemini-api-keys=K1;K2;...` | **Preferred** | Semicolon-separated list. Whitespace and blanks are stripped; duplicates are removed. |
 | `--gemini-api-key=K1` | Deprecated | Logs a one-time `--gemini-api-key is deprecated; use --gemini-api-keys` warning, then behaves like `--gemini-api-keys=K1`. |
-| `$GEMINI_API_KEYS` (CSV) | Env fallback | Used when no CLI flag is provided. |
+| `$GEMINI_API_KEYS` (semicolon-separated) | Env fallback | Used when no CLI flag is provided. |
 | `$GEMINI_API_KEY` (single) | Env fallback | Used as a one-element list when neither CLI nor `$GEMINI_API_KEYS` is set. |
 | `$GOOGLE_API_KEY` (single) | Env fallback | Used as a last resort. |
 
@@ -176,7 +176,7 @@ Practical setup:
    export key11=AIzaSyK...  # account #2, project #1
    # ... up to key20 for account #2 ...
    uvx --python 3.12 --from gemini-transcribe-wrapper@latest \
-       gtw --gemini-api-keys $key1,...,$key20 *.mp4
+       gtw --gemini-api-keys $key1;...;$key20 *.mp4
    ```
 4. The active/cooldown pool keeps the rotation healthy across both
    accounts — a 429 on account #1's keys is independent of account #2's
@@ -211,14 +211,14 @@ Practical setup:
 Three free-tier keys, three hours of audio (≈12 chunks):
 
 ```bash
-export GEMINI_API_KEYS=K1,K2,K3
+export GEMINI_API_KEYS=K1;K2;K3
 gtw long_meeting.mp4          # round-robins, falls through on 429s
 ```
 
 Force exactly two keys for one run (overriding whatever is in the env):
 
 ```bash
-gtw --gemini-api-keys=$ROTATING_KEY_1,$ROTATING_KEY_2 batch.mp4
+gtw --gemini-api-keys=$ROTATING_KEY_1;$ROTATING_KEY_2 batch.mp4
 ```
 
 Pay-tier with a single key (no rotation needed):
@@ -231,7 +231,7 @@ Continuous background job with a deep key pool (15–20 free-tier keys):
 
 ```bash
 # my_keys.txt: one key per line
-gtw --gemini-api-keys "$(tr '\n' ',' < my_keys.txt)" long_running/*.mp4
+gtw --gemini-api-keys "$(tr '\n' ';' < my_keys.txt)" long_running/*.mp4
 # The active/cooldown pool keeps most keys warm; only the ones that hit
 # 429 in the last 10 minutes are skipped.
 ```

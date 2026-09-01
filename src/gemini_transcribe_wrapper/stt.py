@@ -349,13 +349,13 @@ def _resolve_keys_from_env() -> list[str]:
     """Resolve API keys from environment variables.
 
     Precedence (matches the legacy single-key behavior):
-        ``$GEMINI_API_KEYS`` (comma-separated) → ``$GEMINI_API_KEY`` →
+        ``$GEMINI_API_KEYS`` (semicolon-separated) → ``$GEMINI_API_KEY`` →
         ``$GOOGLE_API_KEY``. Empty strings are dropped.
     """
     out: list[str] = []
     plural = os.environ.get("GEMINI_API_KEYS", "")
     if plural:
-        out.extend(part.strip() for part in plural.split(",") if part.strip())
+        out.extend(part.strip() for part in plural.split(";") if part.strip())
     for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
         val = os.environ.get(var)
         if val and val.strip() and val.strip() not in out:
@@ -461,7 +461,6 @@ class TranscribeClient:
         self,
         api_key: str | None = None,
         api_keys: list[str] | None = None,
-        language: str = "ko-KR",
         language_codes: list[str] | None = None,
         enable_diarization: bool = True,
         request_interval_secs: float = 120.0,
@@ -469,7 +468,7 @@ class TranscribeClient:
         cooldown_secs: float | None = None,
         custom_vocabulary: list[str] | None = None,
         source_file: str | Path | None = None,
-        audit_jsonl: str | Path | None = None,
+        audit_jsonl_file: str | Path | None = None,
         model: str = MODEL_ID,
     ) -> None:
         # Resolve the effective key list, preserving order and dropping
@@ -510,11 +509,9 @@ class TranscribeClient:
             self.client = genai.Client(api_key=self.api_key)
         else:
             self.client = genai.Client()
-        self.language = language
         # Multi-language hint list. When ``None`` (or empty) we let the
-        # Gemini API auto-detect the language. When set, we forward it
-        # as ``language_codes`` in the generation config, taking
-        # precedence over the legacy single ``language`` string.
+        # Gemini API auto-detect the language; the ``language_codes``
+        # field is omitted from the generation config in that case.
         self.language_codes: list[str] | None = (
             [c.strip() for c in language_codes if c and c.strip()]
             if language_codes
@@ -532,7 +529,7 @@ class TranscribeClient:
         )
         self.custom_vocabulary = list(custom_vocabulary) if custom_vocabulary else None
         self.source_file = str(Path(source_file).resolve()) if source_file else None
-        self.audit_jsonl = Path(audit_jsonl) if audit_jsonl else get_audit_log_path()
+        self.audit_jsonl_file = Path(audit_jsonl_file) if audit_jsonl_file else get_audit_log_path()
         self.model = model
         self.api_logs: list[dict[str, Any]] = []
 
@@ -566,13 +563,11 @@ class TranscribeClient:
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
         transcription: dict[str, Any] = {}
-        # ``language_codes`` (multi-language hint list) wins over the
-        # legacy single ``language`` string. An empty/None value skips
-        # the field entirely so Gemini auto-detects the language.
+        # ``language_codes`` (multi-language hint list). An empty/None
+        # value skips the field entirely so Gemini auto-detects the
+        # spoken language.
         if self.language_codes:
             transcription["language_codes"] = list(self.language_codes)
-        elif self.language:
-            transcription["language_codes"] = [self.language]
         mode: dict[str, Any] = {"type": "verbatim"}
         if self.enable_diarization:
             mode["diarization_mode"] = "speaker"
@@ -765,7 +760,7 @@ class TranscribeClient:
                                 api_http_status_code=status_code,
                                 api_key=key,
                                 timestamp=iso_ts,
-                                log_path=getattr(self, "audit_jsonl", None),
+                                log_path=getattr(self, "audit_jsonl_file", None),
                             )
                             logger.error(
                                 "Gemini API call failed. Reference: %s",
@@ -793,7 +788,7 @@ class TranscribeClient:
                             api_http_status_code=_extract_status_code(first_exc),
                             api_key=key,
                             timestamp=iso_ts,
-                            log_path=getattr(self, "audit_jsonl", None),
+                            log_path=getattr(self, "audit_jsonl_file", None),
                         )
                         logger.info(
                             "Key ...%s hit 429 (daily quota); blacklisting "
@@ -850,7 +845,7 @@ class TranscribeClient:
                         api_http_status_code=200,
                         api_key=key,
                         timestamp=iso_ts,
-                        log_path=getattr(self, "audit_jsonl", None),
+                        log_path=getattr(self, "audit_jsonl_file", None),
                     )
                     return TranscriptionResult(text=text, words=words)
 
@@ -873,7 +868,7 @@ class TranscribeClient:
                     api_http_status_code=status_code,
                     api_key=getattr(self, "api_key", None),
                     timestamp=iso_ts,
-                    log_path=getattr(self, "audit_jsonl", None),
+                    log_path=getattr(self, "audit_jsonl_file", None),
                 )
             raise
         finally:

@@ -205,12 +205,14 @@ def test_transcribe_chunk_logs_audit_on_success_and_failure(tmp_path, monkeypatc
 def test_cli_parser_audit_jsonl_default_and_custom(tmp_path):
     from gemini_transcribe_wrapper import cli
 
+    # Without --audit-jsonl-file, the option stays unresolved (None). The
+    # concrete path is decided later by TranscribeClient via stt.get_audit_log_path().
     opts_default = cli.build_options(["sample.mp4"])
-    assert opts_default.audit_jsonl == str(stt.get_audit_log_path())
+    assert opts_default.audit_jsonl_file is None
 
     custom_path = str(tmp_path / "custom_audit.jsonl")
-    opts_custom = cli.build_options(["sample.mp4", "--audit-jsonl", custom_path])
-    assert opts_custom.audit_jsonl == custom_path
+    opts_custom = cli.build_options(["sample.mp4", "--audit-jsonl-file", custom_path])
+    assert opts_custom.audit_jsonl_file == custom_path
 
 
 def test_format_cli_command_quotes_spaces():

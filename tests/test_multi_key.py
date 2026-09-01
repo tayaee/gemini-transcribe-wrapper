@@ -1,6 +1,6 @@
 """Multi-key Gemini API key + round-robin + active/cooldown pool.
 
-When the user supplies multiple API keys (``--gemini-api-keys=k1,k2,...``)
+When the user supplies multiple API keys (``--gemini-api-keys=k1;k2;...``)
 and a per-call throttle (``request_interval_secs=120``), a 429
 encountered during a chunk is effectively "daily quota exhausted" — the
 same key will keep 429ing for the rest of the day.
@@ -397,8 +397,8 @@ def test_throttle_is_per_key(tmp_path, monkeypatch):
 def test_transcribe_client_resolves_env_keys_when_api_keys_omitted(
     tmp_path, monkeypatch
 ):
-    """No ``api_keys=`` arg → env var $GEMINI_API_KEYS (CSV) takes over."""
-    monkeypatch.setenv("GEMINI_API_KEYS", "k_env1,k_env2")
+    """No ``api_keys=`` arg → env var $GEMINI_API_KEYS (semicolon-separated) takes over."""
+    monkeypatch.setenv("GEMINI_API_KEYS", "k_env1;k_env2")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 

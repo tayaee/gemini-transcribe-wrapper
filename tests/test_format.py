@@ -284,7 +284,6 @@ def test_custom_vocabulary_is_not_sent_to_api():
     The Korean '수' bug is handled by fix_korean_su_text post-processing instead."""
     client = TranscribeClient(
         api_key="fake-key",
-        language="ko-KR",
         custom_vocabulary=["특수용어A", "특수용어B"],
     )
     gen_config = client._generation_config()

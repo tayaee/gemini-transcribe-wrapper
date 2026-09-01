@@ -15,7 +15,7 @@ from click.testing import CliRunner
 from . import __version__
 from .api import QuotaExceededError, gemini_transcribe
 from .models import TranscribeStatus
-from .stt import MODEL_ID, get_audit_log_path
+from .stt import MODEL_ID
 from .usage_counter import usage_summary_line
 
 
@@ -28,7 +28,6 @@ class TranscribeOptions:
     output_dir: str | None = None
     output_base: str | None = None
     gemini_api_keys: list[str] = field(default_factory=list)
-    language: str = "ko-KR"
     language_codes: list[str] = field(default_factory=list)
     model: str = MODEL_ID
     diarize: bool = False
@@ -46,13 +45,9 @@ class TranscribeOptions:
     speakers: str | None = None
     custom_vocabulary: str | None = None
     custom_vocabulary_file: str | None = None
-    temp_dir: str = "temp"
-    audit_jsonl: str | None = None
-    verbose: bool = False
+    temp_path: str = "temp"
+    audit_jsonl_file: str | None = None
     log_level: str = "info"
-
-
-_DEFAULT_AUDIT_JSONL = str(get_audit_log_path())
 
 
 def _make_command() -> click.Command:
@@ -87,10 +82,10 @@ def _make_command() -> click.Command:
         "--gemini-api-keys",
         default=None,
         help=(
-            "Comma-separated list of Gemini API keys (e.g. 'k1,k2,k3'). "
+            "Semicolon-separated list of Gemini API keys (e.g. 'k1;k2;k3'). "
             "Keys are used in round-robin order across chunks; on a 429 "
-            "the wrapper retries with cooldown on the same key, then "
-            "falls through to the next key. "
+            "the wrapper moves the key into a cooldown pool and tries the "
+            "next active key. "
             "Default: $GEMINI_API_KEYS or $GEMINI_API_KEY."
         ),
     )
@@ -104,17 +99,14 @@ def _make_command() -> click.Command:
         ),
     )
     @click.option(
-        "--language",
-        default="ko-KR",
-        help="BCP-47 language code (default: ko-KR). Used as a fallback when --language-codes is empty.",
-    )
-    @click.option(
         "--language-codes",
-        default="ko-KR,en-US",
+        default="ko-KR;en-US",
         help=(
-            "Comma-separated BCP-47 language hints forwarded to Gemini as 'language_codes'. "
-            "Default 'ko-KR,en-US'. Pass an empty string (--language-codes=\"\") to enable "
-            "auto language detection (Gemini picks the spoken language)."
+            "Semicolon-separated BCP-47 language hints forwarded to Gemini as 'language_codes'. "
+            "Default 'ko-KR;en-US'. Pass an empty string (--language-codes=\"\") to enable "
+            "auto language detection (Gemini picks the spoken language). "
+            "See https://ai.google.dev/gemini-api/docs/transcribe#supported-languages "
+            "for the full list of supported codes."
         ),
     )
     @click.option(
@@ -210,7 +202,7 @@ def _make_command() -> click.Command:
     @click.option(
         "--custom-vocabulary",
         default=None,
-        help="Custom vocabulary / bias phrases (comma/semicolon separated or text file path)",
+        help="Custom vocabulary / bias phrases (semicolon-separated or text file path)",
     )
     @click.option(
         "--custom-vocabulary-file",
@@ -222,19 +214,20 @@ def _make_command() -> click.Command:
              "so the wrapper applies these as post-recognition bias instead of sending them to the API.",
     )
     @click.option(
-        "--temp-dir",
+        "--temp-path",
         default="temp",
         help="Directory for intermediate temp files (default: temp)",
     )
     @click.option(
-        "--audit-jsonl",
-        default=_DEFAULT_AUDIT_JSONL,
-        help=f"Path to JSONL audit log file (default: {_DEFAULT_AUDIT_JSONL})",
-    )
-    @click.option(
-        "--verbose/--no-verbose",
-        default=False,
-        help="Shorthand for --log-level debug",
+        "--audit-jsonl-file",
+        default=None,
+        help=(
+            "Path to JSONL audit log file (default: "
+            "/tmp/gemini-transcribe-wrapper-<nodename>-<loginid>.audit.jsonl). "
+            "When omitted, the wrapper resolves <nodename> to the lowercase "
+            "hostname and <loginid> to the lowercase OS username, so each "
+            "(computer, user) pair gets its own audit log."
+        ),
     )
     @click.option(
         "--log-level",
@@ -243,7 +236,7 @@ def _make_command() -> click.Command:
             case_sensitive=False,
         ),
         default="info",
-        help="Logging level (default: info)",
+        help="Logging level (default: info; use 'debug' for verbose output)",
     )
     @click.argument("path", nargs=-1)
     def _root(
@@ -253,7 +246,6 @@ def _make_command() -> click.Command:
         output_base: str | None,
         gemini_api_keys: str | None,
         deprecated_gemini_api_key: str | None,
-        language: str,
         language_codes: str,
         model: str,
         diarize: bool,
@@ -271,16 +263,15 @@ def _make_command() -> click.Command:
         speakers: str | None,
         custom_vocabulary: str | None,
         custom_vocabulary_file: str | None,
-        temp_dir: str,
-        audit_jsonl: str,
-        verbose: bool,
+        temp_path: str,
+        audit_jsonl_file: str,
         log_level: str,
     ) -> None:
-        # Parse the comma-separated --gemini-api-keys list. Drop blanks,
+        # Parse the semicolon-separated --gemini-api-keys list. Drop blanks,
         # preserve order, drop dupes.
         parsed_keys: list[str] = []
         if gemini_api_keys:
-            for part in gemini_api_keys.split(","):
+            for part in gemini_api_keys.split(";"):
                 part = part.strip()
                 if part and part not in parsed_keys:
                     parsed_keys.append(part)
@@ -295,10 +286,10 @@ def _make_command() -> click.Command:
                 "instead. Treating '%s' as a one-element list.",
                 _mask_cli_key(v),
             )
-        # --language-codes is a CSV; empty string enables auto detection.
+        # --language-codes is a semicolon-separated list; empty string enables auto detection.
         parsed_language_codes: list[str] = []
         if language_codes:
-            for part in language_codes.split(","):
+            for part in language_codes.split(";"):
                 part = part.strip()
                 if part and part not in parsed_language_codes:
                     parsed_language_codes.append(part)
@@ -309,7 +300,6 @@ def _make_command() -> click.Command:
                 output_dir=output_dir,
                 output_base=output_base,
                 gemini_api_keys=parsed_keys,
-                language=language,
                 language_codes=parsed_language_codes,
                 model=model,
                 diarize=diarize,
@@ -327,9 +317,8 @@ def _make_command() -> click.Command:
                 speakers=speakers,
                 custom_vocabulary=custom_vocabulary,
                 custom_vocabulary_file=custom_vocabulary_file,
-                temp_dir=temp_dir,
-                audit_jsonl=audit_jsonl,
-                verbose=verbose,
+                temp_path=temp_path,
+                audit_jsonl_file=audit_jsonl_file,
                 log_level=log_level,
             )
         )
@@ -365,17 +354,14 @@ def build_options(argv: list[str] | None = None) -> TranscribeOptions:
 
 
 def parse_custom_vocabulary(spec: str | None) -> list[str] | None:
-    """Parse comma/semicolon-delimited list or read phrases from a file."""
+    """Parse semicolon-delimited list or read phrases from a file."""
     if not spec:
         return None
     p = Path(spec)
     if p.is_file():
         lines = [line.strip() for line in p.read_text(encoding="utf-8").splitlines()]
         return [line for line in lines if line]
-    import re
-
-    raw_items = re.split(r"[,;]", spec)
-    items = [item.strip() for item in raw_items if item.strip()]
+    items = [item.strip() for item in spec.split(";") if item.strip()]
     return items if items else None
 
 
@@ -422,12 +408,10 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
     if opts.gemini_api_keys:
         from .api import _mask_key
 
-        redacted = ",".join(_mask_key(k) for k in opts.gemini_api_keys)
+        redacted = ";".join(_mask_key(k) for k in opts.gemini_api_keys)
         tokens.extend(["--gemini-api-keys", redacted])
-    if opts.language:
-        tokens.extend(["--language", str(opts.language)])
     if opts.language_codes:
-        tokens.extend(["--language-codes", ",".join(opts.language_codes)])
+        tokens.extend(["--language-codes", ";".join(opts.language_codes)])
     if opts.model:
         tokens.extend(["--model", str(opts.model)])
 
@@ -441,19 +425,17 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.append("--ffsubsync-srt")
     if opts.force:
         tokens.append("--force")
-    if opts.verbose:
-        tokens.append("--verbose")
-    elif opts.log_level != "info":
+    if opts.log_level != "info":
         tokens.extend(["--log-level", opts.log_level])
 
     if opts.output_dir is not None:
         tokens.extend(["--output-dir", str(opts.output_dir)])
     if opts.output_base is not None:
         tokens.extend(["--output-base", str(opts.output_base)])
-    if opts.temp_dir is not None:
-        tokens.extend(["--temp-dir", str(opts.temp_dir)])
-    if opts.audit_jsonl is not None:
-        tokens.extend(["--audit-jsonl", str(opts.audit_jsonl)])
+    if opts.temp_path is not None:
+        tokens.extend(["--temp-path", str(opts.temp_path)])
+    if opts.audit_jsonl_file is not None:
+        tokens.extend(["--audit-jsonl-file", str(opts.audit_jsonl_file)])
     if opts.speakers:
         tokens.extend(["--speakers", str(opts.speakers)])
     if opts.custom_vocabulary:
@@ -493,7 +475,7 @@ def _resolve_api_keys(cli_keys: list[str]) -> list[str]:
     Precedence:
       1. Explicit ``--gemini-api-keys`` (CLI wins, env vars are ignored
          so users can intentionally pin a single key).
-      2. ``$GEMINI_API_KEYS`` (CSV).
+      2. ``$GEMINI_API_KEYS`` (semicolon-separated).
       3. ``$GEMINI_API_KEY`` (single, treated as a one-element list).
       4. ``$GOOGLE_API_KEY`` (single, treated as a one-element list).
 
@@ -517,7 +499,7 @@ def _resolve_api_keys(cli_keys: list[str]) -> list[str]:
     # 2-4. Fall back to env vars in precedence order.
     for k in (
         s.strip()
-        for s in os.environ.get("GEMINI_API_KEYS", "").split(",")
+        for s in os.environ.get("GEMINI_API_KEYS", "").split(";")
         if s.strip()
     ):
         _add(k)
@@ -552,11 +534,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
         print(usage_summary_line(api_key=effective_key, tier=opts.tier))
         return 0
 
-    log_level = (
-        logging.DEBUG
-        if opts.verbose
-        else getattr(logging, opts.log_level.upper())
-    )
+    log_level = getattr(logging, opts.log_level.upper())
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s %(levelname)s %(filename)s:%(lineno)s %(message)s",
@@ -594,7 +572,6 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 output_dir=opts.output_dir,
                 output_base=opts.output_base,
                 gemini_api_keys=effective_keys,
-                language=opts.language,
                 language_codes=opts.language_codes or None,
                 model=opts.model,
                 diarize=opts.diarize,
@@ -609,11 +586,11 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 request_interval_secs=opts.request_interval_secs,
                 chunk_secs=opts.chunk_secs,
                 speakers=speakers,
-                temp_dir=opts.temp_dir,
+                temp_path=opts.temp_path,
                 ffsubsync_srt=opts.ffsubsync_srt,
                 custom_vocabulary=custom_vocab,
                 custom_vocabulary_file=opts.custom_vocabulary_file,
-                audit_jsonl=opts.audit_jsonl,
+                audit_jsonl_file=opts.audit_jsonl_file,
             )
             produced_all.extend(batch.output_files())
             if any(r.status == TranscribeStatus.FAILED for r in batch.results):

@@ -186,7 +186,7 @@ class _SingleKeyClient(stt.TranscribeClient):
         self._cooldown_pool: set[str] = set()
         self._rr_index = 0
         self._api_keys = [self.api_key]
-        self.audit_jsonl = None
+        self.audit_jsonl_file = None
 
     def _generation_config(self):  # type: ignore[override]
         return MagicMock()

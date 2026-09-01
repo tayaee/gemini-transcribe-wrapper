@@ -1,12 +1,12 @@
 """Unit tests for CLI parsing of multi-key options.
 
 Verifies:
-- ``--gemini-api-keys=k1,k2,k3`` parses to ``["k1", "k2", "k3"]``.
+- ``--gemini-api-keys=k1;k2;k3`` parses to ``["k1", "k2", "k3"]``.
 - ``--gemini-api-key=k1`` (deprecated singular) parses to ``["k1"]`` and
   logs a deprecation warning with the masked key.
 - The two flags can be combined; explicit plural values come first.
 - ``format_cli_command`` round-trips a multi-key value as
-  ``--gemini-api-keys k1,k2,k3`` (and never emits the singular alias).
+  ``--gemini-api-keys k1;k2;k3`` (and never emits the singular alias).
 - ``_resolve_api_keys`` merges CLI + env precedence and dedupes.
 - ``_mask_cli_key`` masks all but first/last 4 chars.
 """
@@ -32,23 +32,23 @@ from gemini_transcribe_wrapper.cli import (
 # --- --gemini-api-keys parsing --------------------------------------------
 
 
-def test_gemini_api_keys_parses_csv():
-    """Comma-separated values parse into a list, preserving order."""
-    opts = build_options(["--gemini-api-keys", "k1,k2,k3", "input.mp4"])
+def test_gemini_api_keys_parses_separator():
+    """Semicolon-separated values parse into a list, preserving order."""
+    opts = build_options(["--gemini-api-keys", "k1;k2;k3", "input.mp4"])
     assert opts.gemini_api_keys == ["k1", "k2", "k3"]
 
 
 def test_gemini_api_keys_strips_whitespace_and_blanks():
     """Whitespace and empty entries are stripped."""
     opts = build_options(
-        ["--gemini-api-keys", "k1, k2 ,,k3", "input.mp4"]
+        ["--gemini-api-keys", "k1; k2 ;; k3", "input.mp4"]
     )
     assert opts.gemini_api_keys == ["k1", "k2", "k3"]
 
 
 def test_gemini_api_keys_dedupes():
     """Duplicate keys collapse to a single ordered list."""
-    opts = build_options(["--gemini-api-keys", "k1,k2,k1,k3,k2", "input.mp4"])
+    opts = build_options(["--gemini-api-keys", "k1;k2;k1;k3;k2", "input.mp4"])
     assert opts.gemini_api_keys == ["k1", "k2", "k3"]
 
 
@@ -59,7 +59,7 @@ def test_gemini_api_keys_default_is_empty_list():
 
 
 def test_gemini_api_keys_single_value_still_works():
-    """Single-value CSV still parses (no comma → one-element list)."""
+    """Single value (no separator) still parses to one-element list."""
     opts = build_options(["--gemini-api-keys", "k1", "input.mp4"])
     assert opts.gemini_api_keys == ["k1"]
 
@@ -75,7 +75,7 @@ def test_gemini_api_key_singular_treated_as_one_element_list(caplog):
     assert opts.gemini_api_keys == ["k1"]
 
     # Deprecation warning emitted (the example value in the help text
-    # mentions "k1,k2" so we don't check for the literal key value).
+    # mentions a list so we don't check for the literal key value).
     warnings = [rec.message for rec in caplog.records if rec.levelno == logging.WARNING]
     assert any("--gemini-api-key is deprecated" in m for m in warnings)
     # The masked short key "**" should appear in the warning.
@@ -97,7 +97,7 @@ def test_plural_takes_precedence_over_singular(caplog):
         opts = build_options(
             [
                 "--gemini-api-keys",
-                "k1,k2",
+                "k1;k2",
                 "--gemini-api-key",
                 "k3",
                 "input.mp4",
@@ -112,7 +112,7 @@ def test_plural_and_singular_same_key_dedupes(caplog):
         opts = build_options(
             [
                 "--gemini-api-keys",
-                "k1,k2",
+                "k1;k2",
                 "--gemini-api-key",
                 "k2",
                 "input.mp4",
@@ -137,9 +137,9 @@ def test_format_cli_command_emits_plural_form():
     )
     out = format_cli_command("gemini-transcribe", opts)
     tokens = out.split()
-    # Plural flag with the redacted CSV value ([redacted] + last 4 chars).
+    # Plural flag with the redacted semicolon-joined value ([redacted] + last 4 chars).
     assert "--gemini-api-keys" in tokens
-    assert "'[redacted]1aaa,[redacted]2bbb,[redacted]3ccc'" in out
+    assert "'[redacted]1aaa;[redacted]2bbb;[redacted]3ccc'" in out
     # Raw keys must not appear in the emitted command.
     assert "k1aaa" not in out
     assert "k2bbb" not in out
@@ -162,7 +162,7 @@ def test_format_cli_command_omits_when_no_keys():
 
 def test_resolve_api_keys_cli_only(monkeypatch):
     """Explicit CLI values win; env vars are ignored when CLI provides them."""
-    monkeypatch.setenv("GEMINI_API_KEYS", "env1,env2")
+    monkeypatch.setenv("GEMINI_API_KEYS", "env1;env2")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     out = _resolve_api_keys(["cli1", "cli2"])
@@ -170,8 +170,8 @@ def test_resolve_api_keys_cli_only(monkeypatch):
 
 
 def test_resolve_api_keys_falls_back_to_env_plural(monkeypatch):
-    """No CLI keys → $GEMINI_API_KEYS (CSV) is used."""
-    monkeypatch.setenv("GEMINI_API_KEYS", "env1,env2")
+    """No CLI keys → $GEMINI_API_KEYS (semicolon-separated) is used."""
+    monkeypatch.setenv("GEMINI_API_KEYS", "env1;env2")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     out = _resolve_api_keys([])
@@ -210,7 +210,7 @@ def test_resolve_api_keys_priority_order(monkeypatch):
 
 def test_resolve_api_keys_dedupes_within_cli(monkeypatch):
     """Duplicate CLI keys collapse to a single ordered list (env not consulted)."""
-    monkeypatch.setenv("GEMINI_API_KEYS", "k1,k2")
+    monkeypatch.setenv("GEMINI_API_KEYS", "k1;k2")
     out = _resolve_api_keys(["k1", "k99", "k1"])
     assert out == ["k1", "k99"]
 

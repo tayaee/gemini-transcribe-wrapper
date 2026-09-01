@@ -113,7 +113,7 @@ System dependencies are eliminated by dynamically managing binaries and librarie
 ### 4.5. Rate Limiting & Gemini 3.5 Transcribe Integration
 
 1. Authentication:
-   * Read $GEMINI_API_KEYS (comma-separated) first; fall back to $GEMINI_API_KEY or $GOOGLE_API_KEY (single key, treated as a one-element list). CLI flags override env vars: `--gemini-api-keys=K1,K2,...` (preferred) or `--gemini-api-key=K1` (deprecated singular alias; emits a deprecation warning but is otherwise equivalent to a one-element list).
+   * Read $GEMINI_API_KEYS (semicolon-separated) first; fall back to $GEMINI_API_KEY or $GOOGLE_API_KEY (single key, treated as a one-element list). CLI flags override env vars: `--gemini-api-keys=K1;K2;...` (preferred) or `--gemini-api-key=K1` (deprecated singular alias; emits a deprecation warning but is otherwise equivalent to a one-element list).
    * Multiple keys are cycled in round-robin order across chunks, advancing the pointer after every successful chunk.
    * On a 429 with retry hint, the wrapper sleeps (hint + 120s safety) and retries once on the same key; if the retry still 429s, it falls through to the next key. On a 429 without retry hint, the wrapper immediately tries the next key (no sleep). See [Multi-Key Strategy](../multi-key-strategy.md).
 2. Free Tier Quota Compliance:
@@ -166,7 +166,7 @@ def gemini_transcribe(
     request_interval_secs: float = 60.0,
     chunk_secs: float | None = None,
     speakers: dict[str, str] | None = None,
-    temp_dir: str | None = "temp",
+    temp_path: str | None = "temp",
     ffsubsync_srt: bool = False,
 ) -> BatchTranscribeResult:
     """

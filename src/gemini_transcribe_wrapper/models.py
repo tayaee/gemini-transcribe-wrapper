@@ -22,7 +22,14 @@ class TranscribeInput(BaseModel):
     input_file: str = Field(..., description="Input media file path.")
     output_dir: str | None = Field(None, description="Directory for final outputs.")
     output_base: str | None = Field(None, description="Output base name.")
-    language: str = Field("ko-KR", description="BCP-47 language code.")
+    language_codes: list[str] | None = Field(
+        None,
+        description=(
+            "BCP-47 language hints forwarded to Gemini as 'language_codes'. "
+            "When None/empty, the wrapper enables Gemini's auto language detection. "
+            "See https://ai.google.dev/gemini-api/docs/transcribe#supported-languages."
+        ),
+    )
     diarize: bool = Field(
         False,
         description=(
@@ -41,9 +48,9 @@ class TranscribeInput(BaseModel):
     create_transcript_json: bool = Field(True, description="Whether .transcript.json was kept.")
     ffsubsync_srt: bool = Field(False, description="Whether .ffsubsync.srt was written.")
     force: bool = Field(False, description="Whether re-processing was forced.")
-    temp_dir: str | None = Field("temp", description="Temp dir used for intermediate files.")
+    temp_path: str | None = Field("temp", description="Temp dir used for intermediate files.")
     tier: str = Field("free", description="Pricing tier: 'free' (default) or 'paid'.")
-    audit_jsonl: str | None = Field(
+    audit_jsonl_file: str | None = Field(
         None,
         description=(
             "Path to JSONL audit log file (default: "

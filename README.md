@@ -24,7 +24,7 @@ export key1=AIzaSyA...
 export key2=AIzaSyB...
 
 # Then run any number of input files in one go:
-uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys $key1,...,$key10 *.mp4
+uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys $key1;...;$key10 *.mp4
 ```
 
 For a persistent install (so you can run `gtw` directly without `uvx ...`):
@@ -47,7 +47,7 @@ gtw -v
 
 ```bash
 # Recommended — multi-key (10 free-tier keys for active/cooldown pool):
-uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys $key1,...,$key10 *.mp4
+uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys $key1;...;$key10 *.mp4
 
 # Single-key (if you only have one free-tier key or use a paid tier):
 gtw sample.mp4   # with `GEMINI_API_KEY` set
@@ -92,7 +92,7 @@ sample.txt
 - **Rate Limit Throttling (Max 2 RPM)**: Applies a monotonic rate limiter (default 60s interval) across all chunks and multi-file batches to prevent 429 rate-limit errors.
 - **Daily Quota Tracking**: Tracks daily Pacific-time API usage locally (`~/.cache/gemini-transcribe-wrapper/usage-<sha256(key)[:12]>.json`) with masked key logging (e.g. `API calls today 2026-08-30 (PST-08:00) with key 'AIza****abcd': attempted 3 (free tier limit: ~25)`).
 - **Free-Tier-Friendly Defaults**: `--no-diarize` is the default to maximize audio duration per API call and minimize API consumption.
-- **Multi-Key Round-Robin + Active/Cooldown Pool**: Pass several keys with `--gemini-api-keys=KEY1,KEY2,...`. The wrapper keeps a separate `_active_pool` (round-robin target) and `_cooldown_pool` (keys that hit 429). On a 429 the key is moved into the cooldown pool immediately — no same-key retry. When the active pool drains, the wrapper sleeps `_COOLDOWN_SECS` (10 min default) and reactivates every cooldown key in batch, then retries the chunk. With **16–20 free-tier keys** (2 Gmail accounts × 10 projects each) you can run continuously even when most keys have hit the daily cap. See [Multi-Key Strategy](docs/multi-key-strategy.md) for sizing guidance.
+- **Multi-Key Round-Robin + Active/Cooldown Pool**: Pass several keys with `--gemini-api-keys=KEY1;KEY2;...`. The wrapper keeps a separate `_active_pool` (round-robin target) and `_cooldown_pool` (keys that hit 429). On a 429 the key is moved into the cooldown pool immediately — no same-key retry. When the active pool drains, the wrapper sleeps `_COOLDOWN_SECS` (10 min default) and reactivates every cooldown key in batch, then retries the chunk. With **16–20 free-tier keys** (2 Gmail accounts × 10 projects each) you can run continuously even when most keys have hit the daily cap. See [Multi-Key Strategy](docs/multi-key-strategy.md) for sizing guidance.
 - **Graceful 429 Abort (single key)**: On HTTP 429 (rate limit or quota exhausted) when running with a single key, calculates the exact sleep seconds until the Pacific midnight reset and aborts the batch immediately (exit code `2`) to prevent wasting quota.
 - **Custom Vocabulary File (`--custom-vocabulary-file`)**: Register company-internal / frequently-misrecognized terms in a plain text file (one per line) and the wrapper biases the transcript toward those terms as a post-recognition step. Up to 1000 words are accepted by the model; Google recommends ≤100 lines for best results. Missing file → warning + silently ignored. See [Custom Vocabulary](docs/custom-vocabulary.md) for details.
 - **Multi-Language Hint (`--language-codes`)**: Forward a comma-separated list of BCP-47 codes (default `ko-KR,en-US`) to Gemini as `language_codes`. Pass an empty string (`--language-codes=""`) to enable Gemini's auto language detection for mixed-language content. See [Language Hints](docs/language-codes.md) for details.

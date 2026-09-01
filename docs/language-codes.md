@@ -9,13 +9,13 @@ in the audio. This wrapper exposes that field as the
 
 ```bash
 # Default — hint Korean and English
-gtw --gemini-api-keys $k1,...,$k10 *.mp4
+gtw --gemini-api-keys $k1;...;$k10 *.mp4
 
 # Pure English
 gtw --language-codes en-US *.mp4
 
 # Mixed Korean + Japanese + English (in priority order)
-gtw --language-codes ko-KR,ja-JP,en-US *.mp4
+gtw --language-codes ko-KR;ja-JP;en-US *.mp4
 
 # Auto language detection (let Gemini pick)
 gtw --language-codes "" *.mp4
@@ -25,9 +25,8 @@ gtw --language-codes "" *.mp4
 
 | Flag | Behavior |
 | --- | --- |
-| `--language-codes=ko-KR,en-US` | Comma-separated list of BCP-47 codes. Forwarded verbatim to Gemini. Default: `ko-KR,en-US`. |
+| `--language-codes=ko-KR;en-US` | Semicolon-separated list of BCP-47 codes. Forwarded verbatim to Gemini. Default: `ko-KR;en-US`. See [the supported languages list](https://ai.google.dev/gemini-api/docs/transcribe#supported-languages) for the full set of codes Gemini accepts. |
 | `--language-codes=""` | Empty string → field is omitted from the request and Gemini auto-detects the spoken language. |
-| `--language=ko-KR` | Legacy single-code flag. Used as a fallback only when `--language-codes` is empty. Kept for backward compatibility. |
 
 ## Why hint languages?
 
@@ -36,7 +35,7 @@ audio on its own. For mixed-language content (Korean with English
 product names, code-switching interviews, etc.) the wrong primary
 language can drop accuracy on the minority language.
 
-A comma-separated list tells the model **all** the languages it should
+A semicolon-separated list tells the model **all** the languages it should
 be ready to recognize. Order is preserved — codes earlier in the list
 are typically treated as the dominant language, but Gemini uses the
 hint to bias recognition rather than as a hard requirement.
@@ -57,12 +56,15 @@ file-by-file.
 
 ## Default
 
-The default `--language-codes=ko-KR,en-US` reflects this project's
+The default `--language-codes=ko-KR;en-US` reflects this project's
 primary use case: Korean interviews / lectures / meetings that
 sprinkle English product names and technical terms. If your content
 is purely one language, override with `--language-codes=en-US` (or
 any other single code) to avoid the model hedging between two
 candidates.
+
+For the full list of BCP-47 codes Gemini Transcribe accepts, see
+<https://ai.google.dev/gemini-api/docs/transcribe#supported-languages>.
 
 ## Python API
 
@@ -84,9 +86,6 @@ batch = gemini_transcribe(
 )
 ```
 
-`language=` (singular) still works for backward compatibility — when
-both are provided, the list always wins.
-
 ## How it reaches Gemini
 
 `TranscribeClient._generation_config()` decides which field to send:
@@ -94,8 +93,6 @@ both are provided, the list always wins.
 ```
 if self.language_codes:           # list provided, even single-element
     transcription["language_codes"] = list(self.language_codes)
-elif self.language:               # legacy single-code fallback
-    transcription["language_codes"] = [self.language]
 # else: field omitted → auto detection
 ```
 
@@ -117,15 +114,15 @@ code returns an error from Gemini rather than from the wrapper.
   This is intentional (chunk-level language can vary, but the API
   reuses the hint across the whole request) and matches Gemini's own
   behavior.
-- **`--language` is kept for backward compatibility.** New code
-  should prefer `--language-codes`. The two are not merged — only
-  one is forwarded per request, with `--language-codes` winning.
+- **`--language` (single-code legacy flag) was removed.** Only
+  `--language-codes` is supported. For a single-code hint, pass a
+  one-element list (e.g. `--language-codes=en-US`).
 
 ## When to use what
 
 | Scenario | Recommended |
 | --- | --- |
-| Korean content with English tech terms | `--language-codes=ko-KR,en-US` (default) |
+| Korean content with English tech terms | `--language-codes=ko-KR;en-US` (default) |
 | Pure single language | `--language-codes=ko-KR` (or `en-US`, etc.) |
-| Code-switching between Korean / Japanese | `--language-codes=ko-KR,ja-JP` |
+| Code-switching between Korean / Japanese | `--language-codes=ko-KR;ja-JP` |
 | Truly unknown / mixed language | `--language-codes=""` |

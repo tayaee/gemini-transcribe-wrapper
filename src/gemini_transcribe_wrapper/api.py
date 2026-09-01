@@ -106,10 +106,10 @@ class WorkContext:
 
 
 def _setup_workdir(
-    input_file: Path, output_dir: Path, output_base: str, temp_dir: str | None
+    input_file: Path, output_dir: Path, output_base: str, temp_path: str | None
 ) -> WorkContext:
-    if temp_dir:
-        base_dir = Path(temp_dir)
+    if temp_path:
+        base_dir = Path(temp_path)
         if not base_dir.is_absolute():
             base_dir = output_dir / base_dir
         base_dir.mkdir(parents=True, exist_ok=True)
@@ -175,7 +175,6 @@ def gemini_transcribe(
     output_base: str | None = None,
     gemini_api_keys: list[str] | None = None,
     gemini_api_key: str | None = None,  # deprecated single-key alias
-    language: str = "ko-KR",
     diarize: bool = False,
     tier: str = "free",
     create_srt: bool = True,
@@ -188,12 +187,12 @@ def gemini_transcribe(
     request_interval_secs: float | None = None,
     chunk_secs: float | None = None,
     speakers: dict[str, str] | None = None,
-    temp_dir: str | None = "temp",
+    temp_path: str | None = "temp",
     ffsubsync_srt: bool = False,
     custom_vocabulary: list[str] | None = None,
     custom_vocabulary_file: str | None = None,
     language_codes: list[str] | None = None,
-    audit_jsonl: str | Path | None = None,
+    audit_jsonl_file: str | Path | None = None,
     model: str = MODEL_ID,
 ) -> BatchTranscribeResult:
     """A free video transcription CLI using gemini-3.5-transcribe that outputs .diarized.srt, .srt, and .txt files.
@@ -215,13 +214,10 @@ def gemini_transcribe(
         gemini_api_key: Deprecated single-key alias for ``gemini_api_keys``.
             If given, the key is appended to the list (after any explicit
             ``gemini_api_keys`` entries). Prefer ``gemini_api_keys``.
-        language: BCP-47 language code (default: "ko-KR"). Used only when
-            ``language_codes`` is empty — kept for backward compatibility.
         language_codes: Ordered list of BCP-47 language hints forwarded
             to Gemini as ``language_codes``. When ``None`` or empty,
             the wrapper omits the field and lets Gemini auto-detect
-            the spoken language. When set, takes precedence over
-            ``language``.
+            the spoken language. Default: ``["ko-KR", "en-US"]``.
         diarize: When True, enable speaker diarization in the API call and
             emit ``.diarized.*`` outputs. The wrapper then uses the shorter
             default chunk length (29m50s) for better diarization quality.
@@ -257,14 +253,14 @@ def gemini_transcribe(
             display names used in the .diarized.srt output. Speakers missing
             from the mapping keep their raw id, and a warning is emitted
             listing them. Ignored unless ``diarize`` is True.
-        temp_dir: Where to place intermediate work files (default: 'temp').
+        temp_path: Where to place intermediate work files (default: 'temp').
             When set, all temp files (temp_audio.mp3, chunk_*.mp3, *.tmp,
             checkpoints) live under this directory instead of next to the output.
         ffsubsync_srt: When True, also write "<base>.ffsubsync.srt" aligned to
             the full audio via ffsubsync for manual comparison. The main
             .srt/.diarized.srt keep the raw transcript timestamps (default:
             off).
-        audit_jsonl: Optional custom path for JSONL audit logging. Defaults to
+        audit_jsonl_file: Optional custom path for JSONL audit logging. Defaults to
             ``<os-temp>/gemini-transcribe-wrapper-<short-hostname>-<username>.audit.jsonl``,
             so each (host, user) pair on a shared NAS gets its own log file.
 
@@ -299,7 +295,6 @@ def gemini_transcribe(
                 output_dir=output_dir,
                 output_base=output_base,
                 gemini_api_keys=merged_keys,
-                language=language,
                 language_codes=language_codes,
                 diarize=diarize,
                 tier=tier,
@@ -313,11 +308,11 @@ def gemini_transcribe(
                 request_interval_secs=effective_interval,
                 chunk_secs=chunk_secs,
                 speakers=speakers,
-                temp_dir=temp_dir,
+                temp_path=temp_path,
                 ffsubsync_srt=ffsubsync_srt,
                 custom_vocabulary=custom_vocabulary,
                 custom_vocabulary_file=custom_vocabulary_file,
-                audit_jsonl=audit_jsonl,
+                audit_jsonl_file=audit_jsonl_file,
                 model=model,
             )
         )
@@ -329,7 +324,6 @@ def _process_one(
     output_dir: str | None,
     output_base: str | None,
     gemini_api_keys: list[str] | None,
-    language: str,
     diarize: bool,
     tier: str,
     create_srt: bool,
@@ -342,12 +336,12 @@ def _process_one(
     request_interval_secs: float,
     chunk_secs: float | None,
     speakers: dict[str, str] | None,
-    temp_dir: str | None,
+    temp_path: str | None,
     ffsubsync_srt: bool,
     custom_vocabulary: list[str] | None = None,
     custom_vocabulary_file: str | None = None,
     language_codes: list[str] | None = None,
-    audit_jsonl: str | Path | None = None,
+    audit_jsonl_file: str | Path | None = None,
     model: str = MODEL_ID,
 ) -> TranscribeResult:
     input_file = Path(input_path)
@@ -360,17 +354,17 @@ def _process_one(
         input_file=str(input_file),
         output_dir=str(out_dir) if output_dir else None,
         output_base=out_stem.name,
-        language=language,
+        language_codes=list(language_codes) if language_codes else None,
         diarize=diarize,
         tier=tier,
-        audit_jsonl=str(audit_jsonl) if audit_jsonl else None,
+        audit_jsonl_file=str(audit_jsonl_file) if audit_jsonl_file else None,
         create_srt=create_srt,
         create_txt=create_txt,
         create_metadata_json=create_metadata_json,
         create_transcript_json=create_transcript_json,
         ffsubsync_srt=ffsubsync_srt,
         force=force,
-        temp_dir=temp_dir,
+        temp_path=temp_path,
         line_interval_secs=line_interval_secs,
         paragraph_interval_secs=paragraph_interval_secs,
         request_interval_secs=request_interval_secs,
@@ -456,7 +450,7 @@ def _process_one(
                 output=_existing_outputs(final_paths),
             )
 
-        ctx = _setup_workdir(input_file, out_dir, out_stem.name, temp_dir)
+        ctx = _setup_workdir(input_file, out_dir, out_stem.name, temp_path)
 
         try:
             _check_api_key(gemini_api_keys)
@@ -497,14 +491,13 @@ def _process_one(
 
         client = TranscribeClient(
             api_keys=gemini_api_keys,
-            language=language,
             language_codes=language_codes,
             enable_diarization=diarize,
             request_interval_secs=request_interval_secs,
             tier=tier,
             custom_vocabulary=combined_vocab,
             source_file=str(input_file.resolve()),
-            audit_jsonl=audit_jsonl,
+            audit_jsonl_file=audit_jsonl_file,
             model=model,
         )
         results = transcribe_chunks_sequential(
@@ -538,11 +531,17 @@ def _process_one(
 
         # Save the transcript (full transcription result for later re-render),
         # including the API call logs for this transcription.
+        # Derive a ``language`` string for the transcript JSON header from
+        # the ``language_codes`` list (comma-joined, or ``"auto"`` when
+        # empty so Gemini's auto-detection is recorded).
+        language_header = (
+            ",".join(language_codes) if language_codes else "auto"
+        )
         save_transcript(
             transcript_path,
             results,
             plan.chunk_secs,
-            language,
+            language_header,
             api_logs=getattr(client, "api_logs", None),
         )
 
@@ -924,7 +923,7 @@ def _check_api_key(api_keys: list[str] | None) -> None:
         candidates.extend(k.strip() for k in api_keys if k and k.strip())
     plural = os.environ.get("GEMINI_API_KEYS", "")
     if plural:
-        candidates.extend(part.strip() for part in plural.split(",") if part.strip())
+        candidates.extend(part.strip() for part in plural.split(";") if part.strip())
     for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
         val = os.environ.get(var)
         if val and val.strip():
