@@ -18,7 +18,7 @@ from typing import Any
 from google import genai
 from google.genai import errors
 from google.genai._gaos.types import interactions as _gaos_interactions
-from google.genai.types import HttpOptions
+from google.genai.types import HttpOptions, HttpRetryOptions
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ MODEL_ID = "gemini-3.5-transcribe"
 # With ``attempts=1`` every call goes out exactly once; the wrapper's
 # own per-key cooldown / blacklist / retry-on-next-key loop drives all
 # the recovery work instead of the SDK's hidden retry loop.
-_NO_RETRY_HTTP_OPTIONS = HttpOptions(retry_options={"attempts": 1})
+_NO_RETRY_HTTP_OPTIONS = HttpOptions(retry_options=HttpRetryOptions(attempts=1))
 
 _OFFSET_RE = re.compile(r"([0-9.]+)s")
 
