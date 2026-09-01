@@ -49,7 +49,7 @@ def run():
 
         api.TranscribeClient = FakeTranscribeClient
 
-        result = api.gemini_transcribe(str(src), force=True, gemini_api_key="fake-key", diarize=True)
+        result = api.gemini_transcribe(str(src), force=True, gemini_api_key="fake-key", diarized_srt_file=True)
         print("status:", result.results[0].status)
         print("output:", result.output_files())
         for p in result.output_files():

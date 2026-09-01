@@ -159,7 +159,7 @@ def test_diarize_on_emits_diarized_outputs(tmp_path):
     api.TranscribeClient = _OneChunkFakeClient
     try:
         result = api.gemini_transcribe(
-            str(src), force=True, gemini_api_key="fake", diarize=True,
+            str(src), force=True, gemini_api_key="fake", diarized_srt_file=True,
         )
     finally:
         api.TranscribeClient = orig
@@ -198,7 +198,7 @@ def test_diarize_on_runs_chunks_at_diarize_default(monkeypatch, tmp_path):
     api.TranscribeClient = _OneChunkFakeClient
     try:
         api.gemini_transcribe(
-            str(src), force=True, gemini_api_key="fake", diarize=True,
+            str(src), force=True, gemini_api_key="fake", diarized_srt_file=True,
         )
     finally:
         api.TranscribeClient = orig
@@ -255,7 +255,7 @@ def test_diarize_explicit_chunk_secs_overrides_default(monkeypatch, tmp_path):
     try:
         api.gemini_transcribe(
             str(src), force=True, gemini_api_key="fake",
-            diarize=True, chunk_secs=60.0,
+            diarized_srt_file=True, chunk_secs=60.0,
         )
     finally:
         api.TranscribeClient = orig
@@ -299,7 +299,7 @@ def test_diarize_on_passes_enable_diarization_true_to_client(tmp_path):
     api.TranscribeClient = _CaptureDiarizeClient
     try:
         api.gemini_transcribe(
-            str(src), force=True, gemini_api_key="fake", diarize=True,
+            str(src), force=True, gemini_api_key="fake", diarized_srt_file=True,
         )
     finally:
         api.TranscribeClient = orig
@@ -326,7 +326,7 @@ def test_speakers_silently_dropped_when_diarize_off(tmp_path, caplog):
 
     text = "\n".join(rec.getMessage() for rec in caplog.records)
     assert "--speakers" in text
-    assert "diarization is off" in text
+    assert "--diarized-srt-file is disabled" in text
 
     # And the actual .srt file must NOT carry a [궤도] tag — speakers were dropped.
     srt_text = (tmp_path / "input.srt").read_text(encoding="utf-8")
@@ -341,7 +341,7 @@ def test_speakers_applied_when_diarize_on(tmp_path):
     try:
         api.gemini_transcribe(
             str(src), force=True, gemini_api_key="fake",
-            diarize=True, speakers={"spk:0": "궤도"},
+            diarized_srt_file=True, speakers={"spk:0": "궤도"},
         )
     finally:
         api.TranscribeClient = orig

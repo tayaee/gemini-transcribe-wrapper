@@ -256,7 +256,7 @@ def append_audit_log(
     api_http_status_code: int,
     api_key: str | None = None,
     timestamp: str | None = None,
-    log_path: Path | None = None,
+    log_path: Path | str | bool | None = None,
 ) -> None:
     """Append a single audit record to the per-host/per-user JSONL audit log.
 
@@ -279,7 +279,12 @@ def append_audit_log(
         ),
         "api_http_status_code": int(api_http_status_code),
     }
-    target = log_path or get_audit_log_path()
+    if log_path is False:
+        return
+    if isinstance(log_path, (str, Path)):
+        target = Path(log_path)
+    else:
+        target = get_audit_log_path()
     line = json.dumps(record, ensure_ascii=False) + "\n"
     try:
         with open(target, "a", encoding="utf-8") as f:
@@ -468,7 +473,7 @@ class TranscribeClient:
         cooldown_secs: float | None = None,
         custom_vocabulary: list[str] | None = None,
         source_file: str | Path | None = None,
-        audit_jsonl_file: str | Path | None = None,
+        audit_jsonl_file: str | Path | bool | None = None,
         model: str = MODEL_ID,
     ) -> None:
         # Resolve the effective key list, preserving order and dropping
@@ -529,7 +534,19 @@ class TranscribeClient:
         )
         self.custom_vocabulary = list(custom_vocabulary) if custom_vocabulary else None
         self.source_file = str(Path(source_file).resolve()) if source_file else None
-        self.audit_jsonl_file = Path(audit_jsonl_file) if audit_jsonl_file else get_audit_log_path()
+        if audit_jsonl_file is False or (
+            isinstance(audit_jsonl_file, str)
+            and audit_jsonl_file.strip().lower() in {"off", "no", "false", "none", "0", ""}
+        ):
+            self.audit_jsonl_file: Path | bool | None = False
+        elif (
+            audit_jsonl_file is True
+            or (isinstance(audit_jsonl_file, str) and audit_jsonl_file.strip().lower() == "auto")
+            or audit_jsonl_file is None
+        ):
+            self.audit_jsonl_file = get_audit_log_path()
+        else:
+            self.audit_jsonl_file = Path(audit_jsonl_file)
         self.model = model
         self.api_logs: list[dict[str, Any]] = []
 

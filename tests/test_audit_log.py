@@ -214,6 +214,28 @@ def test_cli_parser_audit_jsonl_default_and_custom(tmp_path):
     opts_custom = cli.build_options(["sample.mp4", "--audit-jsonl-file", custom_path])
     assert opts_custom.audit_jsonl_file == custom_path
 
+    opts_off = cli.build_options(["sample.mp4", "--audit-jsonl-file", "off"])
+    assert opts_off.audit_jsonl_file == "off"
+
+
+def test_audit_log_off_suppresses_writing(tmp_path):
+    client = stt.TranscribeClient(
+        api_key="test-dummy-key",
+        audit_jsonl_file="off",
+    )
+    assert client.audit_jsonl_file is False
+    # Calling append_audit_log with log_path=False does not write anywhere
+    stt.append_audit_log(
+        input_file_path="/original/input.mp4",
+        audio_chunk_file_path=str(tmp_path / "chunk.mp3"),
+        audio_chunk_playtime_s=10.0,
+        api_processing_time_s=2.0,
+        api_http_status_code=200,
+        api_key="test-dummy-key",
+        log_path=client.audit_jsonl_file,
+    )
+    # It should not fail or raise
+
 
 def test_format_cli_command_quotes_spaces():
     from gemini_transcribe_wrapper import cli

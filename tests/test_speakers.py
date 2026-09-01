@@ -51,7 +51,7 @@ def run():
             # 2) Partial mapping: unmapped speaker keeps raw id.
             api.gemini_transcribe(
                 str(src), force=True, gemini_api_key="fake",
-                diarize=True,
+                diarized_srt_file=True,
                 speakers={"spk:0": "궤도", "spk:1": "가람"},
             )
         finally:
@@ -68,7 +68,7 @@ def run():
         try:
             api.gemini_transcribe(
                 str(src), force=True, gemini_api_key="fake",
-                diarize=True,
+                diarized_srt_file=True,
                 speakers={"spk:0": "궤도", "spk:1": "가람", "spk:2": "황가람"},
             )
         finally:

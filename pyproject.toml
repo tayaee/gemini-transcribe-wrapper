@@ -32,7 +32,6 @@ classifiers = [
 dependencies = [
     "google-genai>=1.0.0",
     "static-ffmpeg>=2.0.0",
-    "ffsubsync>=0.4.24",
     "filelock>=3.0.0",
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",

@@ -30,33 +30,37 @@ class TranscribeInput(BaseModel):
             "See https://ai.google.dev/gemini-api/docs/transcribe#supported-languages."
         ),
     )
-    diarize: bool = Field(
-        False,
+    srt_file: str | None = Field(
+        None,
+        description="SRT output target (default: 'auto'). 'off' to disable; path string to override.",
+    )
+    txt_file: str | None = Field(
+        None,
+        description="TXT output target (default: 'auto'). 'off' to disable; path string to override.",
+    )
+    transcript_json_file: str | None = Field(
+        None,
+        description="Transcript JSON output target (default: 'auto'). 'off' to disable; path string to override.",
+    )
+    audit_jsonl_file: str | None = Field(
+        None,
+        description="Audit JSONL output target (default: 'auto'). 'off' to disable; path string to override.",
+    )
+    diarized_srt_file: str | None = Field(
+        None,
         description=(
-            "Whether speaker diarization was enabled. When on, the wrapper "
-            "uses shorter chunks (29m50s) and emits .diarized.* outputs. "
-            "When off (default), it cuts the file into 59-min logical units "
-            "(each split into 2 API calls to stay under the 30-min per-call "
-            "limit) and "
-            "emits plain .transcript.json / .srt / .txt only — fewer API "
-            "calls, fits the free-tier daily budget more comfortably."
+            "Diarized SRT output target (default: 'off'). 'auto' or path string to enable. "
+            "WARNING: Use only when strictly necessary as enabling diarization reduces "
+            "per-call audio limits from ~1 hr to ~30 min, doubling API calls and reducing throughput."
         ),
     )
-    create_srt: bool = Field(True, description="Whether .srt output was requested.")
-    create_txt: bool = Field(True, description="Whether .txt output was requested.")
-    create_metadata_json: bool = Field(False, description="Whether .metadata.json output was requested.")
-    create_transcript_json: bool = Field(True, description="Whether .transcript.json was kept.")
-    ffsubsync_srt: bool = Field(False, description="Whether .ffsubsync.srt was written.")
+    metadata_json_file: str | None = Field(
+        None,
+        description="Metadata JSON output target (default: 'off'). 'auto' or path string to enable.",
+    )
     force: bool = Field(False, description="Whether re-processing was forced.")
     temp_path: str | None = Field("temp", description="Temp dir used for intermediate files.")
     tier: str = Field("free", description="Pricing tier: 'free' (default) or 'paid'.")
-    audit_jsonl_file: str | None = Field(
-        None,
-        description=(
-            "Path to JSONL audit log file (default: "
-            "<os-temp>/gemini-transcribe-wrapper-<short-hostname>-<username>.audit.jsonl)."
-        ),
-    )
     line_interval_secs: float = Field(1.0, description="TXT newline break gap (s).")
     paragraph_interval_secs: float = Field(2.5, description="TXT paragraph break gap (s).")
     request_interval_secs: float = Field(120.0, description="Delay between API calls (s).")
@@ -69,9 +73,20 @@ class TranscribeOutput(BaseModel):
     srt: str | None = Field(None, description="Subtitle file (.srt).")
     txt: str | None = Field(None, description="Editor-formatted text file (.txt).")
     metadata_json: str | None = Field(None, description="Metadata file (.metadata.json).")
+    transcript_json: str | None = Field(None, description="Transcript file (.transcript.json).")
 
     def as_list(self) -> list[str]:
-        return [p for p in (self.diarized_srt, self.srt, self.txt, self.metadata_json) if p]
+        return [
+            p
+            for p in (
+                self.diarized_srt,
+                self.srt,
+                self.txt,
+                self.metadata_json,
+                self.transcript_json,
+            )
+            if p
+        ]
 
 
 class TranscribeLeftover(BaseModel):

@@ -57,9 +57,9 @@ def main() -> None:
         input_file=input_pattern,
         output_dir=str(example_dir / "output_example2"),
         gemini_api_key=api_key,
-        diarize=True,
+        diarized_srt_file=True,
         speakers=speakers_map,
-        language="ko-KR",
+        language_codes=["ko-KR"],
     )
 
     # Print results

@@ -7,13 +7,20 @@ import logging
 import os
 import shutil
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from filelock import FileLock, Timeout
 
 from .audio import compute_split_plan, extract_audio, probe_duration_secs, split_chunks
-from .merge import align_and_build, build_metadata_json, commit_outputs
+from .merge import (
+    _OFF_OUTPUT_TOKENS,
+    _resolve_output_target,
+    align_and_build,
+    build_metadata_json,
+    commit_outputs,
+)
 from .models import (
     BatchTranscribeResult,
     TranscribeInput,
@@ -25,6 +32,7 @@ from .models import (
 from .stt import (
     MODEL_ID,
     TranscribeClient,
+    get_audit_log_path,
     load_transcript,
     load_transcript_chunk_secs,
     save_transcript,
@@ -175,12 +183,13 @@ def gemini_transcribe(
     output_base: str | None = None,
     gemini_api_keys: list[str] | None = None,
     gemini_api_key: str | None = None,  # deprecated single-key alias
-    diarize: bool = False,
+    srt_file: str | Path | bool | None = None,
+    txt_file: str | Path | bool | None = None,
+    transcript_json_file: str | Path | bool | None = None,
+    audit_jsonl_file: str | Path | bool | None = None,
+    diarized_srt_file: str | Path | bool | None = None,
+    metadata_json_file: str | Path | bool | None = None,
     tier: str = "free",
-    create_srt: bool = True,
-    create_txt: bool = True,
-    create_metadata_json: bool = False,
-    create_transcript_json: bool = True,
     force: bool = False,
     line_interval_secs: float = 1.0,
     paragraph_interval_secs: float = 2.5,
@@ -188,16 +197,17 @@ def gemini_transcribe(
     chunk_secs: float | None = None,
     speakers: dict[str, str] | None = None,
     temp_path: str | None = "temp",
-    ffsubsync_srt: bool = False,
     custom_vocabulary: list[str] | None = None,
     custom_vocabulary_file: str | None = None,
     language_codes: list[str] | None = None,
-    audit_jsonl_file: str | Path | None = None,
     model: str = MODEL_ID,
+    # Backward compatibility aliases
+    create_transcript_json: bool | None = None,
+    create_metadata_json: bool | None = None,
 ) -> BatchTranscribeResult:
     """A free video transcription CLI using gemini-3.5-transcribe that outputs .diarized.srt, .srt, and .txt files.
 
-    Cross-platform (auto ffmpeg/ffsubsync dependencies).
+    Cross-platform (auto ffmpeg dependencies).
 
     Args:
         input_file: Input file path or glob pattern.
@@ -218,51 +228,35 @@ def gemini_transcribe(
             to Gemini as ``language_codes``. When ``None`` or empty,
             the wrapper omits the field and lets Gemini auto-detect
             the spoken language. Default: ``["ko-KR", "en-US"]``.
-        diarize: When True, enable speaker diarization in the API call and
-            emit ``.diarized.*`` outputs. The wrapper then uses the shorter
-            default chunk length (29m50s) for better diarization quality.
-            When False (default), speaker labels are skipped at the API and
-            the wrapper packs each chunk up to 29 min (59-min logical units,
-            split into 2 API calls to stay under the 30-min per-call limit),
-            better suited to the free-tier daily quota. ``--speakers`` is
-            ignored when this is False.
+        srt_file: SRT output target (default: 'auto'). 'off' to disable; path to override.
+        txt_file: TXT output target (default: 'auto'). 'off' to disable; path to override.
+        transcript_json_file: Transcript JSON output target (default: 'auto'). 'off' to disable; path to override.
+        audit_jsonl_file: Audit JSONL output target (default: 'auto'). 'off' to disable; path to override.
+        diarized_srt_file: Diarized SRT output target (default: 'off'). 'auto' or path to enable.
+            WARNING: Use only when strictly necessary. Enabling speaker diarization
+            reduces per-call audio limits from ~1 hour (59m) to ~30 min (29m),
+            doubling API calls and reducing overall throughput.
+        metadata_json_file: Metadata JSON output target (default: 'off'). 'auto' or path to enable.
         tier: Gemini API pricing tier ("free" or "paid", default: "free").
             When "free", enforces 60s cooldown between API calls.
             When "paid", cooldown is 0s unless overridden by ``request_interval_secs``.
-        create_srt/create_txt: Whether to generate each output format
-            (.srt, .txt). ``.diarized.srt`` is produced automatically when
-            ``diarize`` is True.
-        create_metadata_json: Whether to keep the .metadata.json output
-            (default: off).
-        create_transcript_json: Whether to keep the transcript file
-            (default: on). The transcript stores the full transcription
-            result (text + word timestamps + speakers) so outputs can be
-            re-rendered without calling the API again: if it exists and
-            outputs are missing, they are regenerated from it. The transcript
-            filename picks up a ``.diarized.`` prefix when ``diarize`` is on.
         force: Re-process even if all outputs already exist.
         line_interval_secs / paragraph_interval_secs: TXT break gaps.
         request_interval_secs: Delay between STT API calls. Defaults to 120.0s for
             "free" tier, 0.0s for "paid" tier.
         chunk_secs: Optional fixed chunk length in seconds. Overrides the
-            default for the chosen ``diarize`` mode (59 min off, 29 min on).
+            default for the chosen diarization mode (59 min off, 29 min on).
             A hard ceiling of 29 min (1740s) is always enforced because the
             Gemini API caps audio at ~30 min per call. Useful for debugging
             short clips.
         speakers: Optional mapping of raw speaker ids (e.g. "spk:0") to
             display names used in the .diarized.srt output. Speakers missing
             from the mapping keep their raw id, and a warning is emitted
-            listing them. Ignored unless ``diarize`` is True.
+            listing them. Ignored unless ``diarized_srt_file`` resolves to
+            enabled.
         temp_path: Where to place intermediate work files (default: 'temp').
             When set, all temp files (temp_audio.mp3, chunk_*.mp3, *.tmp,
             checkpoints) live under this directory instead of next to the output.
-        ffsubsync_srt: When True, also write "<base>.ffsubsync.srt" aligned to
-            the full audio via ffsubsync for manual comparison. The main
-            .srt/.diarized.srt keep the raw transcript timestamps (default:
-            off).
-        audit_jsonl_file: Optional custom path for JSONL audit logging. Defaults to
-            ``<os-temp>/gemini-transcribe-wrapper-<short-hostname>-<username>.audit.jsonl``,
-            so each (host, user) pair on a shared NAS gets its own log file.
 
     Returns:
         BatchTranscribeResult with per-input TranscribeResult items. Each item
@@ -274,6 +268,11 @@ def gemini_transcribe(
         QuotaExceededError: When a Gemini API call fails with HTTP 429 / quota
             exhaustion. Aborts the batch immediately instead of continuing.
     """
+    if create_transcript_json is not None and transcript_json_file is None:
+        transcript_json_file = create_transcript_json
+    if create_metadata_json is not None and metadata_json_file is None:
+        metadata_json_file = create_metadata_json
+
     # Merge the deprecated single-key kwarg into the new list kwarg.
     merged_keys: list[str] = []
     if gemini_api_keys:
@@ -287,6 +286,26 @@ def gemini_transcribe(
         else float(request_interval_secs)
     )
     inputs = _expand_path(input_file)
+    # Resolve every output target up front. The same Path is reused per
+    # input; explicit custom paths only make sense for single-input
+    # batches, so flag that case before starting work.
+    explicit_path_used = any(
+        _is_explicit_output_path(v)
+        for v in (
+            srt_file,
+            txt_file,
+            transcript_json_file,
+            audit_jsonl_file,
+            diarized_srt_file,
+            metadata_json_file,
+        )
+    )
+
+    if explicit_path_used and len(inputs) > 1:
+        raise ValueError(
+            "Explicit output file paths require a "
+            f"single input file; got {len(inputs)} matches for {input_file!r}."
+        )
     results = []
     for path in inputs:
         results.append(
@@ -296,12 +315,13 @@ def gemini_transcribe(
                 output_base=output_base,
                 gemini_api_keys=merged_keys,
                 language_codes=language_codes,
-                diarize=diarize,
+                srt_file=srt_file,
+                txt_file=txt_file,
+                transcript_json_file=transcript_json_file,
+                audit_jsonl_file=audit_jsonl_file,
+                diarized_srt_file=diarized_srt_file,
+                metadata_json_file=metadata_json_file,
                 tier=tier,
-                create_srt=create_srt,
-                create_txt=create_txt,
-                create_metadata_json=create_metadata_json,
-                create_transcript_json=create_transcript_json,
                 force=force,
                 line_interval_secs=line_interval_secs,
                 paragraph_interval_secs=paragraph_interval_secs,
@@ -309,14 +329,28 @@ def gemini_transcribe(
                 chunk_secs=chunk_secs,
                 speakers=speakers,
                 temp_path=temp_path,
-                ffsubsync_srt=ffsubsync_srt,
                 custom_vocabulary=custom_vocabulary,
                 custom_vocabulary_file=custom_vocabulary_file,
-                audit_jsonl_file=audit_jsonl_file,
                 model=model,
             )
         )
     return BatchTranscribeResult(results=results)
+
+
+def _is_explicit_output_path(value: object) -> bool:
+    """True when ``value`` is a non-sentinel, non-None output-target value.
+
+    Used by ``gemini_transcribe`` to reject multi-input batches that pass
+    an explicit output path; passing None, True, False, "auto", or a disabled token
+    is fine for any number of inputs because each input still gets its own
+    default-named output.
+    """
+    if value is None or value is False or value is True:
+        return False
+    if isinstance(value, str):
+        val = value.strip().lower()
+        return val not in _OFF_OUTPUT_TOKENS and val != "auto"
+    return True
 
 
 def _process_one(
@@ -324,12 +358,13 @@ def _process_one(
     output_dir: str | None,
     output_base: str | None,
     gemini_api_keys: list[str] | None,
-    diarize: bool,
+    srt_file: str | Path | bool | None,
+    txt_file: str | Path | bool | None,
+    transcript_json_file: str | Path | bool | None,
+    audit_jsonl_file: str | Path | bool | None,
+    diarized_srt_file: str | Path | bool | None,
+    metadata_json_file: str | Path | bool | None,
     tier: str,
-    create_srt: bool,
-    create_txt: bool,
-    create_metadata_json: bool,
-    create_transcript_json: bool,
     force: bool,
     line_interval_secs: float,
     paragraph_interval_secs: float,
@@ -337,11 +372,9 @@ def _process_one(
     chunk_secs: float | None,
     speakers: dict[str, str] | None,
     temp_path: str | None,
-    ffsubsync_srt: bool,
     custom_vocabulary: list[str] | None = None,
     custom_vocabulary_file: str | None = None,
     language_codes: list[str] | None = None,
-    audit_jsonl_file: str | Path | None = None,
     model: str = MODEL_ID,
 ) -> TranscribeResult:
     input_file = Path(input_path)
@@ -350,19 +383,53 @@ def _process_one(
     out_dir = Path(output_dir) if output_dir else input_file.parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Resolve output targets into (enabled, final_path) pairs.
+    srt_default = out_dir / f"{out_stem}.srt"
+    txt_default = out_dir / f"{out_stem}.txt"
+    diarized_default = out_dir / f"{out_stem}.diarized.srt"
+    metadata_default = out_dir / f"{out_stem}.metadata.json"
+    audit_default = get_audit_log_path()
+
+    srt_enabled, srt_target = _resolve_output_target(
+        srt_file, srt_default, default_enabled=True
+    )
+    txt_enabled, txt_target = _resolve_output_target(
+        txt_file, txt_default, default_enabled=True
+    )
+    diarized_enabled, diarized_target = _resolve_output_target(
+        diarized_srt_file, diarized_default, default_enabled=False
+    )
+    metadata_enabled, metadata_target = _resolve_output_target(
+        metadata_json_file, metadata_default, default_enabled=False
+    )
+    audit_enabled, audit_target = _resolve_output_target(
+        audit_jsonl_file, audit_default, default_enabled=True
+    )
+
+    transcript_canonical, transcript_migrate_to = _resolve_transcript_path(
+        out_dir, out_stem.name, diarized_enabled
+    )
+    transcript_enabled, transcript_target = _resolve_output_target(
+        transcript_json_file, transcript_canonical, default_enabled=True
+    )
+    if transcript_target != transcript_canonical:
+        transcript_path = transcript_target
+        transcript_migrate_to = None
+    else:
+        transcript_path = transcript_canonical
+
     echo = TranscribeInput(
         input_file=str(input_file),
         output_dir=str(out_dir) if output_dir else None,
         output_base=out_stem.name,
         language_codes=list(language_codes) if language_codes else None,
-        diarize=diarize,
+        srt_file=str(srt_file) if srt_file is not None else None,
+        txt_file=str(txt_file) if txt_file is not None else None,
+        transcript_json_file=str(transcript_json_file) if transcript_json_file is not None else None,
+        audit_jsonl_file=str(audit_jsonl_file) if audit_jsonl_file is not None else None,
+        diarized_srt_file=str(diarized_srt_file) if diarized_srt_file is not None else None,
+        metadata_json_file=str(metadata_json_file) if metadata_json_file is not None else None,
         tier=tier,
-        audit_jsonl_file=str(audit_jsonl_file) if audit_jsonl_file else None,
-        create_srt=create_srt,
-        create_txt=create_txt,
-        create_metadata_json=create_metadata_json,
-        create_transcript_json=create_transcript_json,
-        ffsubsync_srt=ffsubsync_srt,
         force=force,
         temp_path=temp_path,
         line_interval_secs=line_interval_secs,
@@ -370,11 +437,11 @@ def _process_one(
         request_interval_secs=request_interval_secs,
     )
 
-    # speakers is meaningless without diarize.
-    if speakers and not diarize:
+    # speakers is meaningless without speaker diarization.
+    if speakers and not diarized_enabled:
         logger.warning(
-            "--speakers was passed but diarization is off; ignoring speaker map. "
-            "Re-run with --diarize to use --speakers."
+            "--speakers was passed but --diarized-srt-file is disabled; "
+            "ignoring the speaker map. Enable --diarized-srt-file to use --speakers."
         )
         speakers = None
 
@@ -398,11 +465,17 @@ def _process_one(
             error=f"Lock held by another process: {lock_path}",
         )
 
-    transcript_path, transcript_migrate_to = _resolve_transcript_path(
-        out_dir, out_stem.name, diarize
-    )
     final_paths = _build_output_paths(
-        out_dir, out_stem.name, diarize, create_srt, create_txt, create_metadata_json
+        out_dir,
+        out_stem.name,
+        srt_enabled,
+        txt_enabled,
+        diarized_enabled,
+        metadata_enabled,
+        srt_target,
+        txt_target,
+        diarized_target,
+        metadata_target,
     )
     chunks: list[Path] = []
     ctx: WorkContext | None = None
@@ -422,11 +495,15 @@ def _process_one(
                     out_dir=out_dir,
                     out_stem=out_stem.name,
                     transcript_path=transcript_path,
-                    diarize=diarize,
-                    create_srt=create_srt,
-                    create_txt=create_txt,
-                    create_metadata_json=create_metadata_json,
-                    create_transcript_json=create_transcript_json,
+                    srt_enabled=srt_enabled,
+                    txt_enabled=txt_enabled,
+                    diarized_enabled=diarized_enabled,
+                    metadata_enabled=metadata_enabled,
+                    srt_target=srt_target,
+                    txt_target=txt_target,
+                    diarized_target=diarized_target,
+                    metadata_target=metadata_target,
+                    transcript_enabled=transcript_enabled,
                     line_interval_secs=line_interval_secs,
                     paragraph_interval_secs=paragraph_interval_secs,
                     speakers=speakers,
@@ -447,7 +524,13 @@ def _process_one(
             return TranscribeResult(
                 input=echo,
                 status=TranscribeStatus.SKIPPED,
-                output=_existing_outputs(final_paths),
+                output=TranscribeOutput(
+                    srt=str(srt_target) if srt_enabled else None,
+                    txt=str(txt_target) if txt_enabled else None,
+                    diarized_srt=str(diarized_target) if diarized_enabled else None,
+                    metadata_json=str(metadata_target) if metadata_enabled else None,
+                    transcript_json=str(transcript_target) if transcript_enabled and transcript_path.exists() else None,
+                ),
             )
 
         ctx = _setup_workdir(input_file, out_dir, out_stem.name, temp_path)
@@ -468,7 +551,7 @@ def _process_one(
         # serve as the per-chunk ceiling passed to compute_split_plan.
         effective_chunk_secs = chunk_secs
         max_chunk_secs = (
-            DEFAULT_CHUNK_SECS_DIARIZE if diarize else DEFAULT_CHUNK_SECS_NO_DIARIZE
+            DEFAULT_CHUNK_SECS_DIARIZE if diarized_enabled else DEFAULT_CHUNK_SECS_NO_DIARIZE
         )
         if effective_chunk_secs is None:
             effective_chunk_secs = max_chunk_secs
@@ -492,12 +575,12 @@ def _process_one(
         client = TranscribeClient(
             api_keys=gemini_api_keys,
             language_codes=language_codes,
-            enable_diarization=diarize,
+            enable_diarization=diarized_enabled,
             request_interval_secs=request_interval_secs,
             tier=tier,
             custom_vocabulary=combined_vocab,
             source_file=str(input_file.resolve()),
-            audit_jsonl_file=audit_jsonl_file,
+            audit_jsonl_file=audit_target if audit_enabled else False,
             model=model,
         )
         results = transcribe_chunks_sequential(
@@ -507,14 +590,13 @@ def _process_one(
         )
 
         srt_tmp = ctx.work_dir / f"{ctx.output_base}.srt.tmp"
-        # Only generate the diarized SRT tmp when diarize is on; otherwise the
-        # tmp/final pair would be created and immediately unlinked by
-        # commit_outputs, wasting a write.
+        # Only generate the diarized SRT tmp when diarized_srt_file is on;
+        # otherwise the tmp/final pair would be created and immediately
+        # unlinked by commit_outputs, wasting a write.
         diarized_srt_tmp: Path | None = None
-        if diarize:
+        if diarized_enabled:
             diarized_srt_tmp = ctx.work_dir / f"{ctx.output_base}.diarized.srt.tmp"
         txt_tmp = ctx.work_dir / f"{ctx.output_base}.txt.tmp"
-
         align_and_build(
             results,
             chunk_secs=plan.chunk_secs,
@@ -526,56 +608,62 @@ def _process_one(
             line_interval_secs=line_interval_secs,
             paragraph_interval_secs=paragraph_interval_secs,
             speakers=speakers,
-            ffsubsync_srt=ffsubsync_srt,
         )
 
         # Save the transcript (full transcription result for later re-render),
         # including the API call logs for this transcription.
-        # Derive a ``language`` string for the transcript JSON header from
-        # the ``language_codes`` list (comma-joined, or ``"auto"`` when
-        # empty so Gemini's auto-detection is recorded).
-        language_header = (
-            ",".join(language_codes) if language_codes else "auto"
-        )
-        save_transcript(
-            transcript_path,
-            results,
-            plan.chunk_secs,
-            language_header,
-            api_logs=getattr(client, "api_logs", None),
-        )
+        if transcript_enabled:
+            language_header = (
+                ",".join(language_codes) if language_codes else "auto"
+            )
+            save_transcript(
+                transcript_path,
+                results,
+                plan.chunk_secs,
+                language_header,
+                api_logs=getattr(client, "api_logs", None),
+            )
+        else:
+            try:
+                transcript_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
         # Per-chunk checkpoints are informational files; delete unless the
         # caller requested the merged metadata output.
-        if not create_metadata_json:
+        if not metadata_enabled:
             for chunk in chunks:
                 meta = chunk.with_suffix(".metadata.json")
                 if meta.exists():
                     meta.unlink()
 
-        tmp_map: dict[str, Path] = {"srt_tmp": srt_tmp, "txt_tmp": txt_tmp}
-        final_map: dict[str, Path] = {
-            "srt": out_dir / f"{ctx.output_base}.srt",
-            "txt": out_dir / f"{ctx.output_base}.txt",
+        # Tell commit_outputs how to finalize every output key. Disabled
+        # entries are still in targets (with enabled=False) so commit can
+        # clean up any pre-existing final + the .tmp it just wrote; enabled
+        # entries get tmp_paths entries for the rename.
+        targets: dict[str, tuple[bool, Path]] = {
+            "srt": (srt_enabled, srt_target),
+            "txt": (txt_enabled, txt_target),
         }
-        if diarize:
+        tmp_paths: dict[str, Path] = {
+            "srt": srt_tmp,
+            "txt": txt_tmp,
+        }
+        if diarized_enabled:
             assert diarized_srt_tmp is not None  # for type checkers
-            tmp_map["diarized_srt_tmp"] = diarized_srt_tmp
-            final_map["diarized_srt"] = out_dir / f"{ctx.output_base}.diarized.srt"
-        if create_metadata_json:
+            targets["diarized_srt"] = (True, diarized_target)
+            tmp_paths["diarized_srt"] = diarized_srt_tmp
+        if metadata_enabled:
             metadata_tmp = ctx.work_dir / f"{ctx.output_base}.metadata.json.tmp"
             metadata_tmp.write_text(
                 build_metadata_json(results, plan.chunk_secs, model=model), encoding="utf-8"
             )
-            tmp_map["metadata_json_tmp"] = metadata_tmp
-            final_map["metadata_json"] = out_dir / f"{ctx.output_base}.metadata.json"
+            targets["metadata_json"] = (True, metadata_target)
+            tmp_paths["metadata_json"] = metadata_tmp
 
         produced = commit_outputs(
-            outputs={**tmp_map, **final_map},
-            create_diarized_srt=diarize,
-            create_srt=create_srt,
-            create_txt=create_txt,
-            create_metadata_json=create_metadata_json,
+            targets=targets,
+            tmp_paths=tmp_paths,
             cleanup_patterns=[],
             chunk_mp3s=chunks,
         )
@@ -599,26 +687,26 @@ def _process_one(
                     transcript_migrate_to,
                 )
 
-        # transcript.json is kept by default; --no-transcript-json removes it.
-        if not create_transcript_json:
-            try:
-                transcript_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-
         logger.info("Done: %s", ", ".join(produced) or "(nothing produced)")
 
         # Warn about speakers the custom mapping did not cover, with a
         # recommended re-render command.
-        if speakers and diarize:
+        if speakers and diarized_enabled:
             _warn_unmapped_speakers(
-                echo, results, plan.chunk_secs, out_dir, out_stem.name, speakers
+                echo, results, plan.chunk_secs, out_dir, out_stem.name, speakers,
+                diarized_target,
             )
 
         return TranscribeResult(
             input=echo,
             status=TranscribeStatus.SUCCESS,
-            output=_to_output(produced),
+            output=TranscribeOutput(
+                srt=str(srt_target) if srt_enabled and str(srt_target) in produced else None,
+                txt=str(txt_target) if txt_enabled and str(txt_target) in produced else None,
+                diarized_srt=str(diarized_target) if diarized_enabled and str(diarized_target) in produced else None,
+                metadata_json=str(metadata_target) if metadata_enabled and str(metadata_target) in produced else None,
+                transcript_json=str(transcript_target) if transcript_enabled and transcript_path.exists() else None,
+            ),
         )
     except Exception as exc:
         # 429 / quota errors are not a per-file condition: retrying the next
@@ -663,11 +751,15 @@ def _render_from_transcript(
     out_dir: Path,
     out_stem: str,
     transcript_path: Path,
-    diarize: bool,
-    create_srt: bool,
-    create_txt: bool,
-    create_metadata_json: bool,
-    create_transcript_json: bool,
+    srt_enabled: bool,
+    txt_enabled: bool,
+    diarized_enabled: bool,
+    metadata_enabled: bool,
+    srt_target: Path,
+    txt_target: Path,
+    diarized_target: Path,
+    metadata_target: Path,
+    transcript_enabled: bool,
     line_interval_secs: float,
     paragraph_interval_secs: float,
     speakers: dict[str, str] | None,
@@ -684,7 +776,7 @@ def _render_from_transcript(
         work = Path(tmp)
         srt_tmp = work / f"{out_stem}.srt.tmp"
         diarized_srt_tmp: Path | None = None
-        if diarize:
+        if diarized_enabled:
             diarized_srt_tmp = work / f"{out_stem}.diarized.srt.tmp"
         txt_tmp = work / f"{out_stem}.txt.tmp"
 
@@ -702,37 +794,37 @@ def _render_from_transcript(
             speakers=speakers,
         )
 
-        tmp_map: dict[str, Path] = {"srt_tmp": srt_tmp, "txt_tmp": txt_tmp}
-        final_map: dict[str, Path] = {
-            "srt": out_dir / f"{out_stem}.srt",
-            "txt": out_dir / f"{out_stem}.txt",
+        targets: dict[str, tuple[bool, Path]] = {
+            "srt": (srt_enabled, srt_target),
+            "txt": (txt_enabled, txt_target),
         }
-        if diarize:
+        tmp_paths: dict[str, Path] = {
+            "srt": srt_tmp,
+            "txt": txt_tmp,
+        }
+        if diarized_enabled:
             assert diarized_srt_tmp is not None
-            tmp_map["diarized_srt_tmp"] = diarized_srt_tmp
-            final_map["diarized_srt"] = out_dir / f"{out_stem}.diarized.srt"
-        if create_metadata_json:
+            targets["diarized_srt"] = (True, diarized_target)
+            tmp_paths["diarized_srt"] = diarized_srt_tmp
+        if metadata_enabled:
             metadata_tmp = work / f"{out_stem}.metadata.json.tmp"
             metadata_tmp.write_text(
                 build_metadata_json(results, chunk_secs, model=model), encoding="utf-8"
             )
-            tmp_map["metadata_json_tmp"] = metadata_tmp
-            final_map["metadata_json"] = out_dir / f"{out_stem}.metadata.json"
+            targets["metadata_json"] = (
+                True,
+                metadata_target,
+            )
+            tmp_paths["metadata_json"] = metadata_tmp
 
         # Only overwrite targets that are stale relative to the transcript;
         # fresh ones are left untouched and reported as unchanged.
         regenerated: list[str] = []
         unchanged: list[str] = []
-        for key, enabled in (
-            ("diarized_srt", diarize),
-            ("srt", create_srt),
-            ("txt", create_txt),
-            ("metadata_json", create_metadata_json),
-        ):
+        for key, (enabled, final_path) in targets.items():
             if not enabled:
                 continue
-            tmp_path = tmp_map.get(key + "_tmp")
-            final_path = final_map.get(key)
+            tmp_path = tmp_paths.get(key)
             if tmp_path is None or final_path is None:
                 continue
             if _outputs_valid([final_path], [transcript_path]):
@@ -741,7 +833,7 @@ def _render_from_transcript(
             os.replace(tmp_path, final_path)
             regenerated.append(str(final_path))
 
-        if not create_transcript_json:
+        if not transcript_enabled:
             try:
                 transcript_path.unlink(missing_ok=True)
             except OSError:
@@ -755,13 +847,21 @@ def _render_from_transcript(
         produced = regenerated + unchanged
 
         # Warn about speakers the custom mapping did not cover.
-        if speakers and diarize:
-            _warn_unmapped_speakers(echo, results, chunk_secs, out_dir, out_stem, speakers)
+        if speakers and diarized_enabled:
+            _warn_unmapped_speakers(
+                echo, results, chunk_secs, out_dir, out_stem, speakers, diarized_target
+            )
 
         return TranscribeResult(
             input=echo,
             status=TranscribeStatus.SUCCESS,
-            output=_to_output(produced),
+            output=TranscribeOutput(
+                srt=str(srt_target) if srt_enabled and str(srt_target) in produced else None,
+                txt=str(txt_target) if txt_enabled and str(txt_target) in produced else None,
+                diarized_srt=str(diarized_target) if diarized_enabled and str(diarized_target) in produced else None,
+                metadata_json=str(metadata_target) if metadata_enabled and str(metadata_target) in produced else None,
+                transcript_json=str(transcript_path) if transcript_enabled and transcript_path.exists() else None,
+            ),
         )
 
 
@@ -771,19 +871,20 @@ def _warn_unmapped_speakers(
     chunk_secs: list[float] | tuple[float, ...] | float,
     out_dir: Path,
     out_stem: str,
-    speaker_map: dict[str, str],
+    speakers: dict[str, str],
+    diarized_target: Path,
 ) -> None:
-    """Log the speaker map and warn about speakers missing from the mapping."""
-    from .merge import merge_cues
-
-    cues = merge_cues(results, chunk_secs)
-    used = sorted({c.speaker for c in cues if c.speaker})
-    unmapped = [s for s in used if s not in speaker_map]
-
+    """Log a warning listing unmapped speakers with a re-render CLI recipe."""
+    speaker_map = dict(speakers)
+    used = {
+        w.speaker
+        for r in results
+        for w in r.words
+        if w.speaker and w.speaker.startswith("spk:")
+    }
+    unmapped = sorted([s for s in used if s not in speaker_map])
     if not unmapped:
-        logger.info("All speakers mapped: %s", ", ".join(f"{s}={speaker_map[s]}" for s in used))
         return
-
     # Full map display: mapped + unmapped (raw).
     display = " ".join(f"{s}={speaker_map.get(s, s)}" for s in used)
     logger.warning(
@@ -793,8 +894,10 @@ def _warn_unmapped_speakers(
         display,
         ", ".join(unmapped),
     )
-    # Recommended command: delete the .diarized.srt and re-render with a
+    # Recommended command: delete the diarized SRT and re-render with a
     # completed map, naming missing entries Name<index> for the user to edit.
+    # The target path is whatever the caller resolved (may be a custom path
+    # the user passed via --diarized-srt-file).
     parts = []
     for s in used:
         if s not in speaker_map:
@@ -804,41 +907,55 @@ def _warn_unmapped_speakers(
             parts.append(f"{s}={speaker_map[s]}")
     recommended = "; ".join(parts) + ";"
     logger.warning(
-        "To re-render with names, delete the .diarized.srt and re-run with the "
-        "option, editing the Name# entries: rm '%s' && gemini-transcribe '%s' "
-        "--speakers '%s'",
-        out_dir / f"{out_stem}.diarized.srt",
-        echo.input_file,
+        "To re-render with names, delete the diarized SRT and re-run with "
+        "--diarized-srt-file=%s --speakers '%s':\n"
+        "  rm '%s' && gemini-transcribe --diarized-srt-file='%s' "
+        "--speakers '%s' '%s'",
+        diarized_target,
         recommended,
+        diarized_target,
+        diarized_target,
+        recommended,
+        echo.input_file,
     )
 
 
 def _build_output_paths(
     out_dir: Path,
     out_base: str,
-    diarize: bool,
-    create_srt: bool,
-    create_txt: bool,
-    create_metadata_json: bool,
-) -> list[Path | None]:
-    out = []
-    if diarize:
-        out.append(out_dir / f"{out_base}.diarized.srt")
-    if create_srt:
-        out.append(out_dir / f"{out_base}.srt")
-    if create_txt:
-        out.append(out_dir / f"{out_base}.txt")
-    if create_metadata_json:
-        out.append(out_dir / f"{out_base}.metadata.json")
+    srt_enabled: bool,
+    txt_enabled: bool,
+    diarized_enabled: bool,
+    metadata_enabled: bool,
+    srt_target: Path,
+    txt_target: Path,
+    diarized_target: Path,
+    metadata_target: Path,
+) -> list[Path]:
+    """Return only the enabled output paths, for skip-detection.
+
+    Disabled outputs are omitted entirely so ``_outputs_valid`` does not
+    treat them as "missing" (which would force re-runs every time).
+    """
+    out: list[Path] = []
+    if diarized_enabled:
+        out.append(diarized_target)
+    if srt_enabled:
+        out.append(srt_target)
+    if txt_enabled:
+        out.append(txt_target)
+    if metadata_enabled:
+        out.append(metadata_target)
     return out
 
 
-def _existing_outputs(paths: list[Path | None]) -> TranscribeOutput:
-    mapping: dict[str, Path | None] = {}
-    for key, p in zip(("diarized_srt", "srt", "txt", "metadata_json"), paths):
-        if p is not None:
-            mapping[key] = p
-    return _to_output([str(p) for p in mapping.values() if p is not None])
+def _existing_outputs(paths: list[Path]) -> TranscribeOutput:
+    """Map a list of existing enabled output paths to a TranscribeOutput.
+
+    Paths are classified by suffix, so the list can be in any order and
+    may include any subset of the possible outputs.
+    """
+    return _to_output([str(p) for p in paths])
 
 
 def _to_output(produced: list[str]) -> TranscribeOutput:
@@ -853,6 +970,8 @@ def _to_output(produced: list[str]) -> TranscribeOutput:
             out.txt = p
         elif name.endswith(".metadata.json"):
             out.metadata_json = p
+        elif name.endswith(".transcript.json"):
+            out.transcript_json = p
     return out
 
 
@@ -882,11 +1001,11 @@ def _collect_leftover(
     return leftover
 
 
-def _all_exist(paths: list[Path | None]) -> bool:
+def _all_exist(paths: Sequence[Path | None]) -> bool:
     return bool(paths) and all(p is not None and p.exists() for p in paths)
 
 
-def _outputs_valid(paths: list[Path | None], sources: list[Path]) -> bool:
+def _outputs_valid(paths: Sequence[Path | None], sources: Sequence[Path]) -> bool:
     """Outputs are valid only if they all exist and are newer than every source.
 
     If any target is missing or any source is newer than a target, the

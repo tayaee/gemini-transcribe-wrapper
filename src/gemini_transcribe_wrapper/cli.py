@@ -30,12 +30,11 @@ class TranscribeOptions:
     gemini_api_keys: list[str] = field(default_factory=list)
     language_codes: list[str] = field(default_factory=list)
     model: str = MODEL_ID
-    diarize: bool = False
-    srt: bool = True
-    txt: bool = True
-    metadata_json: bool = False
-    transcript_json: bool = True
-    ffsubsync_srt: bool = False
+    diarized_srt_file: str | Path | bool | None = None
+    srt_file: str | Path | bool | None = None
+    txt_file: str | Path | bool | None = None
+    transcript_json_file: str | Path | bool | None = None
+    metadata_json_file: str | Path | bool | None = None
     force: bool = False
     tier: str = "free"
     line_interval_secs: float = 1.0
@@ -46,20 +45,37 @@ class TranscribeOptions:
     custom_vocabulary: str | None = None
     custom_vocabulary_file: str | None = None
     temp_path: str = "temp"
-    audit_jsonl_file: str | None = None
+    audit_jsonl_file: str | Path | bool | None = None
     log_level: str = "info"
+
+
+class _GTWCommand(click.Command):
+    def format_help_text(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        text = (
+            f"gemini-transcribe v{__version__} - "
+            "A free video transcription CLI using gemini-3.5-transcribe that "
+            "outputs .diarized.srt, .srt, and .txt files."
+        )
+        formatter.write_paragraph()
+        with formatter.indentation():
+            formatter.write_text(text)
+        formatter.write_paragraph()
+        formatter.write_heading("Examples")
+        with formatter.indentation():
+            formatter.write(
+                f"{' ' * formatter.current_indent}"
+                'uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys "$GEMINI_API_KEY" -h\n'
+                f"{' ' * formatter.current_indent}"
+                'uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys "$GEMINI_API_KEY" /path/to/*.mp4\n'
+            )
 
 
 def _make_command() -> click.Command:
     """Build the Click command. The callback appends TranscribeOptions to _LAST_OPTIONS."""
 
     @click.command(
+        cls=_GTWCommand,
         context_settings={"help_option_names": ["-h", "--help"]},
-        help=(
-            f"gemini-transcribe v{__version__} - "
-            "A free video transcription CLI using gemini-3.5-transcribe that "
-            "outputs .diarized.srt, .srt, and .txt files."
-        ),
     )
     @click.option(
         "-v",
@@ -116,40 +132,40 @@ def _make_command() -> click.Command:
         help="Gemini audio model id to use for transcription",
     )
     @click.option(
-        "--diarize/--no-diarize",
-        default=False,
+        "--diarized-srt-file",
+        default=None,
         help=(
-            "Enable speaker diarization (default: off). When on, the wrapper uses 29-min "
-            "chunks for better diarization accuracy and emits .diarized.* outputs. When "
-            "off, it cuts the file into 59-min logical units (each split into 2x 29-min "
-            "API calls to stay under the 30-min per-call limit), keeping free-tier API "
-            "usage low."
+            "Path to output .diarized.srt file, 'auto' for default name, or 'off' to disable (default: off). "
+            "When set to a path or 'auto', enables Gemini speaker diarization and writes the diarized SRT there. "
+            "WARNING: Use only when strictly necessary. Enabling speaker diarization reduces the per-call "
+            "audio limit from ~1 hour (59m) to ~30 min (29m), which doubles API calls and reduces overall throughput."
         ),
     )
     @click.option(
-        "--srt/--no-srt",
-        default=True,
-        help="Generate .srt subtitles (default: on)",
+        "--srt-file",
+        default=None,
+        help=(
+            "Path to output .srt file, or 'off' to disable (default: auto). "
+            "When omitted, the filename is determined automatically."
+        ),
     )
     @click.option(
-        "--txt/--no-txt",
-        default=True,
-        help="Generate .txt transcript text (default: on)",
+        "--txt-file",
+        default=None,
+        help=(
+            "Path to output .txt file, or 'off' to disable (default: auto). "
+            "When omitted, the filename is determined automatically."
+        ),
     )
     @click.option(
-        "--metadata-json/--no-metadata-json",
-        default=False,
-        help="Keep .metadata.json output (default: off)",
+        "--transcript-json-file",
+        default=None,
+        help="Path to output .transcript.json file, or 'off' to disable (default: auto).",
     )
     @click.option(
-        "--transcript-json/--no-transcript-json",
-        default=True,
-        help="Keep <base>.transcript.json for later re-render (default: on)",
-    )
-    @click.option(
-        "--ffsubsync-srt/--no-ffsubsync-srt",
-        default=False,
-        help="Also write <base>.ffsubsync.srt aligned to audio (default: off)",
+        "--metadata-json-file",
+        default=None,
+        help="Path to output .metadata.json file, 'auto' for default name, or 'off' to disable (default: off).",
     )
     @click.option(
         "--force/--no-force",
@@ -248,12 +264,11 @@ def _make_command() -> click.Command:
         deprecated_gemini_api_key: str | None,
         language_codes: str,
         model: str,
-        diarize: bool,
-        srt: bool,
-        txt: bool,
-        metadata_json: bool,
-        transcript_json: bool,
-        ffsubsync_srt: bool,
+        diarized_srt_file: str | None,
+        srt_file: str | None,
+        txt_file: str | None,
+        transcript_json_file: str | None,
+        metadata_json_file: str | None,
         force: bool,
         tier: str,
         line_interval_secs: float,
@@ -264,7 +279,7 @@ def _make_command() -> click.Command:
         custom_vocabulary: str | None,
         custom_vocabulary_file: str | None,
         temp_path: str,
-        audit_jsonl_file: str,
+        audit_jsonl_file: str | None,
         log_level: str,
     ) -> None:
         # Parse the semicolon-separated --gemini-api-keys list. Drop blanks,
@@ -302,12 +317,11 @@ def _make_command() -> click.Command:
                 gemini_api_keys=parsed_keys,
                 language_codes=parsed_language_codes,
                 model=model,
-                diarize=diarize,
-                srt=srt,
-                txt=txt,
-                metadata_json=metadata_json,
-                transcript_json=transcript_json,
-                ffsubsync_srt=ffsubsync_srt,
+                diarized_srt_file=diarized_srt_file,
+                srt_file=srt_file,
+                txt_file=txt_file,
+                transcript_json_file=transcript_json_file,
+                metadata_json_file=metadata_json_file,
                 force=force,
                 tier=tier,
                 line_interval_secs=line_interval_secs,
@@ -415,14 +429,19 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
     if opts.model:
         tokens.extend(["--model", str(opts.model)])
 
-    tokens.append("--diarize" if opts.diarize else "--no-diarize")
-    tokens.append("--srt" if opts.srt else "--no-srt")
-    tokens.append("--txt" if opts.txt else "--no-txt")
-    tokens.append("--transcript-json" if opts.transcript_json else "--no-transcript-json")
-    tokens.append("--metadata-json" if opts.metadata_json else "--no-metadata-json")
+    if opts.diarized_srt_file is not None:
+        tokens.extend(["--diarized-srt-file", str(opts.diarized_srt_file)])
+    if opts.srt_file is not None:
+        tokens.extend(["--srt-file", str(opts.srt_file)])
+    if opts.txt_file is not None:
+        tokens.extend(["--txt-file", str(opts.txt_file)])
+    if opts.transcript_json_file is not None:
+        tokens.extend(["--transcript-json-file", str(opts.transcript_json_file)])
+    if opts.metadata_json_file is not None:
+        tokens.extend(["--metadata-json-file", str(opts.metadata_json_file)])
+    if opts.audit_jsonl_file is not None:
+        tokens.extend(["--audit-jsonl-file", str(opts.audit_jsonl_file)])
 
-    if opts.ffsubsync_srt:
-        tokens.append("--ffsubsync-srt")
     if opts.force:
         tokens.append("--force")
     if opts.log_level != "info":
@@ -434,8 +453,6 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.extend(["--output-base", str(opts.output_base)])
     if opts.temp_path is not None:
         tokens.extend(["--temp-path", str(opts.temp_path)])
-    if opts.audit_jsonl_file is not None:
-        tokens.extend(["--audit-jsonl-file", str(opts.audit_jsonl_file)])
     if opts.speakers:
         tokens.extend(["--speakers", str(opts.speakers)])
     if opts.custom_vocabulary:
@@ -574,12 +591,12 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 gemini_api_keys=effective_keys,
                 language_codes=opts.language_codes or None,
                 model=opts.model,
-                diarize=opts.diarize,
+                srt_file=opts.srt_file,
+                txt_file=opts.txt_file,
+                diarized_srt_file=opts.diarized_srt_file,
+                transcript_json_file=opts.transcript_json_file,
+                metadata_json_file=opts.metadata_json_file,
                 tier=opts.tier,
-                create_srt=opts.srt,
-                create_txt=opts.txt,
-                create_metadata_json=opts.metadata_json,
-                create_transcript_json=opts.transcript_json,
                 force=opts.force,
                 line_interval_secs=opts.line_interval_secs,
                 paragraph_interval_secs=opts.paragraph_interval_secs,
@@ -587,7 +604,6 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 chunk_secs=opts.chunk_secs,
                 speakers=speakers,
                 temp_path=opts.temp_path,
-                ffsubsync_srt=opts.ffsubsync_srt,
                 custom_vocabulary=custom_vocab,
                 custom_vocabulary_file=opts.custom_vocabulary_file,
                 audit_jsonl_file=opts.audit_jsonl_file,

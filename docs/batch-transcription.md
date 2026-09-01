@@ -8,11 +8,11 @@ The free tier caps 25 calls/day per PST day. For multi-day batches, either:
 
 ```bash
 # Run, on quota hit wait until PST midnight, then re-run.
-while ! gtw '*.mp4' --diarize; do
+while ! gtw '*.mp4'; do
   echo "Batch hit a quota; waiting for PST reset..."
   # Read the sleep seconds from the previous log, or sleep 1h and retry.
   sleep 3600
 done
 ```
 
-Tip: `--no-diarize` halves (or better) the number of API calls vs `--diarize` for the same audio, since each call covers ~2× the audio length.
+Tip: leaving `--diarized-srt-file` unset (disabled) halves (or better) the number of API calls vs enabling it for the same audio, since each call covers ~2× the audio length.
