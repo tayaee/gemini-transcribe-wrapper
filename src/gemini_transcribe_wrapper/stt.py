@@ -18,10 +18,20 @@ from typing import Any
 from google import genai
 from google.genai import errors
 from google.genai._gaos.types import interactions as _gaos_interactions
+from google.genai.types import HttpOptions
 
 logger = logging.getLogger(__name__)
 
 MODEL_ID = "gemini-3.5-transcribe"
+
+# Single-attempt HTTP options for our genai.Client instances. The SDK
+# defaults to ~6 retries with exponential backoff, which blows past
+# Gemini's per-minute RPM limits on the free tier when the wrapper's
+# own round-robin/blacklist logic is already handling 429 recovery.
+# With ``attempts=1`` every call goes out exactly once; the wrapper's
+# own per-key cooldown / blacklist / retry-on-next-key loop drives all
+# the recovery work instead of the SDK's hidden retry loop.
+_NO_RETRY_HTTP_OPTIONS = HttpOptions(retry_options={"attempts": 1})
 
 _OFFSET_RE = re.compile(r"([0-9.]+)s")
 
@@ -510,9 +520,11 @@ class TranscribeClient:
         # because that helper reads ``self.client`` for the legacy path,
         # which doesn't exist yet at this point in ``__init__``.
         if self.api_key:
-            self.client = genai.Client(api_key=self.api_key)
+            self.client = genai.Client(
+                api_key=self.api_key, http_options=_NO_RETRY_HTTP_OPTIONS,
+            )
         else:
-            self.client = genai.Client()
+            self.client = genai.Client(http_options=_NO_RETRY_HTTP_OPTIONS)
         # Multi-language hint list. When ``None`` (or empty) we let the
         # Gemini API auto-detect the language; the ``language_codes``
         # field is omitted from the generation config in that case.
@@ -574,7 +586,7 @@ class TranscribeClient:
             return self.client
         cached = cache.get(key)
         if cached is None:
-            cached = genai.Client(api_key=key)
+            cached = genai.Client(api_key=key, http_options=_NO_RETRY_HTTP_OPTIONS)
             cache[key] = cached
         return cached
 
