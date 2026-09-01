@@ -437,5 +437,115 @@ def test_api_mask_key_short_key_uses_only_redacted_tag():
     assert _mask_key("k1") == "[redacted]"
 
 
+# --- per-key upload session (Files API is per-key scoped) -----------------
+
+
+def test_per_key_upload_when_first_key_429s(tmp_path, monkeypatch):
+    """When key A's chunk 429s, key B must use its OWN upload, not A's URI.
+
+    The Files API scopes file URIs per API key — uploading with A and
+    calling interactions.create with B triggers 403 Forbidden. The
+    inner loop must therefore upload fresh per key. This test sets up
+    two distinct MagicMock clients (one per key) with distinct URIs and
+    asserts that B's interactions.create call references B's URI, not
+    A's.
+    """
+    sleeps: list[float] = []
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr(stt, "_throttle_api_call", lambda *a, **k: None)
+
+    k_a, k_b = "AIzaKeyAaaaaaaa", "AIzaKeyBbbbbbbbb"
+
+    # Each key gets its own client with its own upload → URI mapping.
+    up_a = MagicMock()
+    up_a.uri = "files/uri-A"
+    up_a.name = "files/uri-A"
+    client_a = MagicMock()
+    client_a.files.upload = MagicMock(return_value=up_a)
+
+    up_b = MagicMock()
+    up_b.uri = "files/uri-B"
+    up_b.name = "files/uri-B"
+    client_b = MagicMock()
+    client_b.files.upload = MagicMock(return_value=up_b)
+
+    # Track which URI each interactions.create call referenced.
+    b_called_with_uri: list[str] = []
+
+    def _create_a(**kwargs):
+        raise RuntimeError(_retry_msg(1.0))
+
+    def _create_b(**kwargs):
+        # Capture the URI that key B's call was made with — must be B's
+        # own upload URI, NOT A's leftover URI.
+        for item in kwargs.get("input", []):
+            if isinstance(item, dict) and "uri" in item:
+                b_called_with_uri.append(item["uri"])
+        return _ok_interaction()
+
+    client_a.interactions.create = MagicMock(side_effect=_create_a)
+    client_b.interactions.create = MagicMock(side_effect=_create_b)
+
+    client = _MultiKeyClient({k_a: [], k_b: []})
+    # Replace the single shared client with per-key clients.
+    client._clients = {k_a: client_a, k_b: client_b}
+    client._api_keys = [k_a, k_b]
+    client._rr_index = 0
+
+    chunk = _chunk(tmp_path, "chunk_000.mp3")
+    result = client.transcribe_chunk(chunk, chunk_index=0)
+
+    assert result.text == "안녕하세요"
+    # B's interactions.create must reference B's URI, not A's.
+    assert b_called_with_uri == ["files/uri-B"]
+    # Both keys attempted an upload (per-key session).
+    assert client_a.files.upload.call_count == 1
+    assert client_b.files.upload.call_count == 1
+    # A 429s → blacklisted; B remains active.
+    assert client._active_pool == [k_b]
+    assert client._cooldown_pool == {k_a}
+    # No sleep between key attempts.
+    assert sleeps == []
+
+
+def test_no_throttle_sleep_between_consecutive_keys_on_429(
+    tmp_path, monkeypatch, caplog
+):
+    """When the inner loop retries across keys, no ``time.sleep`` fires.
+
+    The only sleeps allowed during a chunk are the cooldown wait when
+    the active pool drains — never between consecutive key attempts
+    inside a chunk. This test asserts that all 15 keys get tried back
+    to back on a single chunk with no inter-key sleep.
+    """
+    sleeps: list[float] = []
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr(stt, "_throttle_api_call", lambda *a, **k: None)
+
+    # 15 keys; first one 429s, the rest succeed.
+    keys = [f"AIzaKey{i:02d}aaaaaaaa" for i in range(15)]
+    per_key_effects = {k: [RuntimeError(_retry_msg(1.0))] if k == keys[0] else [] for k in keys}
+
+    client = _MultiKeyClient(per_key_effects)
+    client._api_keys = keys
+    client._rr_index = 0
+
+    chunk = _chunk(tmp_path, "chunk_000.mp3")
+    with caplog.at_level(logging.INFO):
+        result = client.transcribe_chunk(chunk, chunk_index=0)
+
+    assert result.text == "안녕하세요"
+    # First key tried once (429 → blacklisted), second key tried once
+    # (success → return).
+    assert [(k[-4:], n) for k, n in client._call_order] == [
+        (keys[0][-4:], 1),
+        (keys[1][-4:], 1),
+    ]
+    # Critical assertion: zero sleeps during the chunk. No inter-key
+    # throttle, no cooldown wait (the active pool didn't drain — only
+    # one key was 429'd before a success came back).
+    assert sleeps == []
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

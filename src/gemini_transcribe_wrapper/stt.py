@@ -670,26 +670,14 @@ class TranscribeClient:
                     "No Gemini API keys configured. Set $GEMINI_API_KEYS, "
                     "$GEMINI_API_KEY, or pass --gemini-api-keys."
                 )
-            # Upload once with the current key; the file URI is shared via
-            # the Files API and can be referenced by every other key's
-            # genai.Client.
-            initial_key = self.api_key or keys[0]
-            self.client = self._client_for(initial_key)
-            self.api_key = initial_key
-            uploaded = self.client.files.upload(file=str(chunk_mp3))
-
-            def _create() -> Any:
-                return self.client.interactions.create(
-                    model=self.model,
-                    input=[
-                        {
-                            "type": "audio",
-                            "uri": uploaded.uri,
-                            "mime_type": "audio/mpeg",
-                        }
-                    ],
-                    generation_config=self._generation_config(),
-                )
+            # NOTE: The Files API scopes file URIs per API key — uploading
+            # once and rotating ``self.client`` for the interactions call
+            # triggers ``403 Forbidden`` on the new key. So each inner-loop
+            # iteration creates its own upload + interactions session using
+            # the same key. On the first 429 we abandon *this* key's session
+            # (any uploaded file is leaked; Google cleans up server-side
+            # after ~48h) and the next iteration uploads again with the
+            # next key.
 
             # Dynamic active/cooldown pool: when the active pool drains
             # (all keys hit 429 / daily quota), sleep ``_COOLDOWN_SECS``
@@ -750,21 +738,36 @@ class TranscribeClient:
                     idx = (start_idx + offset) % len(active)
                     key = active[idx]
                     # Install this key on the client for per-call helpers
-                    # (throttle / usage counter / audit / record_api_call_completed).
+                    # (usage counter / audit / record_api_call_completed).
+                    # No ``_throttle_api_call`` here — between-key retries
+                    # within a single chunk must run back-to-back so we can
+                    # sweep all 15 keys on the first 429 without delay.
+                    # Inter-chunk pacing is handled by the throttle at the
+                    # top of ``transcribe_chunk``.
                     self.client = self._client_for(key)
                     self.api_key = key
-                    _throttle_api_call(
-                        getattr(self, "request_interval_secs", 120.0),
-                        api_key=key,
-                        tier=getattr(self, "tier", "free"),
-                    )
                     from .usage_counter import increment_today
 
                     increment_today(api_key=key)
 
                     attempt_start = time.monotonic()
                     try:
-                        interaction = _create()
+                        # Per-key session: upload + interactions.create
+                        # under the same key. The Files API scopes URIs
+                        # per key, so we cannot share an upload across
+                        # multiple ``self.client`` instances.
+                        uploaded = self.client.files.upload(file=str(chunk_mp3))
+                        interaction = self.client.interactions.create(
+                            model=self.model,
+                            input=[
+                                {
+                                    "type": "audio",
+                                    "uri": uploaded.uri,
+                                    "mime_type": "audio/mpeg",
+                                }
+                            ],
+                            generation_config=self._generation_config(),
+                        )
                     except Exception as first_exc:
                         # Non-quota errors (400/500): rotating keys won't
                         # help. Audit-log, log reference URL, re-raise.
@@ -793,11 +796,12 @@ class TranscribeClient:
                                 error=str(first_exc),
                             )
                             raise
-                        # 429 / quota error: blacklist this key for this
-                        # chunk and try the next active key. The 2-minute
-                        # ``request_interval_secs`` throttle already absorbs
-                        # short-term rate limits, so any 429 encountered
-                        # here is treated as daily-quota exhaustion.
+                        # 429 / quota error: abandon this key's session,
+                        # blacklist it for this chunk, and try the next
+                        # active key back-to-back (no inter-key throttle —
+                        # we want to sweep all remaining keys immediately
+                        # on the first 429). Any 429 encountered here is
+                        # treated as daily-quota exhaustion.
                         append_audit_log(
                             input_file_path=effective_source_file,
                             audio_chunk_file_path=effective_chunk_file,
