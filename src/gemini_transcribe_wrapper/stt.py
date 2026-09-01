@@ -450,7 +450,7 @@ def _throttle_api_call(
             "Free-tier rate limit: %.1fs elapsed since last API call completed "
             "(< %.0fs interval); sleeping %.1fs. "
             "The # of API call attempts today: %d. "
-            "The daily limit will reset in %d hours %d minutes PT.",
+            "The daily limit will reset in %d hours %d minutes PT midnight.",
             elapsed,
             request_interval_secs,
             sleep_secs,
