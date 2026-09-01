@@ -1058,10 +1058,14 @@ def _outputs_valid(paths: Sequence[Path | None], sources: Sequence[Path]) -> boo
 
 
 def _mask_key(key: str) -> str:
-    """Show ``[redacted]<last 4>`` for an API key (compact, no prefix leak)."""
-    if len(key) <= 4:
-        return "[redacted]"
-    return f"[redacted]{key[-4:]}"
+    """Show ``[redacted]<last 4>`` for an API key (compact, no prefix leak).
+
+    Thin re-export of :func:`gemini_transcribe_wrapper._key_utils.mask_key`
+    kept for backward compatibility with existing callers/tests.
+    """
+    from ._key_utils import mask_key
+
+    return mask_key(key)
 
 
 def _check_api_key(api_keys: list[str] | None) -> None:

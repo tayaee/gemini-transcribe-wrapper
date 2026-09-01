@@ -167,25 +167,27 @@ def increment_today(cache: Path | None = None, api_key: str | None = None) -> in
 
 
 def _mask_key(key: str | None) -> str:
-    """Show only the first and last 4 chars of an API key, or 'unset' if empty."""
-    if not key:
-        return "unset"
-    if len(key) <= 8:
-        return "*" * len(key)
-    return f"{key[:4]}{'*' * (len(key) - 8)}{key[-4:]}"
+    """Mask an API key for log/summary lines as ``[redacted]<last 4>``.
+
+    Thin wrapper around :func:`gemini_transcribe_wrapper._key_utils.mask_key`
+    kept for backward compatibility with existing callers.
+    """
+    from ._key_utils import mask_key
+
+    return mask_key(key)
 
 
 def _key_tail(key: str | None) -> str:
-    """Return ``....<last 4>`` for the API key, or ``unset`` when no key is set.
+    """Return ``[redacted]<last 4>`` for the API key (or ``unset`` if empty).
 
     Used in the free-tier summary line so the user can confirm at a glance
     which key the daily count belongs to without exposing the full key.
+    Format matches :func:`mask_key` for consistency across every
+    user-visible log line.
     """
-    if not key:
-        return "unset"
-    if len(key) <= 4:
-        return f" * {key}"
-    return f"....{key[-4:]}"
+    from ._key_utils import mask_key
+
+    return mask_key(key)
 
 
 def _format_hours_minutes(hours: int, minutes: int) -> str:

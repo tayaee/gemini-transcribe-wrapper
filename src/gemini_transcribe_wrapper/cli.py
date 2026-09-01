@@ -554,10 +554,14 @@ def _resolve_api_keys(cli_keys: list[str]) -> list[str]:
 
 
 def _mask_cli_key(key: str) -> str:
-    """Show only the first and last 4 chars of a CLI-provided key (for warnings)."""
-    if len(key) <= 8:
-        return "*" * len(key)
-    return f"{key[:4]}{'*' * (len(key) - 8)}{key[-4:]}"
+    """Mask a CLI-provided key for warning lines as ``[redacted]<last 4>``.
+
+    Thin wrapper around :func:`gemini_transcribe_wrapper._key_utils.mask_key`
+    kept for backward compatibility with existing callers/tests.
+    """
+    from ._key_utils import mask_key
+
+    return mask_key(key)
 
 
 _OLD_WORKDIR_MAX_AGE_SECS = 24 * 3600

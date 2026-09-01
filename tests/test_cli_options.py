@@ -78,14 +78,14 @@ def test_gemini_api_key_singular_treated_as_one_element_list(caplog):
     # mentions a list so we don't check for the literal key value).
     warnings = [rec.message for rec in caplog.records if rec.levelno == logging.WARNING]
     assert any("--gemini-api-key is deprecated" in m for m in warnings)
-    # The masked short key "**" should appear in the warning.
-    assert any("'**'" in m for m in warnings)
+    # The masked short key "[redacted]" should appear in the warning.
+    assert any("'[redacted]'" in m for m in warnings)
 
 
 def test_gemini_api_key_singular_does_not_crash_when_masked():
-    """Short keys (≤8 chars) should produce a fully-masked string without IndexError."""
+    """Short keys (≤4 chars) should produce a fully-masked string without IndexError."""
     masked = _mask_cli_key("k1")
-    assert "*" in masked
+    assert masked == "[redacted]"
     assert "k1" not in masked
 
 
@@ -228,18 +228,17 @@ def test_resolve_api_keys_empty_when_no_sources(monkeypatch):
 
 
 def test_mask_cli_key_long():
-    """Keys longer than 8 chars show first 4 + stars + last 4."""
+    """Keys longer than 4 chars show ``[redacted]<last 4>``."""
     masked = _mask_cli_key("AIzaSyDlong_api_key_xxx_xyzzzzz")
-    assert masked.startswith("AIza")
-    assert masked.endswith("zzzz")
-    assert "*" in masked
+    assert masked == "[redacted]zzzz"
+    assert "AIzaSyD" not in masked
     assert "long_api_key_xxx_xyz" not in masked
 
 
 def test_mask_cli_key_short_is_fully_masked():
-    """Keys ≤ 8 chars are fully masked with stars."""
-    assert _mask_cli_key("k1") == "**"
-    assert _mask_cli_key("abcdefgh") == "********"
+    """Keys ≤ 4 chars collapse to the bare ``[redacted]`` tag."""
+    assert _mask_cli_key("k1") == "[redacted]"
+    assert _mask_cli_key("abcd") == "[redacted]"
 
 
 def test_gemini_api_keys_comma_and_semicolon():
