@@ -366,7 +366,7 @@ def _clean_for_txt(text: str) -> str:
 
 def build_txt(
     result: TranscriptionResult,
-    line_interval_secs: float = 1.0,
+    line_interval_secs: float = 0.9,
     paragraph_interval_secs: float = 2.5,
 ) -> str:
     """Build editor-formatted text from word timestamps with break rules.

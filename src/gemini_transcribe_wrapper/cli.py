@@ -40,7 +40,7 @@ class TranscribeOptions:
     force: bool = False
     force_all: bool = False
     tier: str = "free"
-    line_interval_secs: float = 1.0
+    line_interval_secs: float = 0.9
     paragraph_interval_secs: float = 2.5
     request_interval_secs: float | None = None
     max_chunk_secs: float | None = None
@@ -136,6 +136,7 @@ def _make_command() -> click.Command:
         "--gemini-api-key",
         "deprecated_gemini_api_key",
         default=None,
+        hidden=True,
         help=(
             "[DEPRECATED — use --gemini-api-keys] Single Gemini API key. "
             "Treated as a one-element list passed to --gemini-api-keys."
@@ -222,8 +223,8 @@ def _make_command() -> click.Command:
     @click.option(
         "--line-interval-secs",
         type=float,
-        default=1.0,
-        help="TXT newline break threshold (default: 1.0)",
+        default=0.9,
+        help="TXT newline break threshold (default: 0.9)",
     )
     @click.option(
         "--paragraph-interval-secs",
