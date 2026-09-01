@@ -82,7 +82,7 @@ def fix_korean_su_text(text: str) -> str:
 
 
 def _sanitize_word(w: Word) -> Word:
-    """단일 단어 타임스탬프 이상치(start > end 역전, 과도한 duration) 보정."""
+    """Sanitize a single word's timestamps: swap inverted ``start``/``end`` and clamp excessive duration."""
     start, end = w.start, w.end
     if start > end:
         start, end = end, start
@@ -175,14 +175,14 @@ def sanitize_words_rule_attached_prefix(words: list[Word]) -> list[Word]:
 
 
 def sanitize_words(words: list[Word]) -> list[Word]:
-    """단어 타임스탬프 보정 및 한국어 'su' 오인식 단어 스트림 교정 파이프라인.
+    """Word-timestamp sanitization and Korean 'su' misrecognition correction pipeline.
 
-    각 단계별 단일 책임 함수(Rule)를 순차 실행:
-      1. sanitize_words_rule_timestamps       : 타임스탬프 이상치 보정
-      2. sanitize_words_rule_particle_merge    : 조사 결합 병합 ('수밖에' / '수도' / '수가')
-      3. sanitize_words_rule_rieul_preceded    : 선행어 종성 'ㄹ' 기반 독립 'su' ➡️ '수' (띄어쓰기 유지)
-      4. sanitize_words_rule_iss_eops_followed : 후행 용언 '있~/없~' 기반 독립 'su' ➡️ '수' (띄어쓰기 유지)
-      5. sanitize_words_rule_attached_prefix   : 붙여쓴 오인식 단어 접두어 교정
+    Single-responsibility functions (Rules) executed in order:
+      1. sanitize_words_rule_timestamps       : fix timestamp anomalies
+      2. sanitize_words_rule_particle_merge    : merge attached particles ('수밖에' / '수도' / '수가')
+      3. sanitize_words_rule_rieul_preceded    : standalone 'su' ➡️ '수' (preserves spacing) when previous word ends in ㄹ jongseong
+      4. sanitize_words_rule_iss_eops_followed : standalone 'su' ➡️ '수' (preserves spacing) when followed by 있~/없~ verb stem
+      5. sanitize_words_rule_attached_prefix   : correct attached misrecognition prefixes
     """
     if not words:
         return []

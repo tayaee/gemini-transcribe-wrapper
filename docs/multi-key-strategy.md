@@ -12,14 +12,20 @@ gtw --gemini-api-keys KEY1,KEY2,KEY3 sample.mp4
 
 That's it. The wrapper:
 
-1. **Cycles keys in round-robin order** across chunks (advancing the pointer
-   after every successful chunk).
-2. **On a 429 with retry hint**, sleeps `(hint + 120s)` and retries once on
-   the same key. If the retry also 429s, falls through to the next key.
-3. **On a 429 without retry hint**, skips the cooldown and tries the next
-   key immediately.
-4. **When all keys are exhausted**, propagates the most-recent 429. The
-   batch boundary still raises `QuotaExceededError` (CLI exit code `2`).
+1. **Starts with all keys in the active pool.** Round-robin walks the
+   `_active_pool`, advancing the pointer after every successful chunk.
+2. **On a 429, immediately blacklists the key.** No same-key retry, no
+   hint parsing, no cooldown sleep. The key moves into the
+   `_cooldown_pool` and the next active key is tried. The 2-minute
+   `request_interval_secs` throttle already absorbs short-term rate
+   limits, so any 429 encountered in the chunk loop is treated as
+   daily-quota exhaustion.
+3. **When the active pool drains**, sleeps `_COOLDOWN_SECS` (10 minutes
+   by default) and reactivates **every** cooldown key in batch,
+   preserving the original `_api_keys` order. Then retries the same
+   chunk from the start with the freshly reactivated pool.
+4. **Non-quota errors (400/500/...) are not absorbed** by pool rotation
+   and propagate immediately so callers see the real failure.
 
 ## CLI
 
@@ -52,31 +58,52 @@ appends to the list (with a debug log). Prefer the plural form.
 ## Round-robin ordering
 
 For a chunk sequence `c0, c1, c2, ...` with keys `[K1, K2, K3]`, the wrapper
-issues calls in the order `K1, K2, K3, K1, K2, K3, ...` and advances the
-round-robin pointer only after a successful chunk (so a chunk that fails on
-K1 and then succeeds on K2 still leaves K2 as the *next* key, not K3).
+issues calls in the order `K1, K2, K3, K1, K2, K3, ...` **while the active
+pool is full**. After a chunk that failed on K1 (429 → cooldown) and then
+succeeded on K2, K2 is the *next* key, not K3.
 
-## Per-call 429 fallback detail
+If K3 also 429s during chunk 2, the active pool drains, the wrapper sleeps
+`_COOLDOWN_SECS`, reactivates every cooldown key (back to `[K1, K2, K3]`),
+and retries chunk 2 — typically K1 (or whichever key recovered first)
+succeeds on the second pass.
+
+## Active / Cooldown pool flow
 
 ```
-for each key in round-robin order:
-    install key on client
-    try the API call
-        on success:
-            advance pointer, return result
-        on 429 with retry hint:
-            sleep (hint + 120s safety)
-            retry once with same key
+on each chunk:
+    loop:
+        active = copy of _active_pool
+        if active is empty:
+            if _cooldown_pool is empty:
+                # safety net (shouldn't happen — __init__ guarantees ≥1 key)
+                raise most recent quota error
+            log "Active pool drained (N keys in cooldown). Sleeping 600s..."
+            sleep _COOLDOWN_SECS
+            _active_pool = reorder(_api_keys, filter=in _cooldown_pool)
+            _cooldown_pool = set()
+            _rr_index = 0
+            continue    # retry the same chunk with the fresh pool
+
+        for each key in active (round-robin from _rr_index):
+            install key on client
+            try the API call
                 on success:
-                    advance pointer, return result
-                on failure:
-                    audit-log this key, try next key
-        on 429 without retry hint:
-            audit-log this key, try next key (no sleep)
-        on non-quota error (400/500/...):
-            audit-log + propagate immediately (no key rotation)
-all keys exhausted:
-    raise most-recent 429 → QuotaExceededError at the batch boundary
+                    blacklisted = earlier 429s in this iteration
+                    apply blacklisting to _active_pool / _cooldown_pool
+                    advance _rr_index past this key
+                    return result
+                on 429:
+                    audit-log this key
+                    log "Key ...abcd hit 429 (daily quota); blacklisting..."
+                    append to blacklisted_this_loop (NOT removed yet)
+                    continue
+                on non-quota error (400/500/...):
+                    audit-log + propagate immediately (no key rotation)
+
+        # inner loop exhausted without success:
+        apply blacklisted_this_loop to _active_pool / _cooldown_pool
+        # → next iteration of outer loop sees empty active pool
+        #   → triggers the cooldown wait + reactivation path
 ```
 
 The audit JSONL records **one entry per failed key**, not a single
@@ -85,14 +112,16 @@ keys were tried and how each one failed.
 
 ## Per-key state isolation
 
+- **Active / Cooldown pool**: in-memory only on the `TranscribeClient`
+  instance. Resets to a single full active pool after a process restart.
 - **Daily quota counter**: tracks `usage-<sha256(key)[:12]>.json` per key.
   A user with three free-tier keys effectively gets 75 calls/day, not 25.
 - **Rate-limit throttle timestamp**: stored both in-memory and on disk in
   `last_api_completion-<sha256(key)[:12]>.json`. Marking K1 as recently
   completed does **not** delay a call on K2.
-- **Round-robin pointer**: in-memory only; resumes from key 0 after a
-  process restart (intentional — disk-sticking the pointer would couple
-  unrelated processes).
+- **Round-robin pointer** (`_rr_index`): in-memory only; resumes from
+  key 0 after a process restart (intentional — disk-sticking the pointer
+  would couple unrelated processes).
 
 ## When to use multi-key vs single key
 
@@ -100,6 +129,9 @@ keys were tried and how each one failed.
 - **Multi-key**: large batches (>25 chunks) on free tier; multi-day jobs
   where rotating keys helps; any scenario where 429s would otherwise
   require manual intervention.
+- **Heavy multi-key (15–20 keys)**: continuous background transcription
+  on free tier. The active/cooldown pool keeps the run alive as long as
+  *some* key has not yet hit its daily cap.
 
 ## Caveats
 
@@ -107,13 +139,17 @@ keys were tried and how each one failed.
   keys pointing at the same backend quota still share a quota and you'll
   burn out faster than expected.
 - The wrapper does **not** retry across batch boundaries. Once a batch
-  ends (one batch = one input file or one pattern), a 429 on the *last*
-  chunk of the last file still aborts cleanly with exit code `2`. Re-run
-  the batch after the cooldown to resume (resume is automatic for
-  completed chunks).
+  ends (one batch = one input file or one pattern), the active pool state
+  is discarded. The next batch starts with a fresh active pool of all
+  configured keys.
 - The deprecated `--gemini-api-key` flag logs a one-time deprecation
   warning on each invocation. It will be removed in a future major
   release; migrate to `--gemini-api-keys` now.
+- A chunk whose active pool drains triggers a **10-minute sleep**. There
+  is no user-visible abort between chunks — Ctrl-C is the only way to
+  interrupt that sleep. Use the `--request-interval-secs` knob to shorten
+  the per-call throttle, but the cooldown wait itself is fixed at
+  `_COOLDOWN_SECS` (600s).
 
 ## Examples
 
@@ -135,3 +171,39 @@ Pay-tier with a single key (no rotation needed):
 ```bash
 gtw --tier paid --gemini-api-key $PAID_KEY sample.mp4
 ```
+
+Continuous background job with a deep key pool (15–20 free-tier keys):
+
+```bash
+# my_keys.txt: one key per line
+gtw --gemini-api-keys "$(tr '\n' ',' < my_keys.txt)" long_running/*.mp4
+# The active/cooldown pool keeps most keys warm; only the ones that hit
+# 429 in the last 10 minutes are skipped.
+```
+
+## Migration from older behavior
+
+Older versions of this wrapper (≤ 0.0.54) used a **same-key cooldown +
+retry** path: on a 429 with a `Please retry in Xs` hint, the wrapper
+slept `(hint + 120s)` and retried the same key once. If that retry
+also 429'd, it fell through to the next key, and ultimately raised
+the most-recent 429 when all keys were exhausted.
+
+The current implementation drops that path entirely. Why:
+
+1. Gemini's 429 message format does not let us distinguish "daily
+   quota exhausted" from "short-term rate-limit" reliably — both
+   return the same `Please retry in Xs` text with very similar hint
+   values.
+2. The wrapper already enforces a 2-minute per-call throttle, which
+   absorbs short-term rate limits. Anything that still hits 429 in
+   the chunk loop is, in practice, a daily-quota exhaustion that
+   the same key will keep returning for the rest of the day.
+3. Retrying on the same key burns another API call against an
+   already-exhausted quota, which is wasteful.
+
+The new behavior treats any 429 encountered in the chunk loop as
+"key exhausted, move it to cooldown" and never retries the same key
+during the same chunk. When the active pool drains, the wrapper
+sleeps 10 minutes and reactivates all cooldown keys in batch — this
+is the only retry loop.

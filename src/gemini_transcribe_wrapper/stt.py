@@ -58,7 +58,7 @@ DEFAULT_KO_CUSTOM_VOCABULARY: list[str] = [
     # Gemini 3.5 Transcribe rejects custom_vocabulary when timestamps are
     # requested ("custom_vocabulary is incompatible with timestamps"), and
     # the wrapper always needs word-level timestamps for SRT. The Korean '수'
-    # 받아쓰기 bug is handled by fix_korean_su_text post-processing instead.
+    # transcription bug is handled by fix_korean_su_text post-processing instead.
     "수 있다",
     "수 없다",
     "수도 있다",
@@ -119,6 +119,43 @@ def _is_quota_error(exc: Exception) -> bool:
     if isinstance(exc, errors.APIError):
         return exc.code == 429
     return False
+
+
+def apply_vocabulary_bias(text: str, vocabulary: list[str] | None) -> str:
+    """Bias transcript toward user-registered vocabulary terms.
+
+    Gemini Transcribe rejects ``custom_vocabulary`` when timestamps are
+    requested (400 error), and the wrapper always needs word-level
+    timestamps for SRT. So we apply the user vocabulary as a
+    post-recognition step instead of sending it to the API.
+
+    Replacement rules:
+
+    * Case-insensitive (``Gemini`` matches ``gemini`` / ``GEMINI``).
+    * Whitespace-tolerant: any run of whitespace between tokens counts
+      as a single match boundary (``"수 있다"`` matches ``"수  있다"``).
+    * Greedy: longer phrases are matched first so multi-word terms are
+      not partially consumed by shorter ones.
+
+    Returns ``text`` unchanged if either side is empty.
+    """
+    if not text or not vocabulary:
+        return text
+    result = text
+    for vocab in sorted(vocabulary, key=len, reverse=True):
+        v = vocab.strip()
+        if not v:
+            continue
+        tokens = v.split()
+        if not tokens:
+            continue
+        pattern_str = r"\s+".join(re.escape(t) for t in tokens)
+        try:
+            pattern = re.compile(pattern_str, re.IGNORECASE)
+        except re.error:
+            continue
+        result = pattern.sub(v, result)
+    return result
 
 
 _RETRY_AFTER_RE = re.compile(r"please retry in\s+(\d+(?:\.\d+)?)\s*s", re.IGNORECASE)
@@ -745,6 +782,12 @@ class TranscribeClient:
                         text = fix_korean_su_text(text)
                     if not text and words:
                         text = " ".join(w.text for w in words)
+                    # Post-recognition vocabulary bias (Gemini API rejects
+                    # ``custom_vocabulary`` when timestamps are requested,
+                    # so we apply user terms here as a best-effort bias).
+                    vocab = getattr(self, "custom_vocabulary", None)
+                    if text and vocab:
+                        text = apply_vocabulary_bias(text, vocab)
                     # Apply this iteration's blacklistings (keys that
                     # hit 429 earlier in the inner loop) *before*
                     # advancing the round-robin pointer so the index

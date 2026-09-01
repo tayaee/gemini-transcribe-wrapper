@@ -48,6 +48,36 @@ class QuotaExceededError(Exception):
         self.original = original
         super().__init__(f"{source}: {original}")
 
+
+def _load_vocabulary_file(path: str | None) -> list[str]:
+    """Load custom-vocabulary terms from a text file (one per line).
+
+    - Empty / ``None`` ``path`` → return ``[]``.
+    - Missing file → log a warning and return ``[]`` (the option is
+      treated as if it wasn't given; we never raise here).
+    - Blank lines and lines beginning with ``#`` (after stripping) are
+      silently skipped (treat them as comments).
+
+    This is the canonical loader used by both ``cli.py`` and the
+    ``api.py`` entry point so the file format is identical regardless
+    of which surface the caller uses.
+    """
+    if not path:
+        return []
+    p = Path(path)
+    if not p.is_file():
+        logging.getLogger(__name__).warning(
+            "Custom vocabulary file not found: %s. Ignoring.", path,
+        )
+        return []
+    items: list[str] = []
+    for raw in p.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        items.append(line)
+    return items
+
 # Default chunk length per diarize mode. The user can still override via
 # ``chunk_secs``; these are only the fallbacks when the user doesn't specify.
 # The Gemini-3.5-transcribe API caps audio per call differently depending
@@ -161,6 +191,7 @@ def gemini_transcribe(
     temp_dir: str | None = "temp",
     ffsubsync_srt: bool = False,
     custom_vocabulary: list[str] | None = None,
+    custom_vocabulary_file: str | None = None,
     audit_jsonl: str | Path | None = None,
     model: str = MODEL_ID,
 ) -> BatchTranscribeResult:
@@ -277,6 +308,7 @@ def gemini_transcribe(
                 temp_dir=temp_dir,
                 ffsubsync_srt=ffsubsync_srt,
                 custom_vocabulary=custom_vocabulary,
+                custom_vocabulary_file=custom_vocabulary_file,
                 audit_jsonl=audit_jsonl,
                 model=model,
             )
@@ -305,6 +337,7 @@ def _process_one(
     temp_dir: str | None,
     ffsubsync_srt: bool,
     custom_vocabulary: list[str] | None = None,
+    custom_vocabulary_file: str | None = None,
     audit_jsonl: str | Path | None = None,
     model: str = MODEL_ID,
 ) -> TranscribeResult:
@@ -446,13 +479,20 @@ def _process_one(
         extract_audio(input_file, ctx.full_mp3, force=force)
         chunks = split_chunks(ctx.full_mp3, ctx.chunk_dir, plan)
 
+        # Merge inline list + file-loaded terms into a single vocab. The
+        # file load is non-fatal: a missing file just yields [] and logs a
+        # warning (see ``_load_vocabulary_file``).
+        combined_vocab = list(custom_vocabulary or [])
+        combined_vocab += _load_vocabulary_file(custom_vocabulary_file)
+        combined_vocab = combined_vocab or None
+
         client = TranscribeClient(
             api_keys=gemini_api_keys,
             language=language,
             enable_diarization=diarize,
             request_interval_secs=request_interval_secs,
             tier=tier,
-            custom_vocabulary=custom_vocabulary,
+            custom_vocabulary=combined_vocab,
             source_file=str(input_file.resolve()),
             audit_jsonl=audit_jsonl,
             model=model,

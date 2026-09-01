@@ -44,6 +44,7 @@ class TranscribeOptions:
     chunk_secs: float | None = None
     speakers: str | None = None
     custom_vocabulary: str | None = None
+    custom_vocabulary_file: str | None = None
     temp_dir: str = "temp"
     audit_jsonl: str | None = None
     verbose: bool = False
@@ -202,6 +203,15 @@ def _make_command() -> click.Command:
         help="Custom vocabulary / bias phrases (comma/semicolon separated or text file path)",
     )
     @click.option(
+        "--custom-vocabulary-file",
+        default=None,
+        help="Path to a text file with one custom vocabulary term per line. "
+             "Lines starting with '#' or empty lines are ignored. "
+             "If the file is missing, a warning is printed and the option is ignored. "
+             "Gemini Transcribe rejects custom_vocabulary when timestamps are requested, "
+             "so the wrapper applies these as post-recognition bias instead of sending them to the API.",
+    )
+    @click.option(
         "--temp-dir",
         default="temp",
         help="Directory for intermediate temp files (default: temp)",
@@ -249,6 +259,7 @@ def _make_command() -> click.Command:
         chunk_secs: float | None,
         speakers: str | None,
         custom_vocabulary: str | None,
+        custom_vocabulary_file: str | None,
         temp_dir: str,
         audit_jsonl: str,
         verbose: bool,
@@ -296,6 +307,7 @@ def _make_command() -> click.Command:
                 chunk_secs=chunk_secs,
                 speakers=speakers,
                 custom_vocabulary=custom_vocabulary,
+                custom_vocabulary_file=custom_vocabulary_file,
                 temp_dir=temp_dir,
                 audit_jsonl=audit_jsonl,
                 verbose=verbose,
@@ -346,6 +358,18 @@ def parse_custom_vocabulary(spec: str | None) -> list[str] | None:
     raw_items = re.split(r"[,;]", spec)
     items = [item.strip() for item in raw_items if item.strip()]
     return items if items else None
+
+
+def load_custom_vocabulary_file(path: str | None) -> list[str]:
+    """CLI wrapper for :func:`api._load_vocabulary_file`.
+
+    Kept as a thin shim so callers in this module (and tests) can keep
+    using the ``cli.load_custom_vocabulary_file`` symbol. The single
+    source of truth lives in :mod:`api`.
+    """
+    from .api import _load_vocabulary_file
+
+    return _load_vocabulary_file(path)
 
 
 def parse_speakers(spec: str) -> dict[str, str]:
@@ -413,6 +437,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.extend(["--speakers", str(opts.speakers)])
     if opts.custom_vocabulary:
         tokens.extend(["--custom-vocabulary", str(opts.custom_vocabulary)])
+    if opts.custom_vocabulary_file:
+        tokens.extend(["--custom-vocabulary-file", str(opts.custom_vocabulary_file)])
     if opts.chunk_secs is not None:
         tokens.extend(["--chunk-secs", str(opts.chunk_secs)])
 
@@ -536,7 +562,9 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
             logging.getLogger(__name__).error("Error: %s", exc)
             return 1
 
-    custom_vocab = parse_custom_vocabulary(opts.custom_vocabulary)
+    custom_vocab_list = parse_custom_vocabulary(opts.custom_vocabulary) or []
+    custom_vocab_list += load_custom_vocabulary_file(opts.custom_vocabulary_file)
+    custom_vocab = custom_vocab_list if custom_vocab_list else None
 
     for pattern in opts.path:
         try:
@@ -562,6 +590,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 temp_dir=opts.temp_dir,
                 ffsubsync_srt=opts.ffsubsync_srt,
                 custom_vocabulary=custom_vocab,
+                custom_vocabulary_file=opts.custom_vocabulary_file,
                 audit_jsonl=opts.audit_jsonl,
             )
             produced_all.extend(batch.output_files())
