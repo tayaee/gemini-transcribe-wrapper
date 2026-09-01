@@ -462,6 +462,7 @@ class TranscribeClient:
         api_key: str | None = None,
         api_keys: list[str] | None = None,
         language: str = "ko-KR",
+        language_codes: list[str] | None = None,
         enable_diarization: bool = True,
         request_interval_secs: float = 120.0,
         tier: str = "free",
@@ -509,6 +510,15 @@ class TranscribeClient:
         else:
             self.client = genai.Client()
         self.language = language
+        # Multi-language hint list. When ``None`` (or empty) we let the
+        # Gemini API auto-detect the language. When set, we forward it
+        # as ``language_codes`` in the generation config, taking
+        # precedence over the legacy single ``language`` string.
+        self.language_codes: list[str] | None = (
+            [c.strip() for c in language_codes if c and c.strip()]
+            if language_codes
+            else None
+        )
         self.enable_diarization = enable_diarization
         self.request_interval_secs = request_interval_secs
         self.tier = tier
@@ -548,7 +558,12 @@ class TranscribeClient:
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
         transcription: dict[str, Any] = {}
-        if self.language:
+        # ``language_codes`` (multi-language hint list) wins over the
+        # legacy single ``language`` string. An empty/None value skips
+        # the field entirely so Gemini auto-detects the language.
+        if self.language_codes:
+            transcription["language_codes"] = list(self.language_codes)
+        elif self.language:
             transcription["language_codes"] = [self.language]
         mode: dict[str, Any] = {"type": "verbatim"}
         if self.enable_diarization:

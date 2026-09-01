@@ -133,6 +133,61 @@ keys were tried and how each one failed.
   on free tier. The active/cooldown pool keeps the run alive as long as
   *some* key has not yet hit its daily cap.
 
+## Sizing a free-tier key pool
+
+If your goal is **continuous background transcription on the free
+tier** (no waiting for the daily cap to reset), plan for **16–20 keys**.
+The wrapper itself only needs ~10 keys to outlast the per-key daily
+quota; the extra 6–10 keys are headroom so that:
+
+- Keys that 429 early in the day do not exhaust the pool.
+- The 10-minute cooldown reactivation cycle always has at least a few
+  warm keys ready by the time the rest cool down.
+- Account-level anomalies (a key accidentally leaked, a project
+  deleted, etc.) don't drop you below the minimum needed to keep
+  transcription running unattended.
+
+### Where the keys come from
+
+Each Gmail account on Google AI Studio can create **up to 10
+projects**, and **each project yields 1 free-tier API key**. So a
+single Gmail account tops out at 10 free keys — not enough on its own
+for 16–20-key continuous transcription.
+
+To reach the recommended pool size you need **2 Gmail accounts**:
+
+| Gmail accounts | Projects per account | Total free keys |
+| --- | --- | --- |
+| 1 | 10 | 10 (marginal — risks running out mid-day) |
+| **2** | **10 each** | **20 (recommended for continuous use)** |
+| 3+ | 10 each | 30+ (diminishing returns, useful only for >24h jobs) |
+
+Practical setup:
+
+1. Create a second Gmail account (or use an existing one you control).
+2. Sign in to <https://aistudio.google.com/api-keys/> from each account
+   in turn and create the projects / API keys.
+3. Export the keys as shell variables, then run the wrapper with all
+   of them:
+   ```bash
+   export key1=AIzaSyA...   # account #1, project #1
+   export key2=AIzaSyB...   # account #1, project #2
+   # ... up to key10 for account #1 ...
+   export key11=AIzaSyK...  # account #2, project #1
+   # ... up to key20 for account #2 ...
+   uvx --python 3.12 --from gemini-transcribe-wrapper@latest \
+       gtw --gemini-api-keys $key1,...,$key20 *.mp4
+   ```
+4. The active/cooldown pool keeps the rotation healthy across both
+   accounts — a 429 on account #1's keys is independent of account #2's
+   daily quota, so cross-account rotation is what makes continuous
+   transcription possible.
+
+> **Note**: Google may change the per-account project limit or the
+> free-tier daily quota at any time. The 16–20 / 2-account guidance is
+> calibrated to the limits as of this writing — if Google raises the
+> quota per key, fewer keys are needed; if it tightens, scale up.
+
 ## Caveats
 
 - The wrapper does **not** verify that keys are distinct accounts. Two

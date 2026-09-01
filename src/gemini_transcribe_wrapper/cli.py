@@ -29,6 +29,7 @@ class TranscribeOptions:
     output_base: str | None = None
     gemini_api_keys: list[str] = field(default_factory=list)
     language: str = "ko-KR"
+    language_codes: list[str] = field(default_factory=list)
     model: str = MODEL_ID
     diarize: bool = False
     srt: bool = True
@@ -105,7 +106,16 @@ def _make_command() -> click.Command:
     @click.option(
         "--language",
         default="ko-KR",
-        help="BCP-47 language code (default: ko-KR)",
+        help="BCP-47 language code (default: ko-KR). Used as a fallback when --language-codes is empty.",
+    )
+    @click.option(
+        "--language-codes",
+        default="ko-KR,en-US",
+        help=(
+            "Comma-separated BCP-47 language hints forwarded to Gemini as 'language_codes'. "
+            "Default 'ko-KR,en-US'. Pass an empty string (--language-codes=\"\") to enable "
+            "auto language detection (Gemini picks the spoken language)."
+        ),
     )
     @click.option(
         "--model",
@@ -244,6 +254,7 @@ def _make_command() -> click.Command:
         gemini_api_keys: str | None,
         deprecated_gemini_api_key: str | None,
         language: str,
+        language_codes: str,
         model: str,
         diarize: bool,
         srt: bool,
@@ -284,6 +295,13 @@ def _make_command() -> click.Command:
                 "instead. Treating '%s' as a one-element list.",
                 _mask_cli_key(v),
             )
+        # --language-codes is a CSV; empty string enables auto detection.
+        parsed_language_codes: list[str] = []
+        if language_codes:
+            for part in language_codes.split(","):
+                part = part.strip()
+                if part and part not in parsed_language_codes:
+                    parsed_language_codes.append(part)
         _LAST_OPTIONS.append(
             TranscribeOptions(
                 path=list(path),
@@ -292,6 +310,7 @@ def _make_command() -> click.Command:
                 output_base=output_base,
                 gemini_api_keys=parsed_keys,
                 language=language,
+                language_codes=parsed_language_codes,
                 model=model,
                 diarize=diarize,
                 srt=srt,
@@ -407,6 +426,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.extend(["--gemini-api-keys", redacted])
     if opts.language:
         tokens.extend(["--language", str(opts.language)])
+    if opts.language_codes:
+        tokens.extend(["--language-codes", ",".join(opts.language_codes)])
     if opts.model:
         tokens.extend(["--model", str(opts.model)])
 
@@ -574,6 +595,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 output_base=opts.output_base,
                 gemini_api_keys=effective_keys,
                 language=opts.language,
+                language_codes=opts.language_codes or None,
                 model=opts.model,
                 diarize=opts.diarize,
                 tier=opts.tier,

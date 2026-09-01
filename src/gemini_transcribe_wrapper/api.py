@@ -192,6 +192,7 @@ def gemini_transcribe(
     ffsubsync_srt: bool = False,
     custom_vocabulary: list[str] | None = None,
     custom_vocabulary_file: str | None = None,
+    language_codes: list[str] | None = None,
     audit_jsonl: str | Path | None = None,
     model: str = MODEL_ID,
 ) -> BatchTranscribeResult:
@@ -214,7 +215,13 @@ def gemini_transcribe(
         gemini_api_key: Deprecated single-key alias for ``gemini_api_keys``.
             If given, the key is appended to the list (after any explicit
             ``gemini_api_keys`` entries). Prefer ``gemini_api_keys``.
-        language: BCP-47 language code (default: "ko-KR").
+        language: BCP-47 language code (default: "ko-KR"). Used only when
+            ``language_codes`` is empty — kept for backward compatibility.
+        language_codes: Ordered list of BCP-47 language hints forwarded
+            to Gemini as ``language_codes``. When ``None`` or empty,
+            the wrapper omits the field and lets Gemini auto-detect
+            the spoken language. When set, takes precedence over
+            ``language``.
         diarize: When True, enable speaker diarization in the API call and
             emit ``.diarized.*`` outputs. The wrapper then uses the shorter
             default chunk length (29m50s) for better diarization quality.
@@ -293,6 +300,7 @@ def gemini_transcribe(
                 output_base=output_base,
                 gemini_api_keys=merged_keys,
                 language=language,
+                language_codes=language_codes,
                 diarize=diarize,
                 tier=tier,
                 create_srt=create_srt,
@@ -338,6 +346,7 @@ def _process_one(
     ffsubsync_srt: bool,
     custom_vocabulary: list[str] | None = None,
     custom_vocabulary_file: str | None = None,
+    language_codes: list[str] | None = None,
     audit_jsonl: str | Path | None = None,
     model: str = MODEL_ID,
 ) -> TranscribeResult:
@@ -489,6 +498,7 @@ def _process_one(
         client = TranscribeClient(
             api_keys=gemini_api_keys,
             language=language,
+            language_codes=language_codes,
             enable_diarization=diarize,
             request_interval_secs=request_interval_secs,
             tier=tier,
