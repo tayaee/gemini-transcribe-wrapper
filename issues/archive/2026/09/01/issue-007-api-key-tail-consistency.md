@@ -78,3 +78,34 @@ behavior, but its call site is rewritten for consistency.
   (e.g. the CLI re-emission line) — only the audit/log paths are
   standardized to 8.
 - The 8-char tail matches what the user spec calls `api-key-tail`.
+
+## 구현 결과
+
+- **구현 완료 일시**: 2026-09-01
+- **변경 파일**:
+  - `src/gemini_transcribe_wrapper/_key_utils.py` —
+    `api_key_tail(api_key, *, length=API_KEY_TAIL_LENGTH=8)` 헬퍼 추가.
+    `None`/empty/`length<=0` 모두 빈 문자열 반환. 기존 `mask_key()`
+    는 그대로 유지 (UX re-emission 4-char form).
+  - `src/gemini_transcribe_wrapper/stt.py` — `from ._key_utils import
+    API_KEY_TAIL_LENGTH, api_key_tail`. 429 cooldown 로그 라인
+    `f"[redacted]{api_key_tail(key)}"` 사용 (기존 `key[-4:]` 대체).
+    `get_audit_log_path()` 와 `append_audit_log()` 의 `key_tail` 도
+    헬퍼 경유.
+  - `src/gemini_transcribe_wrapper/api.py` — `from ._key_utils import
+    api_key_tail`. blacklist 두 사용처 모두 `api_key_tail(first_key)`
+    로 통일.
+  - `tests/test_api_key_tail.py` (new) — 11 tests: 헬퍼 기본/short/exact/
+    long/None/empty/length=4/length 초과/length=0, `mask_key` 회귀,
+    429 로그 통합 검증.
+  - `tests/test_multi_key.py` — 기존 `[redacted]aaaa` (4자) 단언을
+    `[redacted]Aaaaaaaa` (8자) 로 업데이트.
+  - `regression-tests/verify-issue-007.sh` (new) — 11 mechanical checks.
+- **계획과의 차이**: 없음. `mask_key()` 는 그대로 (CLI re-emission UX
+  보존). `API_KEY_TAIL_LENGTH = 8` 상수 export 로 다른 모듈도 일관되게
+  사용 가능.
+- **검증 결과**:
+  - `regression-tests/verify-issue-007.sh` → exit 0
+  - `uv run ruff check` → clean
+  - `uv run pytest` → 320 passed (309 + 11 신규)
+  - 모든 기존 `verify-issue-00{1..6}.sh` → OK (regression 없음)

@@ -20,6 +20,8 @@ from google.genai import errors
 from google.genai._gaos.types import interactions as _gaos_interactions
 from google.genai.types import HttpOptions, HttpRetryOptions
 
+from ._key_utils import API_KEY_TAIL_LENGTH, api_key_tail
+
 logger = logging.getLogger(__name__)
 
 MODEL_ID = "gemini-3.5-transcribe"
@@ -251,7 +253,7 @@ def get_audit_log_path(api_key: str | None = None) -> Path:
     from .usage_counter import cache_dir
 
     if api_key:
-        key_tail = api_key[-8:] if len(api_key) >= 8 else api_key
+        key_tail = api_key_tail(api_key)
         return cache_dir() / key_tail / "api-audit.jsonl"
     # Legacy fallback: keep the old <temp>/<host>-<user> path so any
     # downstream dashboards don't break during the v1.x → v2 migration.
@@ -294,7 +296,7 @@ def append_audit_log(
     """
     if timestamp is None:
         timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
-    key_tail = api_key[-8:] if api_key else ""
+    key_tail = api_key_tail(api_key)
     record = {
         "timestamp": timestamp,
         "api_key_tail": key_tail,
@@ -945,8 +947,8 @@ class TranscribeClient:
                             "after a 429. %d api %s left in the live "
                             "round-robin api key pool.",
                             (
-                                f"[redacted]{key[-4:]}"
-                                if len(key) > 4
+                                f"[redacted]{api_key_tail(key)}"
+                                if len(key) > API_KEY_TAIL_LENGTH
                                 else "[redacted]"
                             ),
                             max(0, len(self._live_pool) - 1),

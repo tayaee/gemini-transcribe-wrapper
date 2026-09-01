@@ -213,7 +213,7 @@ def test_429_with_hint_blacklists_immediately_no_retry(
     bl_logs = [
         rec.message for rec in caplog.records if "Removing key" in rec.message
     ]
-    assert any("[redacted]aaaa" in m for m in bl_logs)
+    assert any("[redacted]Aaaaaaaa" in m for m in bl_logs)
     assert any("1 api key left" in m for m in bl_logs)
     # A moved to cooldown, B is the only active key.
     assert k_a not in client._active_pool

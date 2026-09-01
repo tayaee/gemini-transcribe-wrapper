@@ -14,6 +14,7 @@ from pathlib import Path
 
 from filelock import FileLock, Timeout
 
+from ._key_utils import api_key_tail
 from .audio import compute_split_plan, extract_audio, probe_duration_secs, split_chunks
 from .merge import (
     _OFF_OUTPUT_TOKENS,
@@ -471,7 +472,7 @@ def _process_one(
         from .usage_counter import cache_dir
 
         first_key = gemini_api_keys[0]
-        key_tail = first_key[-8:] if len(first_key) >= 8 else first_key
+        key_tail = api_key_tail(first_key)
         bl = InputBlacklist(
             path=input_file,
             cache_dir=cache_dir() / key_tail,
@@ -824,7 +825,7 @@ def _process_one(
             from .usage_counter import cache_dir
 
             first_key = gemini_api_keys[0]
-            key_tail = first_key[-8:] if len(first_key) >= 8 else first_key
+            key_tail = api_key_tail(first_key)
             bl = InputBlacklist(
                 path=input_file,
                 cache_dir=cache_dir() / key_tail,

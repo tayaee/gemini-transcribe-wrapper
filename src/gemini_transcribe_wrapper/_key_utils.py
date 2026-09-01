@@ -8,7 +8,35 @@ seeing at a glance.
 Importing from here instead of inlining the format everywhere keeps
 the three call sites in lock-step — change the rule here and every
 log line, CLI warning, and summary line updates together.
+
+Issue-007 also adds :func:`api_key_tail`, the canonical 8-char tail
+used by audit logs, blacklist filenames, and per-key cache paths.
 """
+
+from __future__ import annotations
+
+# Conventional tail length used by audit logs / blacklist filenames /
+# per-key cache paths. Defined as a constant so other modules can import
+# it (e.g. ``from ._key_utils import API_KEY_TAIL_LENGTH``) without
+# hard-coding the magic number 8.
+API_KEY_TAIL_LENGTH = 8
+
+
+def api_key_tail(api_key: str | None, *, length: int = API_KEY_TAIL_LENGTH) -> str:
+    """Return the last ``length`` chars of ``api_key``, or ``""`` if ``None``.
+
+    Convention is 8 chars (see spec §2); pass ``length=4`` if a legacy
+    4-char tail is needed (e.g. for a compact summary line).
+
+    Keys shorter than ``length`` are returned in full. ``None`` and empty
+    strings both yield ``""`` so callers can safely concatenate the
+    result without an extra ``if`` guard.
+    """
+    if not api_key:
+        return ""
+    if length <= 0:
+        return ""
+    return api_key[-length:] if len(api_key) >= length else api_key
 
 
 def mask_key(key: str | None) -> str:
@@ -24,3 +52,4 @@ def mask_key(key: str | None) -> str:
     if len(key) <= 4:
         return "[redacted]"
     return f"[redacted]{key[-4:]}"
+
