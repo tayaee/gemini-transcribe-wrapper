@@ -65,3 +65,26 @@ Both flags wrap the existing `for pattern in opts.path:` block in
 
 - `--loop-poll-secs` is a new knob; default `30`. Documented in spec §3.2.
 - The loop's exit code on Ctrl-C is `130` (POSIX convention).
+
+## 구현 결과
+
+- **구현 완료 일시**: 2026-09-01
+- **변경 파일**:
+  - `src/gemini_transcribe_wrapper/_loop.py` (new) — `run_with_loop`
+    driver with KeyboardInterrupt → 130, QuotaExceededError → sleep+retry,
+    `_glob_matches()` helper, `_clamp_poll_secs()`.
+  - `src/gemini_transcribe_wrapper/cli.py` — 3 new Click options
+    (`--loop-until-no-input`, `--loop-always`, `--loop-poll-secs`
+    IntRange [1, 3600]), mutual exclusion check, `_run_one_pass()`
+    wrapper extracted from main loop, loop-driver invocation gated
+    on the flags, sentinel `_loop_interrupted` → exit 130.
+  - `tests/test_loop.py` (new) — 10 tests covering mutual exclusion,
+    driver behavior for both flags, KeyboardInterrupt, QuotaExceededError
+    retry, poll_secs clamping.
+  - `regression-tests/verify-issue-001.sh` (new) — mechanical checks.
+- **계획과의 차이**: 없음. `_run_one_pass()` 래퍼 추출은 기존 메인 루프
+  본문을 재사용하기 위한 내부 리팩토링.
+- **검증 결과**:
+  - `regression-tests/verify-issue-001.sh` → exit 0
+  - `uv run ruff check --fix` → clean
+  - `uv run pytest` → 280 passed

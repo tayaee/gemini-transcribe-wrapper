@@ -51,6 +51,9 @@ class TranscribeOptions:
     temp_path: str = "temp"
     audit_jsonl_file: str | Path | bool | None = None
     log_level: str = "info"
+    loop_until_no_input: bool = False
+    loop_always: bool = False
+    loop_poll_secs: int = 30
 
 
 class _GTWCommand(click.Command):
@@ -294,6 +297,38 @@ def _make_command() -> click.Command:
         default="info",
         help="Logging level (default: info; use 'debug' for verbose output)",
     )
+    @click.option(
+        "--loop-until-no-input",
+        is_flag=True,
+        default=False,
+        help=(
+            "Re-glob PATH after each pass and exit when the glob yields "
+            "no matches. Use this for drop-folder workflows: process "
+            "existing files, then wait silently for new arrivals and "
+            "exit when the folder is drained."
+        ),
+    )
+    @click.option(
+        "--loop-always",
+        is_flag=True,
+        default=False,
+        help=(
+            "Like --loop-until-no-input but never exit on an empty pass — "
+            "sleep --loop-poll-secs and re-glob forever. Use this for "
+            "24/7 batch watchers."
+        ),
+    )
+    @click.option(
+        "--loop-poll-secs",
+        type=click.IntRange(1, 3600),
+        default=30,
+        show_default=True,
+        help=(
+            "Seconds to sleep between empty passes under --loop-always "
+            "(or after a quota 429 under either --loop* flag). Range "
+            "1..3600; default 30."
+        ),
+    )
     @click.argument("path", nargs=-1)
     def _root(
         path: tuple[str, ...],
@@ -322,7 +357,19 @@ def _make_command() -> click.Command:
         temp_path: str,
         audit_jsonl_file: str | None,
         log_level: str,
+        loop_until_no_input: bool,
+        loop_always: bool,
+        loop_poll_secs: int,
     ) -> None:
+        # Mutual exclusion check (issue-001). Both flags together would
+        # be ambiguous: --loop-until-no-input says "exit when empty" and
+        # --loop-always says "never exit". We reject the combination
+        # with a clear error + exit 2.
+        if loop_until_no_input and loop_always:
+            raise click.UsageError(
+                "--loop-until-no-input and --loop-always are mutually "
+                "exclusive. Pick one."
+            )
         # Parse the comma- or semicolon-separated --gemini-api-keys list.
         # Drop blanks, preserve order, drop dupes.
         parsed_keys: list[str] = []
@@ -376,6 +423,9 @@ def _make_command() -> click.Command:
                 temp_path=temp_path,
                 audit_jsonl_file=audit_jsonl_file,
                 log_level=log_level,
+                loop_until_no_input=loop_until_no_input,
+                loop_always=loop_always,
+                loop_poll_secs=loop_poll_secs,
             )
         )
 
@@ -742,51 +792,82 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
     custom_vocab_list += load_custom_vocabulary_file(opts.custom_vocabulary_file)
     custom_vocab = custom_vocab_list if custom_vocab_list else None
 
-    for pattern in opts.path:
-        try:
-            batch = gemini_transcribe(
-                input_file=pattern,
-                output_dir=opts.output_dir,
-                output_base=opts.output_base,
-                gemini_api_keys=effective_keys,
-                language_codes=opts.language_codes or None,
-                model=opts.model,
-                srt_file=opts.srt_file,
-                txt_file=opts.txt_file,
-                diarized_srt_file=opts.diarized_srt_file,
-                transcript_json_file=opts.transcript_json_file,
-                metadata_json_file=opts.metadata_json_file,
-                tier=opts.tier,
-                force=opts.force,
-                line_interval_secs=opts.line_interval_secs,
-                paragraph_interval_secs=opts.paragraph_interval_secs,
-                request_interval_secs=opts.request_interval_secs,
-                max_chunk_secs=opts.max_chunk_secs,
-                speakers=speakers,
-                temp_path=opts.temp_path,
-                custom_vocabulary=custom_vocab,
-                custom_vocabulary_file=opts.custom_vocabulary_file,
-                audit_jsonl_file=opts.audit_jsonl_file,
-                word_level_timestamps=opts.word_level_timestamps,
-            )
-            produced_all.extend(batch.output_files())
-            if any(r.status == TranscribeStatus.FAILED for r in batch.results):
+    def _run_one_pass() -> None:
+        """One pass over ``opts.path`` (issue-001's loop driver calls this)."""
+        nonlocal quota_exceeded, failed  # type: ignore[misc]
+        for pattern in opts.path:
+            try:
+                batch = gemini_transcribe(
+                    input_file=pattern,
+                    output_dir=opts.output_dir,
+                    output_base=opts.output_base,
+                    gemini_api_keys=effective_keys,
+                    language_codes=opts.language_codes or None,
+                    model=opts.model,
+                    srt_file=opts.srt_file,
+                    txt_file=opts.txt_file,
+                    diarized_srt_file=opts.diarized_srt_file,
+                    transcript_json_file=opts.transcript_json_file,
+                    metadata_json_file=opts.metadata_json_file,
+                    tier=opts.tier,
+                    force=opts.force,
+                    line_interval_secs=opts.line_interval_secs,
+                    paragraph_interval_secs=opts.paragraph_interval_secs,
+                    request_interval_secs=opts.request_interval_secs,
+                    max_chunk_secs=opts.max_chunk_secs,
+                    speakers=speakers,
+                    temp_path=opts.temp_path,
+                    custom_vocabulary=custom_vocab,
+                    custom_vocabulary_file=opts.custom_vocabulary_file,
+                    audit_jsonl_file=opts.audit_jsonl_file,
+                    word_level_timestamps=opts.word_level_timestamps,
+                )
+                produced_all.extend(batch.output_files())
+                if any(r.status == TranscribeStatus.FAILED for r in batch.results):
+                    failed = True
+                for r in batch.results:
+                    if r.leftover_files():
+                        logging.getLogger(__name__).debug(
+                            "Leftover files for %s: %s",
+                            r.input.input_file,
+                            ", ".join(r.leftover_files()),
+                        )
+            except QuotaExceededError:
+                # 429 / quota hit: no point trying the next pattern — it
+                # would hit the same limit. Re-raise so the loop driver
+                # can decide whether to retry (--loop*) or exit (default).
+                raise
+            except Exception as exc:  # noqa: BLE001 - CLI boundary
+                logging.getLogger(__name__).error("Error: %s", exc)
                 failed = True
-            for r in batch.results:
-                if r.leftover_files():
-                    logging.getLogger(__name__).debug(
-                        "Leftover files for %s: %s",
-                        r.input.input_file,
-                        ", ".join(r.leftover_files()),
-                    )
+
+    if opts.loop_until_no_input or opts.loop_always:
+        from . import _loop as loop_driver
+
+        try:
+            loop_driver.run_with_loop(
+                patterns=list(opts.path),
+                loop_until_no_input=opts.loop_until_no_input,
+                loop_always=opts.loop_always,
+                loop_poll_secs=opts.loop_poll_secs,
+                run_pass=lambda _matches: _run_one_pass(),
+            )
         except QuotaExceededError:
-            # 429 / quota hit: no point trying the next pattern — it would
-            # hit the same limit. Bail out with a distinct exit code.
+            # Loop driver re-raised because no loop flag was active OR
+            # because the user explicitly wants the quota exit code.
+            # (The driver only re-raises when no loop flag is set; with
+            # a loop flag it always sleeps and retries, so we shouldn't
+            # land here under --loop*. But guard anyway.)
             quota_exceeded = True
-            break
-        except Exception as exc:  # noqa: BLE001 - CLI boundary
-            logging.getLogger(__name__).error("Error: %s", exc)
-            failed = True
+        except KeyboardInterrupt:
+            # Loop driver returns 130; we just propagate the exit code
+            # below via a sentinel attribute on opts.
+            opts._loop_interrupted = True
+    else:
+        try:
+            _run_one_pass()
+        except QuotaExceededError:
+            quota_exceeded = True
 
     elapsed = time.monotonic() - start_time
     logging.getLogger(__name__).info("Total elapsed time: %.1fs", elapsed)
@@ -795,6 +876,8 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
 
     if quota_exceeded:
         return 2
+    if getattr(opts, "_loop_interrupted", False):
+        return 130
     if failed:
         return 1
     if not produced_all:
