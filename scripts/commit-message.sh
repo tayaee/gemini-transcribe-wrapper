@@ -1,6 +1,6 @@
 #!/bin/bash
-# Generate a 1-line commit summary from git diff using LLM CLI tools (agy, cmdc, claude).
-# Usage: ./scripts/commit-message.sh [agy|cmdc|claude]
+# Generate a 1-line commit summary from git diff using LLM CLI tools (agy, cmdc, pi).
+# Usage: ./scripts/commit-message.sh [agy|cmdc|pi]
 
 set -e
 cd "$(dirname "$0")/.."
@@ -54,20 +54,13 @@ run_provider() {
                 out="$(cmdc -p "$PROMPT" 2>/dev/null || true)"
             fi
             ;;
-        claude)
-            if command -v claude >/dev/null 2>&1; then
-                out="$(claude --model MiniMax-M3 -p "$PROMPT" 2>&1 || true)"
-                if echo "$out" | grep -q "Failed to authenticate: OAuth session expired"; then
-                    echo "Warning: claude OAuth session expired and could not be refreshed. Run 'claude login' to re-authenticate." >&2
-                    out=""
-                elif echo "$out" | grep -qiE "failed to authenticate|unrecognized_model|error:"; then
-                    echo "Warning: claude invocation failed: $(echo "$out" | grep -E 'Failed|Error' | head -n 1)" >&2
-                    out=""
-                fi
+        pi)
+            if command -v pi >/dev/null 2>&1; then
+                out="$(pi --model minimax/MiniMax-M3 -p "$PROMPT" 2>/dev/null || true)"
             fi
             ;;
         *)
-            echo "Error: Unknown provider '$p' (expected agy, cmdc, or claude)" >&2
+            echo "Error: Unknown provider '$p' (expected agy, cmdc, or pi)" >&2
             return 1
             ;;
     esac
@@ -83,8 +76,8 @@ MSG=""
 if [ -n "$PROVIDER" ]; then
     MSG="$(run_provider "$PROVIDER")"
 else
-    # Try agy -> cmdc -> claude in sequence
-    for prov in agy cmdc claude; do
+    # Try agy -> cmdc -> pi in sequence
+    for prov in agy cmdc pi; do
         MSG="$(run_provider "$prov")"
         if [ -n "$MSG" ]; then
             break

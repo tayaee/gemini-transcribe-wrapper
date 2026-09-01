@@ -568,6 +568,28 @@ def _process_one(
         effective_max_chunk_secs = (
             max_chunk_secs if max_chunk_secs is not None else default_max_chunk_secs
         )
+        if needs_short_chunks:
+            ceiling_reason = (
+                "diarization and/or word-level timestamps are enabled "
+                "(Gemini API caps audio at ~30 min per call)"
+            )
+        else:
+            ceiling_reason = (
+                "no diarization and word-level timestamps are off "
+                "(Gemini API caps audio at ~60 min per call)"
+            )
+        if max_chunk_secs is None:
+            ceiling_source = "default"
+            ceiling_value = default_max_chunk_secs
+        else:
+            ceiling_source = "user-supplied --max-chunk-secs"
+            ceiling_value = max_chunk_secs
+        logger.info(
+            "Per-chunk ceiling: %.1fs (source: %s; reason: %s).",
+            ceiling_value,
+            ceiling_source,
+            ceiling_reason,
+        )
         plan = compute_split_plan(
             total_secs,
             max_chunk_secs=effective_max_chunk_secs,

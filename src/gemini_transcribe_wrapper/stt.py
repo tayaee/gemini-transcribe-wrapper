@@ -1086,7 +1086,9 @@ def transcribe_chunks_sequential(
         meta = checkpoint_path(chunk)
         existing = load_checkpoint(meta)
         if existing is not None:
-            logger.info("Chunk %d: checkpoint found, skipping API call", idx)
+            logger.info(
+                "Chunk %d: checkpoint found at %s, skipping API call", idx, meta,
+            )
             results.append(existing)
             continue
 
