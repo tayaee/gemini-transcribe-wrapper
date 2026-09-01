@@ -73,6 +73,24 @@ class _GTWCommand(click.Command):
                 'uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys "$GEMINI_API_KEY" /path/to/*.mp4\n'
             )
 
+    def format_epilog(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        # Moved here from ``-v`` so the version flag stays script-friendly
+        # (outputs only the version number, e.g. ``0.0.63``) while the
+        # free-tier usage hint still surfaces to new users reading --help.
+        # Static on purpose: --help cannot compute per-key tails or time
+        # until PT midnight.
+        formatter.write_paragraph()
+        formatter.write_heading("Free-Tier Usage")
+        with formatter.indentation():
+            formatter.write_text(
+                "Track per-key usage at https://ai.dev (Google AI Studio "
+                "dashboard) and review rate limits at "
+                "https://ai.google.dev/gemini-api/docs/rate-limits. Daily "
+                "free-tier quota resets at midnight Pacific Time. Run any "
+                "transcription to see today's call count and time until "
+                "reset printed at the end."
+            )
+
 
 def _make_command() -> click.Command:
     """Build the Click command. The callback appends TranscribeOptions to _LAST_OPTIONS."""
@@ -652,13 +670,11 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
     effective_key = effective_keys[0] if effective_keys else None
 
     if opts.version:
-        print(f"{prog} {__version__}")
-        if not effective_key:
-            print(
-                "Warning: $GEMINI_API_KEY is not set. Set it or pass "
-                "--gemini-api-keys=KEY1,KEY2,... to transcribe."
-            )
-        print(usage_summary_line(api_key=effective_key, tier=opts.tier))
+        # -v prints only the version (e.g. "0.0.63"). The free-tier usage
+        # hint and the no-key warning used to be printed here; they moved
+        # to --help (see ``_GTWCommand.format_epilog``) so the version
+        # output stays script-friendly and parseable.
+        print(__version__)
         return 0
 
     log_level = getattr(logging, opts.log_level.upper())

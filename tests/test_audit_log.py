@@ -282,21 +282,36 @@ def test_cli_main_logs_effective_command(caplog, monkeypatch):
     assert "--tier free" in plus_logs[0]
 
 
-def test_cli_version_output_has_no_blank_line(capsys):
+def test_cli_version_output_is_version_only(capsys):
+    """``-v`` prints only the version (e.g. ``0.0.63``) — no usage hint.
+
+    The free-tier usage hint used to be printed here too; it was moved to
+    ``--help`` (see ``_GTWCommand.format_epilog``) so the version output
+    stays script-friendly and parseable.
+    """
     from gemini_transcribe_wrapper import cli
 
     exit_code = cli.main(["-v"])
     assert exit_code == 0
     captured = capsys.readouterr().out
     lines = captured.strip().splitlines()
-    assert len(lines) == 2
+    assert len(lines) == 1
     assert not any(line == "" for line in lines)
-    # Default tier is free -> new format with the ai.dev dashboard link.
-    assert "Find your free-tier usage at https://ai.dev" in captured
-    assert "rate limits at https://ai.google.dev/gemini-api/docs/rate-limits" in captured
+    # Version string is the only content (no leading program name, no
+    # dashboard link, no rate-limit URL).
+    assert "Find your free-tier usage" not in captured
+    assert "rate limits at https://ai.google.dev" not in captured
+    # A bare version line like "0.0.63" — printable ASCII, no whitespace.
+    assert lines[0] == lines[0].strip()
 
 
-def test_cli_help_output_does_not_contain_usage_summary(capsys):
+def test_cli_help_output_contains_free_tier_usage_epilog(capsys):
+    """``--help`` ends with a static Free-Tier Usage section.
+
+    The hint that used to live on ``-v`` moved here so new users reading
+    ``--help`` still learn where to track quota. Static by design —
+    ``--help`` cannot compute per-key tails or time until PT midnight.
+    """
     from gemini_transcribe_wrapper import cli
 
     with pytest.raises(SystemExit) as exc_info:
@@ -304,4 +319,8 @@ def test_cli_help_output_does_not_contain_usage_summary(capsys):
     assert exc_info.value.code == 0
     captured = capsys.readouterr().out
     assert "usage:" in captured.lower()
-    assert "Find your free-tier usage" not in captured
+    # The Free-Tier Usage epilog must be present, anchored at the tail.
+    assert "Free-Tier Usage:" in captured
+    assert "https://ai.dev" in captured
+    assert "https://ai.google.dev/gemini-api/docs/rate-limits" in captured
+    assert "midnight Pacific Time" in captured
