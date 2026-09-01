@@ -722,7 +722,11 @@ def _process_one(
                     transcript_migrate_to,
                 )
 
-        logger.info("Done: %s", ", ".join(produced) or "(nothing produced)")
+        logger.info(  # nosemgrep: python-logger-credential-disclosure - key is masked via _mask_key
+            "Done with api key %s: %s",
+            _mask_key(getattr(client, "api_key", None)),
+            ", ".join(produced) or "(nothing produced)",
+        )
 
         # Warn about speakers the custom mapping did not cover, with a
         # recommended re-render command.
@@ -1057,7 +1061,7 @@ def _outputs_valid(paths: Sequence[Path | None], sources: Sequence[Path]) -> boo
     )
 
 
-def _mask_key(key: str) -> str:
+def _mask_key(key: str | None) -> str:
     """Show ``[redacted]<last 4>`` for an API key (compact, no prefix leak).
 
     Thin re-export of :func:`gemini_transcribe_wrapper._key_utils.mask_key`

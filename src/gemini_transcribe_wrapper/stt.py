@@ -826,13 +826,15 @@ class TranscribeClient:
                         )
                         logger.info(
                             "Removing key %s from the round-robin pool "
-                            "after a 429. It returns to the active pool "
-                            "once every live key has been exhausted.",
+                            "after a 429. %d api %s left in the live "
+                            "round-robin api key pool.",
                             (
                                 f"[redacted]{key[-4:]}"
                                 if len(key) > 4
                                 else "[redacted]"
                             ),
+                            len(self._active_pool) - 1,
+                            "key" if len(self._active_pool) - 1 == 1 else "keys",
                         )
                         last_quota_exc = first_exc
                         blacklisted_this_loop.append(key)

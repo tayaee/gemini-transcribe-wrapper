@@ -207,11 +207,14 @@ def test_429_with_hint_blacklists_immediately_no_retry(
         (k_a[-4:], 1),
         (k_b[-4:], 1),
     ]
-    # The pool-removal log line was emitted for A.
+    # The pool-removal log line was emitted for A and reports the
+    # remaining-active count. Active pool was [k_a, k_b]; after removing
+    # k_a the log should show "1 api key left".
     bl_logs = [
         rec.message for rec in caplog.records if "Removing key" in rec.message
     ]
     assert any("[redacted]aaaa" in m for m in bl_logs)
+    assert any("1 api key left" in m for m in bl_logs)
     # A moved to cooldown, B is the only active key.
     assert k_a not in client._active_pool
     assert client._active_pool == [k_b]
