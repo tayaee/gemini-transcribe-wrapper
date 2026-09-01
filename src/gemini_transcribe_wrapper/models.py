@@ -61,6 +61,7 @@ class TranscribeInput(BaseModel):
         description="Metadata JSON output target (default: 'off'). 'auto' or path string to enable.",
     )
     force: bool = Field(False, description="Whether re-processing was forced.")
+    force_all: bool = Field(False, description="Whether re-processing from scratch including API call was forced.")
     temp_path: str | None = Field("temp", description="Temp dir used for intermediate files.")
     tier: str = Field("free", description="Pricing tier: 'free' (default) or 'paid'.")
     line_interval_secs: float = Field(1.0, description="TXT newline break gap (s).")

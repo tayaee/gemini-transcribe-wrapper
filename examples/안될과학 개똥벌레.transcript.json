@@ -2045,12 +2045,12 @@
       {
         "chunk_index": 0,
         "attempts": 1,
-        "started_at": "2026-09-01T16:59:56",
-        "duration_secs": 8.818,
+        "started_at": "2026-09-01T19:17:23",
+        "duration_secs": 7.726,
         "status": "success"
       }
     ],
-    "total_api_secs": 8.818,
+    "total_api_secs": 7.726,
     "call_count": 1
   }
 }

@@ -82,6 +82,7 @@ class _ColorFormatter(_TzFormatter):
         "ERROR": "\x1b[31m",  # red
         "CRITICAL": "\x1b[35;1m",  # bold magenta
     }
+    GREEN: ClassVar[str] = "\x1b[32m"
     RESET: ClassVar[str] = "\x1b[0m"
 
     def __init__(self, *args, use_color: bool = False, **kwargs) -> None:
@@ -96,7 +97,10 @@ class _ColorFormatter(_TzFormatter):
         msg = super().format(record)
         if not self._use_color:
             return msg
-        color = self.LEVEL_COLORS.get(record.levelname, "")
+        if getattr(record, "color", None) == "green" or record.getMessage().startswith("Done with api key"):
+            color = self.GREEN
+        else:
+            color = self.LEVEL_COLORS.get(record.levelname, "")
         if not color:
             return msg
         return f"{color}{msg}{self.RESET}"

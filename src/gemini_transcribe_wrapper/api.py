@@ -194,6 +194,7 @@ def gemini_transcribe(
     metadata_json_file: str | Path | bool | None = None,
     tier: str = "free",
     force: bool = False,
+    force_all: bool = False,
     line_interval_secs: float = 1.0,
     paragraph_interval_secs: float = 2.5,
     request_interval_secs: float | None = None,
@@ -331,6 +332,7 @@ def gemini_transcribe(
                 metadata_json_file=metadata_json_file,
                 tier=tier,
                 force=force,
+                force_all=force_all,
                 line_interval_secs=line_interval_secs,
                 paragraph_interval_secs=paragraph_interval_secs,
                 request_interval_secs=effective_interval,
@@ -375,6 +377,7 @@ def _process_one(
     metadata_json_file: str | Path | bool | None,
     tier: str,
     force: bool,
+    force_all: bool,
     line_interval_secs: float,
     paragraph_interval_secs: float,
     request_interval_secs: float,
@@ -441,6 +444,7 @@ def _process_one(
         metadata_json_file=str(metadata_json_file) if metadata_json_file is not None else None,
         tier=tier,
         force=force,
+        force_all=force_all,
         temp_path=temp_path,
         line_interval_secs=line_interval_secs,
         paragraph_interval_secs=paragraph_interval_secs,
@@ -518,11 +522,21 @@ def _process_one(
     ctx: WorkContext | None = None
 
     try:
+        if force_all:
+            # Delete cached transcript(s) so we force a fresh API call.
+            for tp in (transcript_path, transcript_canonical, transcript_migrate_to):
+                if tp and tp.exists():
+                    try:
+                        tp.unlink()
+                        logger.info("Deleted cached transcript %s for --force-all", tp)
+                    except OSError as exc:
+                        logger.warning("Failed to delete cached transcript %s: %s", tp, exc)
+
         # Re-render path: a valid transcript exists and the outputs are stale
         # relative to it (missing, or the transcript is newer). Regenerate
         # .diarized.srt/.srt/.txt from the stored transcript without calling
         # the API.
-        if load_transcript(transcript_path) is not None and (
+        if not force_all and load_transcript(transcript_path) is not None and (
             force or not _outputs_valid(final_paths, [transcript_path])
         ):
             logger.info("Transcript found; re-rendering outputs from %s", transcript_path)
@@ -553,7 +567,7 @@ def _process_one(
         # Skip condition: outputs are valid only when they all exist AND were
         # generated after the source file. If any target is missing or the
         # source is newer, regenerate.
-        if not force and _outputs_valid(final_paths, [input_file]):
+        if not (force or force_all) and _outputs_valid(final_paths, [input_file]):
             logger.info(
                 "Outputs exist and are newer than source; skipping %s "
                 "(use --force to redo)",
@@ -625,7 +639,7 @@ def _process_one(
         )
         logger.info("Split plan: %s", _format_split_plan(plan))
 
-        extract_audio(input_file, ctx.full_mp3, force=force)
+        extract_audio(input_file, ctx.full_mp3, force=(force or force_all))
         chunks = split_chunks(ctx.full_mp3, ctx.chunk_dir, plan)
 
         # Merge inline list + file-loaded terms into a single vocab. The
@@ -755,6 +769,7 @@ def _process_one(
             "Done with api key %s: %s",
             _mask_key(getattr(client, "api_key", None)),
             ", ".join(produced) or "(nothing produced)",
+            extra={"color": "green"},
         )
 
         # Warn about speakers the custom mapping did not cover, with a

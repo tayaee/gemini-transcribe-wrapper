@@ -38,6 +38,7 @@ class TranscribeOptions:
     transcript_json_file: str | Path | bool | None = None
     metadata_json_file: str | Path | bool | None = None
     force: bool = False
+    force_all: bool = False
     tier: str = "free"
     line_interval_secs: float = 1.0
     paragraph_interval_secs: float = 2.5
@@ -197,6 +198,16 @@ def _make_command() -> click.Command:
         "--force/--no-force",
         default=False,
         help="Re-process even if outputs exist",
+    )
+    @click.option(
+        "--force-all/--no-force-all",
+        default=False,
+        help=(
+            "Like --force, but also delete any cached .transcript.json so "
+            "the Gemini API is called again. Useful when the transcript "
+            "itself is wrong (model upgrade, vocabulary change, etc.). "
+            "Mutually exclusive with --force."
+        ),
     )
     @click.option(
         "--tier",
@@ -371,6 +382,7 @@ def _make_command() -> click.Command:
         transcript_json_file: str | None,
         metadata_json_file: str | None,
         force: bool,
+        force_all: bool,
         tier: str,
         line_interval_secs: float,
         paragraph_interval_secs: float,
@@ -397,6 +409,15 @@ def _make_command() -> click.Command:
             raise click.UsageError(
                 "--loop-until-no-input and --loop-always are mutually "
                 "exclusive. Pick one."
+            )
+        # ``--force`` re-renders outputs from an existing transcript;
+        # ``--force-all`` deletes the cached transcript so the API is
+        # called again. Both together would be ambiguous -- pick one.
+        if force and force_all:
+            raise click.UsageError(
+                "--force and --force-all are mutually exclusive. "
+                "Use --force to re-render outputs from the cached "
+                "transcript, or --force-all to also redo the API call."
             )
         # Parse the comma- or semicolon-separated --gemini-api-keys list.
         # Drop blanks, preserve order, drop dupes.
@@ -439,6 +460,7 @@ def _make_command() -> click.Command:
                 transcript_json_file=transcript_json_file,
                 metadata_json_file=metadata_json_file,
                 force=force,
+                force_all=force_all,
                 tier=tier,
                 line_interval_secs=line_interval_secs,
                 paragraph_interval_secs=paragraph_interval_secs,
@@ -566,6 +588,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
 
     if opts.force:
         tokens.append("--force")
+    if opts.force_all:
+        tokens.append("--force-all")
     if opts.log_level != "info":
         tokens.extend(["--log-level", opts.log_level])
 
@@ -837,6 +861,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                     metadata_json_file=opts.metadata_json_file,
                     tier=opts.tier,
                     force=opts.force,
+                    force_all=opts.force_all,
                     line_interval_secs=opts.line_interval_secs,
                     paragraph_interval_secs=opts.paragraph_interval_secs,
                     request_interval_secs=opts.request_interval_secs,
