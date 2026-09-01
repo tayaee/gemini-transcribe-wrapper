@@ -15,6 +15,7 @@ class TranscribeStatus(str, Enum):
     LOCKED = "locked"
     FAILED = "failed"
     NOT_FOUND = "not_found"
+    BLACKLISTED = "blacklisted"
 
 
 class TranscribeInput(BaseModel):

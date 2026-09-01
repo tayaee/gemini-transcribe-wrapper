@@ -462,6 +462,33 @@ def _process_one(
             error=f"Input file not found: {input_file}",
         )
 
+    # Blacklist check (issue-002, spec §4.2): if this file was previously
+    # observed to produce a non-429 error, skip silently until the TTL
+    # elapses. Avoids wasting API quota on poisoned inputs (corrupted,
+    # unsupported codec, file too large, etc.).
+    if gemini_api_keys:
+        from .blacklist import InputBlacklist
+        from .usage_counter import cache_dir
+
+        first_key = gemini_api_keys[0]
+        key_tail = first_key[-8:] if len(first_key) >= 8 else first_key
+        bl = InputBlacklist(
+            path=input_file,
+            cache_dir=cache_dir() / key_tail,
+            ttl_secs=21_600,
+        )
+        if bl.is_blacklisted():
+            logger.info(
+                "Skipping %s: file is on the input blacklist (non-429 "
+                "error within the last 6h). Use --force to bypass.",
+                input_file,
+            )
+            return TranscribeResult(
+                input=echo,
+                status=TranscribeStatus.BLACKLISTED,
+                error="file is on the input blacklist (non-429 error)",
+            )
+
     lock_path = out_dir / f"{out_stem.name}.lck"
     lock = FileLock(str(lock_path))
     try:
@@ -787,8 +814,26 @@ def _process_one(
             )
             raise QuotaExceededError(input_file, exc) from exc
         # On failure: keep intermediate mp3 files for resume. Report them as
-        # leftover so the caller can clean up if desired.
+        # leftover so the caller can clean up if desired. Also blacklist
+        # the input file (issue-002, spec §4.2) so subsequent passes skip
+        # it instead of burning more API quota on the same poison input.
         logger.error("Failed processing %s: %s", input_file, exc)
+        if gemini_api_keys:
+            from .blacklist import InputBlacklist
+            from .stt import _extract_status_code
+            from .usage_counter import cache_dir
+
+            first_key = gemini_api_keys[0]
+            key_tail = first_key[-8:] if len(first_key) >= 8 else first_key
+            bl = InputBlacklist(
+                path=input_file,
+                cache_dir=cache_dir() / key_tail,
+                ttl_secs=21_600,
+            )
+            try:
+                bl.add(status=_extract_status_code(exc))
+            except Exception as bl_exc:  # noqa: BLE001 - best-effort
+                logger.debug("Blacklist add failed for %s: %s", input_file, bl_exc)
         if ctx is not None:
             leftover = _collect_leftover(ctx, chunks=chunks or None, keep_chunks=True)
         else:

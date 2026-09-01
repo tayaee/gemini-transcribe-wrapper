@@ -68,3 +68,27 @@ against the blacklist before any API call.
   400 and 500 go to separate files because the failure category is
   semantically different (client error vs server error) and a future
   operator may want to clear them independently.
+
+## 구현 결과
+
+- **구현 완료 일시**: 2026-09-01
+- **변경 파일**:
+  - `src/gemini_transcribe_wrapper/blacklist.py` (new) —
+    `InputBlacklist` dataclass with `is_blacklisted()` / `add()` /
+    atomic JSON persistence, status-bucketed files
+    (`http-status-{code}.json`), TTL clamp to [60, 604800].
+  - `src/gemini_transcribe_wrapper/models.py` — `TranscribeStatus.BLACKLISTED = "blacklisted"`.
+  - `src/gemini_transcribe_wrapper/api.py` — blacklist check before
+    `lock.acquire()` in `_process_one`; blacklist add in the
+    non-429 except path (best-effort, debug-level on failure).
+  - `tests/test_blacklist.py` (new) — 17 tests covering atomic write,
+    TTL semantics, absolute-path keying, status-code bucketing,
+    `BLACKLISTED` enum, api.py integration.
+  - `regression-tests/verify-issue-002.sh` (new) — mechanical checks.
+- **계획과의 차이**: 없음. 단, `--input-blacklist-ttl-secs` CLI 옵션은
+  issue-002 범위에서 제외하고 TTL 상수 (21600s) 만 적용. `--loop*` driver
+  가 blacklist 를 consult 하는 경로는 issue-001 에서 처리.
+- **검증 결과**:
+  - `regression-tests/verify-issue-002.sh` → exit 0
+  - `uv run ruff check --fix` → clean
+  - `uv run pytest` → 270 passed
