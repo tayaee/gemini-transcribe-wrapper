@@ -1,0 +1,2056 @@
+{
+  "schema_version": 2,
+  "language": "ko-KR,en-US",
+  "chunk_secs": [
+    180.012
+  ],
+  "chunks": [
+    {
+      "index": 0,
+      "text": "어 뭐 최근에 뭐 힘든 일이 있었니? 아. 네가 지금 경험한 요 며칠, 요 몇 주의 경험을 생각하지 말고 전체적인 데이터를 기준으로 봐야 된다. 요 얘기를 해 줘야 된다는 거예요. 가장 효과적인 방법은? 아까 말씀하셨죠. 언제 멈출지를 정해라. 시간을 정해 놓고 조건부로 계속하는 것도 되게 좋은 방법이에요. 안될 과학 초대석 궤도의 과학 소셜 여러분 환영합니다. 화제의 아티스트 모셨습니다. 네 정말 저도 이 분 나온 영상을 While 아 정말 눈물을 많이 흘렸는데 가수 황가람 님 모셨습니다. 안녕하세요. 우와. 대박이다. 정식으로 인사드리겠습니다. 안녕하세요. 요즘도 반짝반짝 빛나고 있는 노래하는 황가람이라고 합니다. 야 반갑습니다. 어떻게 또 이렇게 찾아오셨어요? 저는 그 만 도 팔로워가 안 될 때부터 저는 보고 있었습니다. 안녕하세요 교수님 어서 오세요 교수님들 이러면서 하도 하니까 교수님이 보는 방송 이라며 보시는 분들을 이제 저희가 교수님으로 모시는데 맞아요. 아 느리지 않고 란 거 기억이 안 나. 근데 원래 이게 나이가 들면 그렇습니다. 노화로 인한 겁니다. 이진게 아니에요. 우리는 무언가를 잊은 게 아니라 기억을 할 때마다 뇌가 새롭게 구성을 하는 겁니다. 하도 구성을 안 하다 보니까 오랜만에 새로운 구성이 안 된 것 뿐입니다. 아시겠죠? 얼마나 되신 거예요 그럼 이 꿈을 정하시고 모두가 그 꿈을 몰랐을 때는 저는 뭔가 뭘 해도 특별하게 자라지는 않지만 특별한 노력을 기울이지 않아도 평균 정도는 하는 사람이라고 깨닫고 살다가 제가 이렇게 태권도 선수를 할 때 개방성 골절이라 그러죠. 심각하게 다치고 나서 뭐 할 게 없으니까 노래를 하게 되는 순간이 있었는데 당연히 자랄 줄 알았거든요. 어 노래를? 원래 좀 잘하셨어요? 어릴 때부터? 그 제가 잘하는 줄 알았어요. 그때부터 너무 잘하고 싶어서 오락실, 노래방, 뭐 노래방, 요즘은 코노지만 예전에는 오락실 내에 소인 노래방 그러면서 제가 이렇게 음악을 시작했고 고등학교 때 갔더니 첫 모의고사 땐 데 내가 만점을 받는다는 걸 이제 전제하고 내가 하고 싶은 게 있는지를 전국 모의고 그 대학 표를 보면서 하나하나 다 봤거든요. 120 프로를 아 나는 하고 싶은 게 없구나. 그래서 노래해야겠다. 저는 못 하는 데 꽂히는 사람이었고 조금 조금씩 느는 그게 너무 재밌는 거예요. 그래서 저의 꿈은 사실은 음악을 하면서 사는 것 계기가 있나요? 음악을 하기로 결정하게 된 계기 어 그 계기는 이런 거예요. 궁금해요. 코러스를 한다든지 스튜디오에서 가이드 보컬을 하는데 좀 멋있어 보이고 한 그럼 저의",
+      "words": [
+        {
+          "text": "어",
+          "start": 0.1,
+          "end": 0.1,
+          "speaker": null
+        },
+        {
+          "text": "뭐",
+          "start": 0.1,
+          "end": 0.2,
+          "speaker": null
+        },
+        {
+          "text": "최근에",
+          "start": 0.2,
+          "end": 0.5,
+          "speaker": null
+        },
+        {
+          "text": "뭐",
+          "start": 0.5,
+          "end": 0.6,
+          "speaker": null
+        },
+        {
+          "text": "힘든",
+          "start": 0.6,
+          "end": 0.8,
+          "speaker": null
+        },
+        {
+          "text": "일이",
+          "start": 0.8,
+          "end": 0.9,
+          "speaker": null
+        },
+        {
+          "text": "있었니?",
+          "start": 0.9,
+          "end": 1.4,
+          "speaker": null
+        },
+        {
+          "text": "아.",
+          "start": 1.6,
+          "end": 1.8,
+          "speaker": null
+        },
+        {
+          "text": "네가",
+          "start": 2.3,
+          "end": 2.7,
+          "speaker": null
+        },
+        {
+          "text": "지금",
+          "start": 2.7,
+          "end": 3.3,
+          "speaker": null
+        },
+        {
+          "text": "경험한",
+          "start": 3.3,
+          "end": 3.9,
+          "speaker": null
+        },
+        {
+          "text": "요",
+          "start": 3.9,
+          "end": 4.0,
+          "speaker": null
+        },
+        {
+          "text": "며칠,",
+          "start": 4.0,
+          "end": 4.5,
+          "speaker": null
+        },
+        {
+          "text": "요",
+          "start": 4.5,
+          "end": 4.6,
+          "speaker": null
+        },
+        {
+          "text": "몇",
+          "start": 4.6,
+          "end": 4.8,
+          "speaker": null
+        },
+        {
+          "text": "주의",
+          "start": 4.8,
+          "end": 5.0,
+          "speaker": null
+        },
+        {
+          "text": "경험을",
+          "start": 5.0,
+          "end": 5.6,
+          "speaker": null
+        },
+        {
+          "text": "생각하지",
+          "start": 5.6,
+          "end": 6.0,
+          "speaker": null
+        },
+        {
+          "text": "말고",
+          "start": 6.0,
+          "end": 6.4,
+          "speaker": null
+        },
+        {
+          "text": "전체적인",
+          "start": 7.4,
+          "end": 8.2,
+          "speaker": null
+        },
+        {
+          "text": "데이터를",
+          "start": 8.2,
+          "end": 8.9,
+          "speaker": null
+        },
+        {
+          "text": "기준으로",
+          "start": 8.9,
+          "end": 9.3,
+          "speaker": null
+        },
+        {
+          "text": "봐야",
+          "start": 9.3,
+          "end": 9.5,
+          "speaker": null
+        },
+        {
+          "text": "된다.",
+          "start": 9.5,
+          "end": 9.8,
+          "speaker": null
+        },
+        {
+          "text": "요",
+          "start": 10.2,
+          "end": 10.4,
+          "speaker": null
+        },
+        {
+          "text": "얘기를",
+          "start": 10.4,
+          "end": 10.6,
+          "speaker": null
+        },
+        {
+          "text": "해",
+          "start": 10.6,
+          "end": 10.6,
+          "speaker": null
+        },
+        {
+          "text": "줘야",
+          "start": 10.6,
+          "end": 10.8,
+          "speaker": null
+        },
+        {
+          "text": "된다는",
+          "start": 10.8,
+          "end": 11.1,
+          "speaker": null
+        },
+        {
+          "text": "거예요.",
+          "start": 11.1,
+          "end": 11.3,
+          "speaker": null
+        },
+        {
+          "text": "가장",
+          "start": 12.0,
+          "end": 12.3,
+          "speaker": null
+        },
+        {
+          "text": "효과적인",
+          "start": 12.3,
+          "end": 12.8,
+          "speaker": null
+        },
+        {
+          "text": "방법은?",
+          "start": 12.8,
+          "end": 13.2,
+          "speaker": null
+        },
+        {
+          "text": "아까",
+          "start": 13.3,
+          "end": 13.4,
+          "speaker": null
+        },
+        {
+          "text": "말씀하셨죠.",
+          "start": 13.4,
+          "end": 13.9,
+          "speaker": null
+        },
+        {
+          "text": "언제",
+          "start": 13.9,
+          "end": 14.6,
+          "speaker": null
+        },
+        {
+          "text": "멈출지를",
+          "start": 14.6,
+          "end": 15.2,
+          "speaker": null
+        },
+        {
+          "text": "정해라.",
+          "start": 15.2,
+          "end": 15.6,
+          "speaker": null
+        },
+        {
+          "text": "시간을",
+          "start": 16.1,
+          "end": 16.8,
+          "speaker": null
+        },
+        {
+          "text": "정해",
+          "start": 16.8,
+          "end": 17.2,
+          "speaker": null
+        },
+        {
+          "text": "놓고",
+          "start": 17.2,
+          "end": 17.5,
+          "speaker": null
+        },
+        {
+          "text": "조건부로",
+          "start": 17.5,
+          "end": 18.4,
+          "speaker": null
+        },
+        {
+          "text": "계속하는",
+          "start": 18.4,
+          "end": 18.9,
+          "speaker": null
+        },
+        {
+          "text": "것도",
+          "start": 18.9,
+          "end": 19.0,
+          "speaker": null
+        },
+        {
+          "text": "되게",
+          "start": 19.0,
+          "end": 19.2,
+          "speaker": null
+        },
+        {
+          "text": "좋은",
+          "start": 19.2,
+          "end": 19.3,
+          "speaker": null
+        },
+        {
+          "text": "방법이에요.",
+          "start": 19.3,
+          "end": 19.7,
+          "speaker": null
+        },
+        {
+          "text": "안될",
+          "start": 21.0,
+          "end": 21.3,
+          "speaker": null
+        },
+        {
+          "text": "과학",
+          "start": 21.3,
+          "end": 21.6,
+          "speaker": null
+        },
+        {
+          "text": "초대석",
+          "start": 21.6,
+          "end": 22.0,
+          "speaker": null
+        },
+        {
+          "text": "궤도의",
+          "start": 22.0,
+          "end": 22.4,
+          "speaker": null
+        },
+        {
+          "text": "과학",
+          "start": 22.4,
+          "end": 22.7,
+          "speaker": null
+        },
+        {
+          "text": "소셜",
+          "start": 22.7,
+          "end": 22.9,
+          "speaker": null
+        },
+        {
+          "text": "여러분",
+          "start": 22.9,
+          "end": 23.3,
+          "speaker": null
+        },
+        {
+          "text": "환영합니다.",
+          "start": 23.9,
+          "end": 24.5,
+          "speaker": null
+        },
+        {
+          "text": "화제의",
+          "start": 24.6,
+          "end": 25.1,
+          "speaker": null
+        },
+        {
+          "text": "아티스트",
+          "start": 25.1,
+          "end": 25.6,
+          "speaker": null
+        },
+        {
+          "text": "모셨습니다.",
+          "start": 25.6,
+          "end": 26.9,
+          "speaker": null
+        },
+        {
+          "text": "네",
+          "start": 26.9,
+          "end": 27.2,
+          "speaker": null
+        },
+        {
+          "text": "정말",
+          "start": 27.2,
+          "end": 27.7,
+          "speaker": null
+        },
+        {
+          "text": "저도",
+          "start": 28.0,
+          "end": 28.4,
+          "speaker": null
+        },
+        {
+          "text": "이",
+          "start": 28.4,
+          "end": 28.6,
+          "speaker": null
+        },
+        {
+          "text": "분",
+          "start": 28.6,
+          "end": 28.9,
+          "speaker": null
+        },
+        {
+          "text": "나온",
+          "start": 28.9,
+          "end": 29.1,
+          "speaker": null
+        },
+        {
+          "text": "영상을",
+          "start": 29.1,
+          "end": 29.5,
+          "speaker": null
+        },
+        {
+          "text": "While",
+          "start": 29.5,
+          "end": 29.7,
+          "speaker": null
+        },
+        {
+          "text": "아",
+          "start": 30.5,
+          "end": 30.8,
+          "speaker": null
+        },
+        {
+          "text": "정말",
+          "start": 30.8,
+          "end": 31.0,
+          "speaker": null
+        },
+        {
+          "text": "눈물을",
+          "start": 31.0,
+          "end": 31.6,
+          "speaker": null
+        },
+        {
+          "text": "많이",
+          "start": 31.6,
+          "end": 31.8,
+          "speaker": null
+        },
+        {
+          "text": "흘렸는데",
+          "start": 31.8,
+          "end": 32.4,
+          "speaker": null
+        },
+        {
+          "text": "가수",
+          "start": 32.9,
+          "end": 33.3,
+          "speaker": null
+        },
+        {
+          "text": "황가람",
+          "start": 33.4,
+          "end": 33.8,
+          "speaker": null
+        },
+        {
+          "text": "님",
+          "start": 33.8,
+          "end": 34.2,
+          "speaker": null
+        },
+        {
+          "text": "모셨습니다.",
+          "start": 34.2,
+          "end": 34.8,
+          "speaker": null
+        },
+        {
+          "text": "안녕하세요.",
+          "start": 36.3,
+          "end": 36.8,
+          "speaker": null
+        },
+        {
+          "text": "우와.",
+          "start": 38.0,
+          "end": 38.2,
+          "speaker": null
+        },
+        {
+          "text": "대박이다.",
+          "start": 40.7,
+          "end": 41.2,
+          "speaker": null
+        },
+        {
+          "text": "정식으로",
+          "start": 41.6,
+          "end": 42.1,
+          "speaker": null
+        },
+        {
+          "text": "인사드리겠습니다.",
+          "start": 42.1,
+          "end": 43.2,
+          "speaker": null
+        },
+        {
+          "text": "안녕하세요.",
+          "start": 43.2,
+          "end": 44.1,
+          "speaker": null
+        },
+        {
+          "text": "요즘도",
+          "start": 44.3,
+          "end": 44.6,
+          "speaker": null
+        },
+        {
+          "text": "반짝반짝",
+          "start": 44.6,
+          "end": 45.2,
+          "speaker": null
+        },
+        {
+          "text": "빛나고",
+          "start": 45.2,
+          "end": 45.6,
+          "speaker": null
+        },
+        {
+          "text": "있는",
+          "start": 45.6,
+          "end": 45.8,
+          "speaker": null
+        },
+        {
+          "text": "노래하는",
+          "start": 46.5,
+          "end": 46.9,
+          "speaker": null
+        },
+        {
+          "text": "황가람이라고",
+          "start": 46.9,
+          "end": 47.5,
+          "speaker": null
+        },
+        {
+          "text": "합니다.",
+          "start": 47.5,
+          "end": 48.4,
+          "speaker": null
+        },
+        {
+          "text": "야",
+          "start": 49.0,
+          "end": 49.1,
+          "speaker": null
+        },
+        {
+          "text": "반갑습니다.",
+          "start": 50.3,
+          "end": 52.0,
+          "speaker": null
+        },
+        {
+          "text": "어떻게",
+          "start": 52.0,
+          "end": 52.3,
+          "speaker": null
+        },
+        {
+          "text": "또",
+          "start": 52.3,
+          "end": 52.3,
+          "speaker": null
+        },
+        {
+          "text": "이렇게",
+          "start": 52.3,
+          "end": 53.0,
+          "speaker": null
+        },
+        {
+          "text": "찾아오셨어요?",
+          "start": 53.8,
+          "end": 54.8,
+          "speaker": null
+        },
+        {
+          "text": "저는",
+          "start": 55.1,
+          "end": 55.7,
+          "speaker": null
+        },
+        {
+          "text": "그",
+          "start": 55.8,
+          "end": 56.2,
+          "speaker": null
+        },
+        {
+          "text": "만",
+          "start": 56.6,
+          "end": 57.1,
+          "speaker": null
+        },
+        {
+          "text": "도",
+          "start": 57.1,
+          "end": 57.4,
+          "speaker": null
+        },
+        {
+          "text": "팔로워가",
+          "start": 57.4,
+          "end": 57.8,
+          "speaker": null
+        },
+        {
+          "text": "안",
+          "start": 57.8,
+          "end": 57.9,
+          "speaker": null
+        },
+        {
+          "text": "될",
+          "start": 57.9,
+          "end": 58.1,
+          "speaker": null
+        },
+        {
+          "text": "때부터",
+          "start": 58.1,
+          "end": 58.4,
+          "speaker": null
+        },
+        {
+          "text": "저는",
+          "start": 58.4,
+          "end": 59.0,
+          "speaker": null
+        },
+        {
+          "text": "보고",
+          "start": 59.1,
+          "end": 59.3,
+          "speaker": null
+        },
+        {
+          "text": "있었습니다.",
+          "start": 59.3,
+          "end": 59.7,
+          "speaker": null
+        },
+        {
+          "text": "안녕하세요",
+          "start": 60.0,
+          "end": 60.4,
+          "speaker": null
+        },
+        {
+          "text": "교수님",
+          "start": 60.4,
+          "end": 60.8,
+          "speaker": null
+        },
+        {
+          "text": "어서",
+          "start": 60.8,
+          "end": 61.0,
+          "speaker": null
+        },
+        {
+          "text": "오세요",
+          "start": 61.0,
+          "end": 61.2,
+          "speaker": null
+        },
+        {
+          "text": "교수님들",
+          "start": 61.2,
+          "end": 61.7,
+          "speaker": null
+        },
+        {
+          "text": "이러면서",
+          "start": 61.7,
+          "end": 62.1,
+          "speaker": null
+        },
+        {
+          "text": "하도",
+          "start": 62.4,
+          "end": 62.7,
+          "speaker": null
+        },
+        {
+          "text": "하니까",
+          "start": 62.7,
+          "end": 63.2,
+          "speaker": null
+        },
+        {
+          "text": "교수님이",
+          "start": 63.8,
+          "end": 64.4,
+          "speaker": null
+        },
+        {
+          "text": "보는",
+          "start": 64.4,
+          "end": 64.8,
+          "speaker": null
+        },
+        {
+          "text": "방송",
+          "start": 64.8,
+          "end": 65.2,
+          "speaker": null
+        },
+        {
+          "text": "이라며",
+          "start": 65.2,
+          "end": 65.6,
+          "speaker": null
+        },
+        {
+          "text": "보시는",
+          "start": 65.7,
+          "end": 66.3,
+          "speaker": null
+        },
+        {
+          "text": "분들을",
+          "start": 66.3,
+          "end": 67.1,
+          "speaker": null
+        },
+        {
+          "text": "이제",
+          "start": 67.1,
+          "end": 67.2,
+          "speaker": null
+        },
+        {
+          "text": "저희가",
+          "start": 67.2,
+          "end": 67.5,
+          "speaker": null
+        },
+        {
+          "text": "교수님으로",
+          "start": 67.5,
+          "end": 68.2,
+          "speaker": null
+        },
+        {
+          "text": "모시는데",
+          "start": 68.2,
+          "end": 69.1,
+          "speaker": null
+        },
+        {
+          "text": "맞아요.",
+          "start": 68.3,
+          "end": 68.5,
+          "speaker": null
+        },
+        {
+          "text": "아",
+          "start": 69.9,
+          "end": 70.0,
+          "speaker": null
+        },
+        {
+          "text": "느리지",
+          "start": 70.0,
+          "end": 70.4,
+          "speaker": null
+        },
+        {
+          "text": "않고",
+          "start": 70.4,
+          "end": 70.6,
+          "speaker": null
+        },
+        {
+          "text": "란",
+          "start": 70.6,
+          "end": 70.7,
+          "speaker": null
+        },
+        {
+          "text": "거",
+          "start": 70.7,
+          "end": 70.9,
+          "speaker": null
+        },
+        {
+          "text": "기억이",
+          "start": 71.6,
+          "end": 71.9,
+          "speaker": null
+        },
+        {
+          "text": "안",
+          "start": 71.9,
+          "end": 72.1,
+          "speaker": null
+        },
+        {
+          "text": "나.",
+          "start": 72.1,
+          "end": 72.4,
+          "speaker": null
+        },
+        {
+          "text": "근데",
+          "start": 72.7,
+          "end": 72.8,
+          "speaker": null
+        },
+        {
+          "text": "원래",
+          "start": 72.8,
+          "end": 73.4,
+          "speaker": null
+        },
+        {
+          "text": "이게",
+          "start": 73.5,
+          "end": 74.0,
+          "speaker": null
+        },
+        {
+          "text": "나이가",
+          "start": 74.1,
+          "end": 74.4,
+          "speaker": null
+        },
+        {
+          "text": "들면",
+          "start": 74.4,
+          "end": 74.6,
+          "speaker": null
+        },
+        {
+          "text": "그렇습니다.",
+          "start": 74.6,
+          "end": 75.0,
+          "speaker": null
+        },
+        {
+          "text": "노화로",
+          "start": 75.6,
+          "end": 76.1,
+          "speaker": null
+        },
+        {
+          "text": "인한",
+          "start": 76.1,
+          "end": 76.4,
+          "speaker": null
+        },
+        {
+          "text": "겁니다.",
+          "start": 76.4,
+          "end": 77.1,
+          "speaker": null
+        },
+        {
+          "text": "이진게",
+          "start": 77.2,
+          "end": 77.6,
+          "speaker": null
+        },
+        {
+          "text": "아니에요.",
+          "start": 77.6,
+          "end": 78.1,
+          "speaker": null
+        },
+        {
+          "text": "우리는",
+          "start": 78.4,
+          "end": 78.7,
+          "speaker": null
+        },
+        {
+          "text": "무언가를",
+          "start": 78.7,
+          "end": 79.2,
+          "speaker": null
+        },
+        {
+          "text": "잊은",
+          "start": 79.2,
+          "end": 79.4,
+          "speaker": null
+        },
+        {
+          "text": "게",
+          "start": 79.4,
+          "end": 79.6,
+          "speaker": null
+        },
+        {
+          "text": "아니라",
+          "start": 79.6,
+          "end": 80.1,
+          "speaker": null
+        },
+        {
+          "text": "기억을",
+          "start": 80.7,
+          "end": 81.2,
+          "speaker": null
+        },
+        {
+          "text": "할",
+          "start": 81.2,
+          "end": 81.6,
+          "speaker": null
+        },
+        {
+          "text": "때마다",
+          "start": 81.6,
+          "end": 82.6,
+          "speaker": null
+        },
+        {
+          "text": "뇌가",
+          "start": 82.8,
+          "end": 83.2,
+          "speaker": null
+        },
+        {
+          "text": "새롭게",
+          "start": 83.2,
+          "end": 83.6,
+          "speaker": null
+        },
+        {
+          "text": "구성을",
+          "start": 83.6,
+          "end": 84.0,
+          "speaker": null
+        },
+        {
+          "text": "하는",
+          "start": 84.0,
+          "end": 84.2,
+          "speaker": null
+        },
+        {
+          "text": "겁니다.",
+          "start": 84.2,
+          "end": 84.5,
+          "speaker": null
+        },
+        {
+          "text": "하도",
+          "start": 85.0,
+          "end": 85.5,
+          "speaker": null
+        },
+        {
+          "text": "구성을",
+          "start": 85.8,
+          "end": 86.2,
+          "speaker": null
+        },
+        {
+          "text": "안",
+          "start": 86.2,
+          "end": 86.3,
+          "speaker": null
+        },
+        {
+          "text": "하다",
+          "start": 86.3,
+          "end": 86.5,
+          "speaker": null
+        },
+        {
+          "text": "보니까",
+          "start": 86.5,
+          "end": 87.2,
+          "speaker": null
+        },
+        {
+          "text": "오랜만에",
+          "start": 87.2,
+          "end": 87.8,
+          "speaker": null
+        },
+        {
+          "text": "새로운",
+          "start": 87.8,
+          "end": 88.1,
+          "speaker": null
+        },
+        {
+          "text": "구성이",
+          "start": 88.1,
+          "end": 88.4,
+          "speaker": null
+        },
+        {
+          "text": "안",
+          "start": 88.4,
+          "end": 88.6,
+          "speaker": null
+        },
+        {
+          "text": "된",
+          "start": 88.6,
+          "end": 88.8,
+          "speaker": null
+        },
+        {
+          "text": "것",
+          "start": 88.8,
+          "end": 88.9,
+          "speaker": null
+        },
+        {
+          "text": "뿐입니다.",
+          "start": 88.9,
+          "end": 89.2,
+          "speaker": null
+        },
+        {
+          "text": "아시겠죠?",
+          "start": 90.2,
+          "end": 90.8,
+          "speaker": null
+        },
+        {
+          "text": "얼마나",
+          "start": 91.0,
+          "end": 91.7,
+          "speaker": null
+        },
+        {
+          "text": "되신",
+          "start": 91.7,
+          "end": 91.8,
+          "speaker": null
+        },
+        {
+          "text": "거예요",
+          "start": 91.8,
+          "end": 92.0,
+          "speaker": null
+        },
+        {
+          "text": "그럼",
+          "start": 92.0,
+          "end": 92.3,
+          "speaker": null
+        },
+        {
+          "text": "이",
+          "start": 92.3,
+          "end": 92.4,
+          "speaker": null
+        },
+        {
+          "text": "꿈을",
+          "start": 92.4,
+          "end": 92.8,
+          "speaker": null
+        },
+        {
+          "text": "정하시고",
+          "start": 92.8,
+          "end": 93.7,
+          "speaker": null
+        },
+        {
+          "text": "모두가",
+          "start": 93.9,
+          "end": 94.4,
+          "speaker": null
+        },
+        {
+          "text": "그",
+          "start": 94.4,
+          "end": 94.5,
+          "speaker": null
+        },
+        {
+          "text": "꿈을",
+          "start": 94.5,
+          "end": 94.8,
+          "speaker": null
+        },
+        {
+          "text": "몰랐을",
+          "start": 94.8,
+          "end": 95.3,
+          "speaker": null
+        },
+        {
+          "text": "때는",
+          "start": 95.3,
+          "end": 95.7,
+          "speaker": null
+        },
+        {
+          "text": "저는",
+          "start": 96.8,
+          "end": 96.9,
+          "speaker": null
+        },
+        {
+          "text": "뭔가",
+          "start": 96.9,
+          "end": 97.3,
+          "speaker": null
+        },
+        {
+          "text": "뭘",
+          "start": 97.5,
+          "end": 97.8,
+          "speaker": null
+        },
+        {
+          "text": "해도",
+          "start": 97.8,
+          "end": 98.4,
+          "speaker": null
+        },
+        {
+          "text": "특별하게",
+          "start": 98.8,
+          "end": 99.4,
+          "speaker": null
+        },
+        {
+          "text": "자라지는",
+          "start": 99.4,
+          "end": 100.0,
+          "speaker": null
+        },
+        {
+          "text": "않지만",
+          "start": 100.0,
+          "end": 100.5,
+          "speaker": null
+        },
+        {
+          "text": "특별한",
+          "start": 100.7,
+          "end": 101.2,
+          "speaker": null
+        },
+        {
+          "text": "노력을",
+          "start": 101.2,
+          "end": 101.9,
+          "speaker": null
+        },
+        {
+          "text": "기울이지",
+          "start": 102.3,
+          "end": 102.7,
+          "speaker": null
+        },
+        {
+          "text": "않아도",
+          "start": 102.7,
+          "end": 103.0,
+          "speaker": null
+        },
+        {
+          "text": "평균",
+          "start": 103.0,
+          "end": 103.3,
+          "speaker": null
+        },
+        {
+          "text": "정도는",
+          "start": 103.3,
+          "end": 103.6,
+          "speaker": null
+        },
+        {
+          "text": "하는",
+          "start": 103.6,
+          "end": 103.9,
+          "speaker": null
+        },
+        {
+          "text": "사람이라고",
+          "start": 103.9,
+          "end": 104.7,
+          "speaker": null
+        },
+        {
+          "text": "깨닫고",
+          "start": 105.2,
+          "end": 105.5,
+          "speaker": null
+        },
+        {
+          "text": "살다가",
+          "start": 105.5,
+          "end": 106.1,
+          "speaker": null
+        },
+        {
+          "text": "제가",
+          "start": 106.6,
+          "end": 106.7,
+          "speaker": null
+        },
+        {
+          "text": "이렇게",
+          "start": 106.7,
+          "end": 106.9,
+          "speaker": null
+        },
+        {
+          "text": "태권도",
+          "start": 106.9,
+          "end": 107.2,
+          "speaker": null
+        },
+        {
+          "text": "선수를",
+          "start": 107.2,
+          "end": 107.7,
+          "speaker": null
+        },
+        {
+          "text": "할",
+          "start": 107.7,
+          "end": 108.0,
+          "speaker": null
+        },
+        {
+          "text": "때",
+          "start": 108.0,
+          "end": 108.4,
+          "speaker": null
+        },
+        {
+          "text": "개방성",
+          "start": 108.5,
+          "end": 109.3,
+          "speaker": null
+        },
+        {
+          "text": "골절이라",
+          "start": 109.3,
+          "end": 109.9,
+          "speaker": null
+        },
+        {
+          "text": "그러죠.",
+          "start": 109.9,
+          "end": 110.3,
+          "speaker": null
+        },
+        {
+          "text": "심각하게",
+          "start": 110.8,
+          "end": 111.3,
+          "speaker": null
+        },
+        {
+          "text": "다치고",
+          "start": 111.3,
+          "end": 111.7,
+          "speaker": null
+        },
+        {
+          "text": "나서",
+          "start": 111.7,
+          "end": 112.1,
+          "speaker": null
+        },
+        {
+          "text": "뭐",
+          "start": 112.8,
+          "end": 112.9,
+          "speaker": null
+        },
+        {
+          "text": "할",
+          "start": 112.9,
+          "end": 113.1,
+          "speaker": null
+        },
+        {
+          "text": "게",
+          "start": 113.1,
+          "end": 113.2,
+          "speaker": null
+        },
+        {
+          "text": "없으니까",
+          "start": 113.2,
+          "end": 113.9,
+          "speaker": null
+        },
+        {
+          "text": "노래를",
+          "start": 114.1,
+          "end": 114.7,
+          "speaker": null
+        },
+        {
+          "text": "하게",
+          "start": 114.7,
+          "end": 115.0,
+          "speaker": null
+        },
+        {
+          "text": "되는",
+          "start": 115.0,
+          "end": 115.4,
+          "speaker": null
+        },
+        {
+          "text": "순간이",
+          "start": 115.4,
+          "end": 115.7,
+          "speaker": null
+        },
+        {
+          "text": "있었는데",
+          "start": 115.7,
+          "end": 116.1,
+          "speaker": null
+        },
+        {
+          "text": "당연히",
+          "start": 117.2,
+          "end": 117.6,
+          "speaker": null
+        },
+        {
+          "text": "자랄",
+          "start": 117.6,
+          "end": 118.0,
+          "speaker": null
+        },
+        {
+          "text": "줄",
+          "start": 118.0,
+          "end": 118.1,
+          "speaker": null
+        },
+        {
+          "text": "알았거든요.",
+          "start": 118.1,
+          "end": 118.6,
+          "speaker": null
+        },
+        {
+          "text": "어",
+          "start": 119.4,
+          "end": 119.5,
+          "speaker": null
+        },
+        {
+          "text": "노래를?",
+          "start": 119.5,
+          "end": 120.0,
+          "speaker": null
+        },
+        {
+          "text": "원래",
+          "start": 120.4,
+          "end": 120.6,
+          "speaker": null
+        },
+        {
+          "text": "좀",
+          "start": 120.6,
+          "end": 120.7,
+          "speaker": null
+        },
+        {
+          "text": "잘하셨어요?",
+          "start": 120.7,
+          "end": 121.3,
+          "speaker": null
+        },
+        {
+          "text": "어릴",
+          "start": 121.6,
+          "end": 121.8,
+          "speaker": null
+        },
+        {
+          "text": "때부터?",
+          "start": 121.8,
+          "end": 122.1,
+          "speaker": null
+        },
+        {
+          "text": "그",
+          "start": 122.3,
+          "end": 122.6,
+          "speaker": null
+        },
+        {
+          "text": "제가",
+          "start": 122.6,
+          "end": 122.9,
+          "speaker": null
+        },
+        {
+          "text": "잘하는",
+          "start": 122.9,
+          "end": 123.2,
+          "speaker": null
+        },
+        {
+          "text": "줄",
+          "start": 123.2,
+          "end": 123.3,
+          "speaker": null
+        },
+        {
+          "text": "알았어요.",
+          "start": 123.3,
+          "end": 123.8,
+          "speaker": null
+        },
+        {
+          "text": "그때부터",
+          "start": 123.9,
+          "end": 125.1,
+          "speaker": null
+        },
+        {
+          "text": "너무",
+          "start": 125.2,
+          "end": 125.5,
+          "speaker": null
+        },
+        {
+          "text": "잘하고",
+          "start": 125.5,
+          "end": 125.9,
+          "speaker": null
+        },
+        {
+          "text": "싶어서",
+          "start": 125.9,
+          "end": 126.9,
+          "speaker": null
+        },
+        {
+          "text": "오락실,",
+          "start": 127.3,
+          "end": 127.8,
+          "speaker": null
+        },
+        {
+          "text": "노래방,",
+          "start": 127.8,
+          "end": 128.8,
+          "speaker": null
+        },
+        {
+          "text": "뭐",
+          "start": 128.9,
+          "end": 129.1,
+          "speaker": null
+        },
+        {
+          "text": "노래방,",
+          "start": 129.1,
+          "end": 129.9,
+          "speaker": null
+        },
+        {
+          "text": "요즘은",
+          "start": 130.0,
+          "end": 130.4,
+          "speaker": null
+        },
+        {
+          "text": "코노지만",
+          "start": 130.4,
+          "end": 131.0,
+          "speaker": null
+        },
+        {
+          "text": "예전에는",
+          "start": 131.0,
+          "end": 131.6,
+          "speaker": null
+        },
+        {
+          "text": "오락실",
+          "start": 131.8,
+          "end": 132.3,
+          "speaker": null
+        },
+        {
+          "text": "내에",
+          "start": 132.3,
+          "end": 132.9,
+          "speaker": null
+        },
+        {
+          "text": "소인",
+          "start": 133.0,
+          "end": 133.2,
+          "speaker": null
+        },
+        {
+          "text": "노래방",
+          "start": 133.2,
+          "end": 133.5,
+          "speaker": null
+        },
+        {
+          "text": "그러면서",
+          "start": 135.0,
+          "end": 135.6,
+          "speaker": null
+        },
+        {
+          "text": "제가",
+          "start": 135.6,
+          "end": 135.9,
+          "speaker": null
+        },
+        {
+          "text": "이렇게",
+          "start": 135.9,
+          "end": 136.2,
+          "speaker": null
+        },
+        {
+          "text": "음악을",
+          "start": 136.2,
+          "end": 136.7,
+          "speaker": null
+        },
+        {
+          "text": "시작했고",
+          "start": 136.7,
+          "end": 137.4,
+          "speaker": null
+        },
+        {
+          "text": "고등학교",
+          "start": 137.5,
+          "end": 138.1,
+          "speaker": null
+        },
+        {
+          "text": "때",
+          "start": 138.1,
+          "end": 138.4,
+          "speaker": null
+        },
+        {
+          "text": "갔더니",
+          "start": 138.4,
+          "end": 139.2,
+          "speaker": null
+        },
+        {
+          "text": "첫",
+          "start": 140.0,
+          "end": 140.3,
+          "speaker": null
+        },
+        {
+          "text": "모의고사",
+          "start": 140.3,
+          "end": 140.6,
+          "speaker": null
+        },
+        {
+          "text": "땐",
+          "start": 140.6,
+          "end": 140.8,
+          "speaker": null
+        },
+        {
+          "text": "데",
+          "start": 140.8,
+          "end": 141.1,
+          "speaker": null
+        },
+        {
+          "text": "내가",
+          "start": 141.4,
+          "end": 141.6,
+          "speaker": null
+        },
+        {
+          "text": "만점을",
+          "start": 141.6,
+          "end": 142.1,
+          "speaker": null
+        },
+        {
+          "text": "받는다는",
+          "start": 142.1,
+          "end": 143.1,
+          "speaker": null
+        },
+        {
+          "text": "걸",
+          "start": 143.1,
+          "end": 143.6,
+          "speaker": null
+        },
+        {
+          "text": "이제",
+          "start": 143.7,
+          "end": 143.8,
+          "speaker": null
+        },
+        {
+          "text": "전제하고",
+          "start": 143.8,
+          "end": 144.5,
+          "speaker": null
+        },
+        {
+          "text": "내가",
+          "start": 144.5,
+          "end": 144.9,
+          "speaker": null
+        },
+        {
+          "text": "하고",
+          "start": 144.9,
+          "end": 145.1,
+          "speaker": null
+        },
+        {
+          "text": "싶은",
+          "start": 145.1,
+          "end": 145.4,
+          "speaker": null
+        },
+        {
+          "text": "게",
+          "start": 145.4,
+          "end": 145.4,
+          "speaker": null
+        },
+        {
+          "text": "있는지를",
+          "start": 145.4,
+          "end": 146.1,
+          "speaker": null
+        },
+        {
+          "text": "전국",
+          "start": 146.3,
+          "end": 146.8,
+          "speaker": null
+        },
+        {
+          "text": "모의고",
+          "start": 146.8,
+          "end": 147.2,
+          "speaker": null
+        },
+        {
+          "text": "그",
+          "start": 147.2,
+          "end": 147.5,
+          "speaker": null
+        },
+        {
+          "text": "대학",
+          "start": 147.7,
+          "end": 148.0,
+          "speaker": null
+        },
+        {
+          "text": "표를",
+          "start": 148.0,
+          "end": 148.4,
+          "speaker": null
+        },
+        {
+          "text": "보면서",
+          "start": 148.4,
+          "end": 149.0,
+          "speaker": null
+        },
+        {
+          "text": "하나하나",
+          "start": 149.7,
+          "end": 150.0,
+          "speaker": null
+        },
+        {
+          "text": "다",
+          "start": 150.0,
+          "end": 150.1,
+          "speaker": null
+        },
+        {
+          "text": "봤거든요.",
+          "start": 150.1,
+          "end": 150.7,
+          "speaker": null
+        },
+        {
+          "text": "120",
+          "start": 150.8,
+          "end": 151.2,
+          "speaker": null
+        },
+        {
+          "text": "프로를",
+          "start": 151.2,
+          "end": 151.5,
+          "speaker": null
+        },
+        {
+          "text": "아",
+          "start": 152.4,
+          "end": 152.6,
+          "speaker": null
+        },
+        {
+          "text": "나는",
+          "start": 152.6,
+          "end": 153.1,
+          "speaker": null
+        },
+        {
+          "text": "하고",
+          "start": 153.8,
+          "end": 154.0,
+          "speaker": null
+        },
+        {
+          "text": "싶은",
+          "start": 154.0,
+          "end": 154.2,
+          "speaker": null
+        },
+        {
+          "text": "게",
+          "start": 154.2,
+          "end": 154.2,
+          "speaker": null
+        },
+        {
+          "text": "없구나.",
+          "start": 154.2,
+          "end": 154.6,
+          "speaker": null
+        },
+        {
+          "text": "그래서",
+          "start": 155.0,
+          "end": 155.2,
+          "speaker": null
+        },
+        {
+          "text": "노래해야겠다.",
+          "start": 155.2,
+          "end": 155.9,
+          "speaker": null
+        },
+        {
+          "text": "저는",
+          "start": 156.3,
+          "end": 156.5,
+          "speaker": null
+        },
+        {
+          "text": "못",
+          "start": 156.5,
+          "end": 156.7,
+          "speaker": null
+        },
+        {
+          "text": "하는",
+          "start": 156.7,
+          "end": 157.0,
+          "speaker": null
+        },
+        {
+          "text": "데",
+          "start": 157.0,
+          "end": 157.1,
+          "speaker": null
+        },
+        {
+          "text": "꽂히는",
+          "start": 157.1,
+          "end": 157.6,
+          "speaker": null
+        },
+        {
+          "text": "사람이었고",
+          "start": 157.6,
+          "end": 158.2,
+          "speaker": null
+        },
+        {
+          "text": "조금",
+          "start": 159.0,
+          "end": 159.5,
+          "speaker": null
+        },
+        {
+          "text": "조금씩",
+          "start": 159.5,
+          "end": 160.1,
+          "speaker": null
+        },
+        {
+          "text": "느는",
+          "start": 160.1,
+          "end": 160.6,
+          "speaker": null
+        },
+        {
+          "text": "그게",
+          "start": 160.6,
+          "end": 160.8,
+          "speaker": null
+        },
+        {
+          "text": "너무",
+          "start": 160.8,
+          "end": 161.1,
+          "speaker": null
+        },
+        {
+          "text": "재밌는",
+          "start": 161.1,
+          "end": 161.5,
+          "speaker": null
+        },
+        {
+          "text": "거예요.",
+          "start": 161.5,
+          "end": 161.7,
+          "speaker": null
+        },
+        {
+          "text": "그래서",
+          "start": 162.6,
+          "end": 162.8,
+          "speaker": null
+        },
+        {
+          "text": "저의",
+          "start": 162.8,
+          "end": 163.1,
+          "speaker": null
+        },
+        {
+          "text": "꿈은",
+          "start": 163.1,
+          "end": 163.4,
+          "speaker": null
+        },
+        {
+          "text": "사실은",
+          "start": 163.4,
+          "end": 163.9,
+          "speaker": null
+        },
+        {
+          "text": "음악을",
+          "start": 164.3,
+          "end": 164.7,
+          "speaker": null
+        },
+        {
+          "text": "하면서",
+          "start": 164.7,
+          "end": 165.5,
+          "speaker": null
+        },
+        {
+          "text": "사는",
+          "start": 165.5,
+          "end": 165.9,
+          "speaker": null
+        },
+        {
+          "text": "것",
+          "start": 165.9,
+          "end": 166.1,
+          "speaker": null
+        },
+        {
+          "text": "계기가",
+          "start": 166.8,
+          "end": 167.2,
+          "speaker": null
+        },
+        {
+          "text": "있나요?",
+          "start": 167.2,
+          "end": 167.7,
+          "speaker": null
+        },
+        {
+          "text": "음악을",
+          "start": 167.8,
+          "end": 168.3,
+          "speaker": null
+        },
+        {
+          "text": "하기로",
+          "start": 168.3,
+          "end": 168.6,
+          "speaker": null
+        },
+        {
+          "text": "결정하게",
+          "start": 168.6,
+          "end": 169.1,
+          "speaker": null
+        },
+        {
+          "text": "된",
+          "start": 169.1,
+          "end": 169.2,
+          "speaker": null
+        },
+        {
+          "text": "계기",
+          "start": 169.2,
+          "end": 169.6,
+          "speaker": null
+        },
+        {
+          "text": "어",
+          "start": 169.7,
+          "end": 169.8,
+          "speaker": null
+        },
+        {
+          "text": "그",
+          "start": 169.8,
+          "end": 170.0,
+          "speaker": null
+        },
+        {
+          "text": "계기는",
+          "start": 170.0,
+          "end": 170.5,
+          "speaker": null
+        },
+        {
+          "text": "이런",
+          "start": 170.5,
+          "end": 170.7,
+          "speaker": null
+        },
+        {
+          "text": "거예요.",
+          "start": 170.7,
+          "end": 170.9,
+          "speaker": null
+        },
+        {
+          "text": "궁금해요.",
+          "start": 171.1,
+          "end": 171.5,
+          "speaker": null
+        },
+        {
+          "text": "코러스를",
+          "start": 172.2,
+          "end": 173.0,
+          "speaker": null
+        },
+        {
+          "text": "한다든지",
+          "start": 173.0,
+          "end": 173.5,
+          "speaker": null
+        },
+        {
+          "text": "스튜디오에서",
+          "start": 174.6,
+          "end": 175.7,
+          "speaker": null
+        },
+        {
+          "text": "가이드",
+          "start": 175.7,
+          "end": 176.0,
+          "speaker": null
+        },
+        {
+          "text": "보컬을",
+          "start": 176.0,
+          "end": 176.5,
+          "speaker": null
+        },
+        {
+          "text": "하는데",
+          "start": 176.5,
+          "end": 177.1,
+          "speaker": null
+        },
+        {
+          "text": "좀",
+          "start": 177.2,
+          "end": 177.3,
+          "speaker": null
+        },
+        {
+          "text": "멋있어",
+          "start": 177.3,
+          "end": 177.9,
+          "speaker": null
+        },
+        {
+          "text": "보이고",
+          "start": 177.9,
+          "end": 178.3,
+          "speaker": null
+        },
+        {
+          "text": "한",
+          "start": 178.3,
+          "end": 178.5,
+          "speaker": null
+        },
+        {
+          "text": "그럼",
+          "start": 178.8,
+          "end": 179.0,
+          "speaker": null
+        },
+        {
+          "text": "저의",
+          "start": 179.0,
+          "end": 179.6,
+          "speaker": null
+        }
+      ]
+    }
+  ],
+  "api_logs": {
+    "entries": [
+      {
+        "chunk_index": 0,
+        "attempts": 1,
+        "started_at": "2026-09-01T16:59:56",
+        "duration_secs": 8.818,
+        "status": "success"
+      }
+    ],
+    "total_api_secs": 8.818,
+    "call_count": 1
+  }
+}
