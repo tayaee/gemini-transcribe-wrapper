@@ -813,9 +813,14 @@ class TranscribeClient:
                             log_path=getattr(self, "audit_jsonl_file", None),
                         )
                         logger.info(
-                            "Key ...%s hit 429 (daily quota); blacklisting "
-                            "and trying next active key.",
-                            key[-4:],
+                            "Removing key %s from the round-robin pool "
+                            "after a 429. It returns to the active pool "
+                            "once every live key has been exhausted.",
+                            (
+                                f"[redacted]{key[-4:]}"
+                                if len(key) > 4
+                                else "[redacted]"
+                            ),
                         )
                         last_quota_exc = first_exc
                         blacklisted_this_loop.append(key)

@@ -9,6 +9,7 @@ import shutil
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 import click
@@ -657,10 +658,40 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
         return 0
 
     log_level = getattr(logging, opts.log_level.upper())
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s %(levelname)s %(filename)s:%(lineno)s %(message)s",
+
+
+    class _TzFormatter(logging.Formatter):
+        """Formatter whose ``%(asctime)s`` includes the local tz offset.
+
+        ``logging.Formatter.formatTime`` defaults to ``time.localtime()``
+        which produces a tz-naive ``YYYY-MM-DD HH:MM:SS,fff`` — fine when
+        the reader knows the host's tz, ambiguous when logs are forwarded
+        or reviewed later. We use ``datetime.now().astimezone()`` so the
+        suffix (``+09:00`` etc.) is visible in every log line.
+        """
+
+        def formatTime(
+            self,
+            record: logging.LogRecord,
+            datefmt: str | None = None,
+        ) -> str:
+            return (
+                datetime.fromtimestamp(record.created)
+                .astimezone()
+                .isoformat(timespec="milliseconds")
+            )
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        _TzFormatter("%(asctime)s %(levelname)s %(filename)s:%(lineno)s %(message)s")
     )
+    root = logging.getLogger()
+    # Only install our tz-aware handler when the root logger has none.
+    # Tests attach their own handlers (pytest's ``caplog``); clobbering
+    # them would break log capture. Production starts with no handlers.
+    if not root.handlers:
+        root.addHandler(handler)
+    root.setLevel(log_level)
 
     start_time = time.monotonic()
 
