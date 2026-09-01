@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 import sys
 import time
 from dataclasses import dataclass, field
@@ -558,6 +559,86 @@ def _mask_cli_key(key: str) -> str:
     return f"{key[:4]}{'*' * (len(key) - 8)}{key[-4:]}"
 
 
+_OLD_WORKDIR_MAX_AGE_SECS = 24 * 3600
+_OLD_WORKDIR_SUFFIX = "-work"
+
+
+def _format_age(secs: float) -> str:
+    """Format a duration in seconds as a compact human age (e.g. ``2d 5h``, ``3h 20m``)."""
+    secs_int = max(0, int(secs))
+    days, rem = divmod(secs_int, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes or not parts:
+        parts.append(f"{minutes}m")
+    return " ".join(parts)
+
+
+def _resolve_temp_dir(opts: TranscribeOptions) -> Path:
+    """Return the absolute temp directory the wrapper uses for workdirs.
+
+    Mirrors the resolution in ``api._setup_workdir``: relative paths are
+    anchored to ``--output-dir`` when given, otherwise to the current
+    working directory. Returns the resolved path even if it does not yet
+    exist on disk.
+    """
+    base = Path(opts.temp_path)
+    if not base.is_absolute():
+        anchor = Path(opts.output_dir) if opts.output_dir else Path.cwd()
+        base = anchor / base
+    return base
+
+
+def cleanup_old_workdirs(
+    opts: TranscribeOptions,
+    *,
+    now: float | None = None,
+    max_age_secs: float = _OLD_WORKDIR_MAX_AGE_SECS,
+) -> int:
+    """Delete ``*-work`` directories under the temp dir older than ``max_age_secs``.
+
+    Best-effort: per-directory errors (permission, race with another
+    process) are logged and skipped, never raised. Returns the number of
+    directories actually removed.
+
+    Used by ``_run`` before the input-file loop so stale workdirs from a
+    previous run (e.g. with incompatible ``--max-chunk-secs``) don't
+    pollute disk or get mistakenly reused.
+    """
+    temp_dir = _resolve_temp_dir(opts)
+    if not temp_dir.is_dir():
+        return 0
+    current = now if now is not None else time.time()
+    cutoff = current - max_age_secs
+    deleted = 0
+    logger = logging.getLogger(__name__)
+    for entry in sorted(temp_dir.iterdir()):
+        if not entry.is_dir() or not entry.name.endswith(_OLD_WORKDIR_SUFFIX):
+            continue
+        try:
+            mtime = entry.stat().st_mtime
+        except OSError as exc:
+            logger.debug("Skipping %s: stat failed (%s)", entry, exc)
+            continue
+        if mtime >= cutoff:
+            continue
+        age_str = _format_age(current - mtime)
+        logger.info(
+            "Cleaning up old work directory %s, created %s ago", entry, age_str
+        )
+        try:
+            shutil.rmtree(entry)
+            deleted += 1
+        except OSError as exc:
+            logger.warning("Failed to remove old work directory %s: %s", entry, exc)
+    return deleted
+
+
 def _run(opts: TranscribeOptions, prog: str) -> int:
     """Execute the parsed options. Returns exit code."""
     effective_keys = _resolve_api_keys(opts.gemini_api_keys)
@@ -587,6 +668,10 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
         print(f"Usage: {prog} [OPTIONS] PATH [PATH ...]")
         print(f"Try '{prog} --help' for more information.")
         return 1
+
+    # Best-effort cleanup of stale workdirs from prior runs (default: 24h+)
+    # so they don't accumulate or get reused with incompatible options.
+    cleanup_old_workdirs(opts)
 
     logging.getLogger(__name__).info("+ %s", format_cli_command(prog, opts))
 
