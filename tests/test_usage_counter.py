@@ -68,10 +68,27 @@ def test_summary_line_free_tier_format(cache, monkeypatch):
     assert line.startswith("Find your free-tier usage at https://ai.dev")
     assert "rate limits at https://ai.google.dev/gemini-api/docs/rate-limits" in line
     assert "midnight PT" in line
-    # 4h 20m remaining
+    # 4h 20m remaining (plural)
     assert "4 hours 20 minutes left" in line
     # No key set -> 'unset'
     assert "ending with 'unset'" in line
+
+
+def test_summary_line_singular_hour_and_minute(cache, monkeypatch):
+    """Singular 1 hour / 1 minute are correctly formatted without trailing 's'."""
+    from datetime import datetime
+
+    # 1h 52m -> 1 hour 52 minutes
+    base1 = datetime(2026, 8, 30, 22, 8, 0, tzinfo=usage_counter.PT)
+    monkeypatch.setattr(usage_counter, "pt_now", lambda: base1)
+    line1 = usage_counter.usage_summary_line(cache)
+    assert "(1 hour 52 minutes left)" in line1
+
+    # 1h 1m -> 1 hour 1 minute
+    base2 = datetime(2026, 8, 30, 22, 59, 0, tzinfo=usage_counter.PT)
+    monkeypatch.setattr(usage_counter, "pt_now", lambda: base2)
+    line2 = usage_counter.usage_summary_line(cache)
+    assert "(1 hour 1 minute left)" in line2
 
 
 def test_summary_line_free_tier_with_key_tail(cache):

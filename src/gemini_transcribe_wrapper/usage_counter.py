@@ -188,6 +188,13 @@ def _key_tail(key: str | None) -> str:
     return f"....{key[-4:]}"
 
 
+def _format_hours_minutes(hours: int, minutes: int) -> str:
+    """Format hours and minutes with proper singular/plural suffixes."""
+    h_str = f"{hours} hour" if hours == 1 else f"{hours} hours"
+    m_str = f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
+    return f"{h_str} {m_str}"
+
+
 def _hours_minutes_until_midnight(now: datetime | None = None) -> tuple[int, int]:
     """Return ``(hours, minutes)`` remaining until the next PT midnight."""
     remaining = int(seconds_until_pt_midnight(now))
@@ -212,12 +219,13 @@ def usage_summary_line(
     if tier == "free":
         tail = _key_tail(api_key)
         hours, minutes = _hours_minutes_until_midnight()
+        time_left = _format_hours_minutes(hours, minutes)
         return (
             f"Find your free-tier usage at https://ai.dev for your API key "
             f"ending with '{tail}' and rate limits at "
             f"https://ai.google.dev/gemini-api/docs/rate-limits. "
             f"Your free tier limits will reset at midnight PT "
-            f"({hours} hours {minutes} minutes left)."
+            f"({time_left} left)."
         )
     used = count_today(cache, api_key)
     day = pt_date()
