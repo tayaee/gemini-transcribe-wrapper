@@ -1,15 +1,15 @@
 # Batch Bulk Transcribing Tip
 
-The free tier caps 25 calls/day per PST day. For multi-day batches, either:
+The free tier caps 25 calls/day per PT day. For multi-day batches, either:
 
 - **Run in shorter bursts** so you naturally pause before hitting the quota, or
 - **Swap in a fresh API key** (each key has its own counter under `~/.cache/gemini-transcribe-wrapper/usage-<sha256(key)[:12]>.json`), or
-- **Wait for the PST reset** — on a 429 the wrapper prints the exact sleep seconds needed; wrap your batch in a shell loop:
+- **Wait for the PT reset** — on a 429 the wrapper prints the exact sleep seconds needed; wrap your batch in a shell loop:
 
 ```bash
-# Run, on quota hit wait until PST midnight, then re-run.
+# Run, on quota hit wait until PT midnight, then re-run.
 while ! gtw '*.mp4'; do
-  echo "Batch hit a quota; waiting for PST reset..."
+  echo "Batch hit a quota; waiting for PT reset..."
   # Read the sleep seconds from the previous log, or sleep 1h and retry.
   sleep 3600
 done

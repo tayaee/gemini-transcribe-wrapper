@@ -1,7 +1,7 @@
 """Daily API usage counter persisted under ~/.cache/gemini-transcribe-wrapper/.
 
 The Gemini free tier allows ~25 API calls per day; the counter resets at
-midnight Pacific Standard Time (UTC-08:00, no DST).
+midnight Pacific Time (PT, America/Los_Angeles).
 """
 
 from __future__ import annotations
@@ -12,15 +12,17 @@ import logging
 import os
 import time
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from filelock import FileLock
 
 logger = logging.getLogger(__name__)
 
 FREE_TIER_DAILY_LIMIT = "~25"
-PST = timezone(timedelta(hours=-8))
+PT = ZoneInfo("America/Los_Angeles")
+PST = PT  # backward compatibility alias
 USAGE_FILE = "usage.json"
 _KEY_HASH_LEN = 12  # hex chars of SHA-256 used in per-key usage filenames.
 
@@ -33,14 +35,24 @@ def cache_dir() -> Path:
     return Path.home() / ".cache" / "gemini-transcribe-wrapper"
 
 
+def pt_now() -> datetime:
+    """Current time in Pacific Time (America/Los_Angeles)."""
+    return datetime.now(PT)
+
+
 def pst_now() -> datetime:
-    """Current time in PST (UTC-08:00, fixed, no DST)."""
-    return datetime.now(PST)
+    """Legacy alias for :func:`pt_now`."""
+    return pt_now()
+
+
+def pt_date(now: datetime | None = None) -> str:
+    """PT date (YYYY-MM-DD) for the given time (default: now)."""
+    return (now or pt_now()).strftime("%Y-%m-%d")
 
 
 def pst_date(now: datetime | None = None) -> str:
-    """PST date (YYYY-MM-DD) for the given time (default: now)."""
-    return (now or pst_now()).strftime("%Y-%m-%d")
+    """Legacy alias for :func:`pt_date`."""
+    return pt_date(now)
 
 
 def _key_hash(api_key: str | None) -> str:
@@ -74,7 +86,7 @@ def _legacy_count_today(cache: Path | None = None) -> int:
     file is missing.
     """
     path = (cache or cache_dir()) / USAGE_FILE
-    return _load(path).get(pst_date(), 0)
+    return _load(path).get(pt_date(), 0)
 
 
 def _save(path: Path, data: dict[str, int]) -> None:
@@ -99,21 +111,21 @@ def _usage_file(cache: Path | None = None, api_key: str | None = None) -> Path:
 
 
 def count_today(cache: Path | None = None, api_key: str | None = None) -> int:
-    """API calls made so far today (PST) for ``api_key``. 0 when no counter file exists yet.
+    """API calls made so far today (PT) for ``api_key``. 0 when no counter file exists yet.
 
     When a per-key file is used and today's entry is missing, the legacy
     unscoped ``usage.json`` count is shown — :func:`increment_today` migrates
     it into the per-key file on the first call after upgrade, so the two
     never double-count.
     """
-    key_count = _load(_usage_file(cache, api_key)).get(pst_date(), 0)
+    key_count = _load(_usage_file(cache, api_key)).get(pt_date(), 0)
     if key_count > 0 or not api_key:
         return key_count
     return _legacy_count_today(cache)
 
 
 def increment_today(cache: Path | None = None, api_key: str | None = None) -> int:
-    """Increment today's (PST) API call count for ``api_key`` and return the new count.
+    """Increment today's (PT) API call count for ``api_key`` and return the new count.
 
     On the first per-key call after an upgrade, fold the legacy unscoped
     ``usage.json`` count into the per-key file so users who ran the older
@@ -126,7 +138,7 @@ def increment_today(cache: Path | None = None, api_key: str | None = None) -> in
         lock = FileLock(str(path) + ".lock")
         with lock:
             data = _load(path)
-            day = pst_date()
+            day = pt_date()
             # One-time legacy migration: when the per-key file has no entry
             # for today yet, carry over the unscoped legacy count so the
             # user's pre-upgrade calls aren't silently lost.
@@ -177,8 +189,8 @@ def _key_tail(key: str | None) -> str:
 
 
 def _hours_minutes_until_midnight(now: datetime | None = None) -> tuple[int, int]:
-    """Return ``(hours, minutes)`` remaining until the next PST midnight."""
-    remaining = int(seconds_until_pst_midnight(now))
+    """Return ``(hours, minutes)`` remaining until the next PT midnight."""
+    remaining = int(seconds_until_pt_midnight(now))
     hours, rem_min = divmod(remaining // 60, 60)
     return int(hours), int(rem_min)
 
@@ -192,7 +204,7 @@ def usage_summary_line(
 
     Free tier (default) — points at the Google AI dev dashboard and rate
     limit docs, names the API key by its tail, and tells the user how long
-    until the daily free-tier quota resets at PST midnight.
+    until the daily free-tier quota resets at PT midnight.
 
     Paid tier — keeps the legacy ``API call attempts today ...`` format so
     existing scripts/users see the same line.
@@ -204,41 +216,48 @@ def usage_summary_line(
             f"Find your free-tier usage at https://ai.dev for your API key "
             f"ending with '{tail}' and rate limits at "
             f"https://ai.google.dev/gemini-api/docs/rate-limits. "
-            f"Your free tier limits will reset at mid-night PST-08:00 "
+            f"Your free tier limits will reset at midnight PT "
             f"({hours} hours {minutes} minutes left)."
         )
     used = count_today(cache, api_key)
-    day = pst_date()
+    day = pt_date()
     masked = _mask_key(api_key)
     return (
-        f"API call attempts today {day} (PST-08:00) with key '{masked}': "
+        f"API call attempts today {day} (PT) with key '{masked}': "
         f"attempted {used} (free tier limit: {FREE_TIER_DAILY_LIMIT})"
     )
 
 
-def seconds_until_pst_midnight(now: datetime | None = None) -> float:
-    """Seconds remaining until the next PST midnight (00:00 PST = 08:00 UTC).
+def seconds_until_pt_midnight(now: datetime | None = None) -> float:
+    """Seconds remaining until the next PT midnight (00:00 Pacific Time).
 
-    At exactly 00:00:00 PST, returns 0 — the quota has just reset and no wait
-    is needed. Otherwise, returns the seconds until the next 00:00 PST.
+    At exactly 00:00:00 PT, returns 0 — the quota has just reset and no wait
+    is needed. Otherwise, returns the seconds until the next 00:00 PT.
     """
-    current = now or pst_now()
-    tod = (
-        current.hour * 3600
-        + current.minute * 60
-        + current.second
-        + current.microsecond / 1e6
+    current = now or pt_now()
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=PT)
+    else:
+        current = current.astimezone(PT)
+    next_midnight = datetime(
+        current.year, current.month, current.day, 0, 0, 0, tzinfo=PT
     )
-    if tod == 0:
+    if current == next_midnight:
         return 0.0
-    return 86400.0 - tod
+    next_midnight += timedelta(days=1)
+    return max(0.0, (next_midnight - current).total_seconds())
 
 
-def sleep_until_pst_midnight(
+def seconds_until_pst_midnight(now: datetime | None = None) -> float:
+    """Legacy alias for :func:`seconds_until_pt_midnight`."""
+    return seconds_until_pt_midnight(now)
+
+
+def sleep_until_pt_midnight(
     check_interval_secs: float = 3600.0,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> None:
-    """Sleep until the next PST midnight, logging the remaining time each step.
+    """Sleep until the next PT midnight, logging the remaining time each step.
 
     Splits the wait into chunks of up to ``check_interval_secs`` (default 1h),
     logging the remaining time before each ``sleep_fn`` call. Intended for
@@ -250,15 +269,15 @@ def sleep_until_pst_midnight(
     not get flushed into the traceback at exit.
     """
     while True:
-        remaining = seconds_until_pst_midnight()
+        remaining = seconds_until_pt_midnight()
         if remaining <= 0:
             logger.warning(
-                "Free-tier wait: PST midnight reached (quota reset); resuming API calls."
+                "Free-tier wait: PT midnight reached (quota reset); resuming API calls."
             )
             return
         chunk = min(check_interval_secs, remaining)
         logger.warning(
-            "Free-tier wait: %.1fh remaining until PST midnight; sleeping %.0fs.",
+            "Free-tier wait: %.1fh remaining until PT midnight; sleeping %.0fs.",
             remaining / 3600.0,
             chunk,
         )
@@ -269,3 +288,11 @@ def sleep_until_pst_midnight(
                 "Free-tier wait cancelled by user (Ctrl-C); exiting quietly."
             )
             raise KeyboardInterrupt from None
+
+
+def sleep_until_pst_midnight(
+    check_interval_secs: float = 3600.0,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> None:
+    """Legacy alias for :func:`sleep_until_pt_midnight`."""
+    return sleep_until_pt_midnight(check_interval_secs=check_interval_secs, sleep_fn=sleep_fn)

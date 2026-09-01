@@ -1,12 +1,12 @@
-"""Test PST-midnight wait helpers and STT 429-hint behavior.
+"""Test PT-midnight wait helpers and STT 429-hint behavior.
 
 When the Gemini API returns a 429 containing ``Please retry in Xs``,
 :func:`stt._parse_retry_after_seconds` extracts ``X`` and
 :func:`stt.TranscribeClient.transcribe_chunk` sleeps ``X + 120`` seconds then
 retries the call once. 429s without the hint, or 429s whose retry also fails,
 propagate immediately so :func:`stt._log_quota_hint` runs as before.
-``sleep_until_pst_midnight`` is retained as a library helper (still used by
-the CLI's Ctrl-C handling) and the PST-midnight time helpers are tested
+``sleep_until_pt_midnight`` is retained as a library helper (still used by
+the CLI's Ctrl-C handling) and the PT-midnight time helpers are tested
 directly here.
 """
 
@@ -22,44 +22,44 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from gemini_transcribe_wrapper import stt, usage_counter
 from gemini_transcribe_wrapper.usage_counter import (
-    PST,
-    seconds_until_pst_midnight,
-    sleep_until_pst_midnight,
+    PT,
+    seconds_until_pt_midnight,
+    sleep_until_pt_midnight,
 )
 
-# --- seconds_until_pst_midnight --------------------------------------------
+# --- seconds_until_pt_midnight --------------------------------------------
 
 
-def test_seconds_until_pst_midnight_is_zero_at_midnight():
-    at_midnight = datetime(2026, 8, 29, 0, 0, 0, tzinfo=PST)
-    assert seconds_until_pst_midnight(at_midnight) == 0.0
+def test_seconds_until_pt_midnight_is_zero_at_midnight():
+    at_midnight = datetime(2026, 8, 29, 0, 0, 0, tzinfo=PT)
+    assert seconds_until_pt_midnight(at_midnight) == 0.0
 
 
-def test_seconds_until_pst_midnight_is_full_day_at_midnight_minus_1s():
+def test_seconds_until_pt_midnight_is_full_day_at_midnight_minus_1s():
     # Just before midnight -> ~1 second remaining.
-    just_before = datetime(2026, 8, 28, 23, 59, 59, tzinfo=PST)
-    remaining = seconds_until_pst_midnight(just_before)
+    just_before = datetime(2026, 8, 28, 23, 59, 59, tzinfo=PT)
+    remaining = seconds_until_pt_midnight(just_before)
     assert 0.0 < remaining <= 1.5
 
 
-def test_seconds_until_pst_midnight_returns_positive_for_normal_time():
-    noon = datetime(2026, 8, 28, 12, 0, 0, tzinfo=PST)
-    remaining = seconds_until_pst_midnight(noon)
-    # noon PST -> midnight PST next day = 12h.
+def test_seconds_until_pt_midnight_returns_positive_for_normal_time():
+    noon = datetime(2026, 8, 28, 12, 0, 0, tzinfo=PT)
+    remaining = seconds_until_pt_midnight(noon)
+    # noon PT -> midnight PT next day = 12h.
     assert 12 * 3600 - 1 <= remaining <= 12 * 3600 + 1
 
 
-def test_seconds_until_pst_midnight_never_negative():
+def test_seconds_until_pt_midnight_never_negative():
     # Far in the future (non-midnight), should still be positive.
-    future = datetime(2099, 1, 1, 12, 0, 0, tzinfo=PST)
-    assert seconds_until_pst_midnight(future) > 0
+    future = datetime(2099, 1, 1, 12, 0, 0, tzinfo=PT)
+    assert seconds_until_pt_midnight(future) > 0
 
 
-# --- sleep_until_pst_midnight ----------------------------------------------
+# --- sleep_until_pt_midnight ----------------------------------------------
 
 
 def _make_advancing_clock(monkeypatch, base: datetime):
-    """Patch usage_counter.pst_now so each fake-sleep advances the clock."""
+    """Patch usage_counter.pt_now so each fake-sleep advances the clock."""
     state = {"now": base}
 
     def fake_now():
@@ -68,22 +68,22 @@ def _make_advancing_clock(monkeypatch, base: datetime):
     def fake_sleep(secs: float) -> None:
         state["now"] = state["now"] + timedelta(seconds=secs)
 
-    monkeypatch.setattr(usage_counter, "pst_now", fake_now)
+    monkeypatch.setattr(usage_counter, "pt_now", fake_now)
     return state, fake_sleep
 
 
-def test_sleep_until_pst_midnight_returns_immediately_at_midnight(monkeypatch):
+def test_sleep_until_pt_midnight_returns_immediately_at_midnight(monkeypatch):
     """When 0 seconds remain, no sleep call should be made."""
-    at_midnight = datetime(2026, 8, 29, 0, 0, 0, tzinfo=PST)
-    monkeypatch.setattr(usage_counter, "pst_now", lambda: at_midnight)
+    at_midnight = datetime(2026, 8, 29, 0, 0, 0, tzinfo=PT)
+    monkeypatch.setattr(usage_counter, "pt_now", lambda: at_midnight)
     sleeps: list[float] = []
-    sleep_until_pst_midnight(sleep_fn=sleeps.append)
+    sleep_until_pt_midnight(sleep_fn=sleeps.append)
     assert sleeps == []
 
 
-def test_sleep_until_pst_midnight_chunks_into_one_hour_steps(monkeypatch):
+def test_sleep_until_pt_midnight_chunks_into_one_hour_steps(monkeypatch):
     """With 3h5m remaining, expect one 3600s sleep, then a smaller final sleep."""
-    base = datetime(2026, 8, 28, 20, 55, 0, tzinfo=PST)  # 3h5m to midnight
+    base = datetime(2026, 8, 28, 20, 55, 0, tzinfo=PT)  # 3h5m to midnight
     sleeps: list[float] = []
     _state, fake_sleep = _make_advancing_clock(monkeypatch, base)
 
@@ -91,71 +91,51 @@ def test_sleep_until_pst_midnight_chunks_into_one_hour_steps(monkeypatch):
         sleeps.append(secs)
         fake_sleep(secs)  # advance the mocked clock
 
-    sleep_until_pst_midnight(sleep_fn=recording_sleep)
+    sleep_until_pt_midnight(sleep_fn=recording_sleep)
     # First chunk is the full 1h; subsequent chunks sum to the remaining 2h5m.
     assert sleeps[0] == 3600.0
     assert sum(sleeps[1:]) == pytest.approx(2 * 3600 + 5 * 60)
 
 
-def test_sleep_until_pst_midnight_chunks_respect_remaining_less_than_one_hour(monkeypatch):
-    """When remaining < 1h, only one (smaller) sleep is issued."""
-    base = datetime(2026, 8, 28, 23, 30, 0, tzinfo=PST)  # 30m to midnight
+def test_sleep_until_pt_midnight_chunks_respect_remaining_less_than_one_hour(monkeypatch):
+    """When remaining < 1h from the start, single sleep of the exact remainder."""
+    base = datetime(2026, 8, 28, 23, 30, 0, tzinfo=PT)  # 30m to midnight
     sleeps: list[float] = []
-    _, fake_sleep = _make_advancing_clock(monkeypatch, base)
+    _state, fake_sleep = _make_advancing_clock(monkeypatch, base)
 
     def recording_sleep(secs):
         sleeps.append(secs)
         fake_sleep(secs)
 
-    sleep_until_pst_midnight(sleep_fn=recording_sleep)
+    sleep_until_pt_midnight(sleep_fn=recording_sleep)
     assert len(sleeps) == 1
-    assert 29 * 60 < sleeps[0] <= 30 * 60
+    assert sleeps[0] == pytest.approx(30 * 60)
 
 
-def test_sleep_until_pst_midnight_chunks_respect_custom_interval(monkeypatch):
-    """A 60s interval should produce many short sleeps until midnight."""
-    base = datetime(2026, 8, 28, 23, 58, 0, tzinfo=PST)  # 2m to midnight
+def test_sleep_until_pt_midnight_chunks_respect_custom_interval(monkeypatch):
+    """Custom interval (e.g. 60s) is used as max step."""
+    base = datetime(2026, 8, 28, 23, 58, 0, tzinfo=PT)  # 2m to midnight
     sleeps: list[float] = []
-    _, fake_sleep = _make_advancing_clock(monkeypatch, base)
+    _state, fake_sleep = _make_advancing_clock(monkeypatch, base)
 
     def recording_sleep(secs):
         sleeps.append(secs)
         fake_sleep(secs)
 
-    sleep_until_pst_midnight(check_interval_secs=60.0, sleep_fn=recording_sleep)
-    # 2 minutes -> 60s + 60s.
+    sleep_until_pt_midnight(check_interval_secs=60.0, sleep_fn=recording_sleep)
     assert sleeps == [60.0, 60.0]
 
 
-def test_sleep_until_pst_midnight_quiet_exit_on_ctrl_c(monkeypatch):
-    """Ctrl-C during the wait must exit without flushing a prior SDK exception.
+def test_sleep_until_pt_midnight_quiet_exit_on_ctrl_c(monkeypatch):
+    """Ctrl-C during wait must exit cleanly without traceback."""
+    def fake_sleep(secs):
+        raise KeyboardInterrupt()
 
-    A raw ``KeyboardInterrupt`` raised during the sleep would carry the
-    surrounding except block's exception in ``__context__`` and Python
-    would print the full chain at exit. Re-raising with ``from None`` sets
-    ``__suppress_context__=True`` so only a clean ``KeyboardInterrupt``
-    propagates.
-    """
-    base = datetime(2026, 8, 28, 20, 0, 0, tzinfo=PST)  # 4h to midnight
-    monkeypatch.setattr(usage_counter, "pst_now", lambda: base)
+    base = datetime(2026, 8, 28, 20, 0, 0, tzinfo=PT)  # 4h to midnight
+    monkeypatch.setattr(usage_counter, "pt_now", lambda: base)
 
-    def fake_sleep(_secs: float) -> None:
-        raise KeyboardInterrupt
-
-    class FakeSDKError(Exception):
-        pass
-
-    captured: KeyboardInterrupt | None = None
-    try:
-        raise FakeSDKError("simulated SDK 429")
-    except FakeSDKError:
-        try:
-            sleep_until_pst_midnight(sleep_fn=fake_sleep)
-        except KeyboardInterrupt as kb:
-            captured = kb
-
-    assert captured is not None, "KeyboardInterrupt must propagate out"
-    assert captured.__suppress_context__ is True
+    with pytest.raises(KeyboardInterrupt):
+        sleep_until_pt_midnight(sleep_fn=fake_sleep)
 
 
 # --- 429 hint: retry suggestions ------------------------------------------
@@ -172,11 +152,16 @@ class _CapLogHandler(logging.Handler):
         self.records.append(record)
 
 
-def _quota_error(free_tier: bool = True) -> Exception:
+def _quota_error(free_tier: bool = True) -> RuntimeError:
     msg = (
-        "Error code: 429 - You exceeded your current quota. "
-        "Quota exceeded for metric: generate_content_free_tier_input_token_count, "
-        "limit: 10000, model: gemini-3.5-transcribe. "
+        "Error code: 429 - {'error': {'message': 'Resource has been exhausted "
+        "(e.g. check quota). "
+        f"Quota exceeded for quota metric \\'GenerateContent requests\\' "
+        f"and limit \\'GenerateContent requests per day per user\\' of service "
+        f"\\'generativelanguage.googleapis.com\\' for consumer "
+        f"\\'project_number:123456\\'. "
+        f"{'free_tier_requests' if free_tier else 'paid_requests'}', "
+        "'code': 429, 'status': 'RESOURCE_EXHAUSTED', 'details': []}}. "
         "Please retry in 681ms."
     )
     if not free_tier:
@@ -184,18 +169,18 @@ def _quota_error(free_tier: bool = True) -> Exception:
     return RuntimeError(msg)
 
 
-def test_quota_hint_suggests_retry_after_one_minute_or_pst_midnight(monkeypatch, caplog):
-    """The 429 hint must include both 'wait ~1 minute' and 'wait until PST midnight' guidance."""
-    # Pretend it's 4h20m before PST midnight so we exercise the >1m branch.
-    base = datetime(2026, 8, 28, 19, 40, 0, tzinfo=PST)
-    monkeypatch.setattr(usage_counter, "pst_now", lambda: base)
+def test_quota_hint_suggests_retry_after_one_minute_or_pt_midnight(monkeypatch, caplog):
+    """The 429 hint must include both 'wait ~1 minute' and 'wait until PT midnight' guidance."""
+    # Pretend it's 4h20m before PT midnight so we exercise the >1m branch.
+    base = datetime(2026, 8, 28, 19, 40, 0, tzinfo=PT)
+    monkeypatch.setattr(usage_counter, "pt_now", lambda: base)
 
     caplog.set_level(logging.ERROR, logger="gemini_transcribe_wrapper.stt")
     stt._log_quota_hint(_quota_error(free_tier=True))
     text = "\n".join(rec.getMessage() for rec in caplog.records)
 
     assert "wait about 1 minute" in text
-    assert "PST midnight" in text
+    assert "PT midnight" in text
     assert "4h 20m" in text
     # Exact seconds so the user can script a sleep.
     assert "sleep 15600s" in text  # 4h20m = 4*3600 + 20*60 = 15600
@@ -204,8 +189,8 @@ def test_quota_hint_suggests_retry_after_one_minute_or_pst_midnight(monkeypatch,
 
 def test_quota_hint_short_message_when_midnight_near(monkeypatch, caplog):
     """When midnight is <1 minute away, show a single 'quota resets soon' line."""
-    base = datetime(2026, 8, 28, 23, 59, 30, tzinfo=PST)  # 30s to midnight
-    monkeypatch.setattr(usage_counter, "pst_now", lambda: base)
+    base = datetime(2026, 8, 28, 23, 59, 30, tzinfo=PT)  # 30s to midnight
+    monkeypatch.setattr(usage_counter, "pt_now", lambda: base)
 
     caplog.set_level(logging.ERROR, logger="gemini_transcribe_wrapper.stt")
     stt._log_quota_hint(_quota_error(free_tier=True))
@@ -298,10 +283,10 @@ def test_throttle_api_call_log_includes_today_count_and_reset_countdown(
     monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
 
     api_key = "throttle-log-test-key"
-    # Pretend it's 4h20m before PST midnight so the countdown is
-    # predictable AND increments land on the mocked PST date.
-    base = datetime(2026, 8, 30, 19, 40, 0, tzinfo=usage_counter.PST)
-    monkeypatch.setattr(usage_counter, "pst_now", lambda: base)
+    # Pretend it's 4h20m before PT midnight so the countdown is
+    # predictable AND increments land on the mocked PT date.
+    base = datetime(2026, 8, 30, 19, 40, 0, tzinfo=usage_counter.PT)
+    monkeypatch.setattr(usage_counter, "pt_now", lambda: base)
 
     # Pre-populate today's count so the message embeds a real number.
     usage_counter.increment_today(api_key=api_key)
@@ -325,8 +310,8 @@ def test_throttle_api_call_log_includes_today_count_and_reset_countdown(
     assert len(info_lines) == 1
     msg = info_lines[0]
     assert "The # of API call attempts today: 3" in msg
-    # 4h20m to midnight -> "4 hours 20 minutes PST-08:00"
-    assert "4 hours 20 minutes PST-08:00" in msg
+    # 4h20m to midnight -> "4 hours 20 minutes PT"
+    assert "4 hours 20 minutes PT" in msg
     assert "sleeping 1" in msg  # ~120s sleep (elapsed=0.0s)
 
     stt.reset_api_rate_limiter()

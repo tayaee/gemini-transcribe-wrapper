@@ -320,14 +320,14 @@ def _log_quota_hint(exc: Exception) -> None:
     logger.error(_QUOTA_HINT)
     # Retry suggestions. We do NOT retry automatically — the user decides.
     # Short-term 429: Gemini usually suggests waiting ~1 minute. Daily quota:
-    # wait until PST midnight for the counter to reset.
-    from .usage_counter import seconds_until_pst_midnight
+    # wait until PT midnight for the counter to reset.
+    from .usage_counter import seconds_until_pt_midnight
 
-    seconds_left = seconds_until_pst_midnight()
+    seconds_left = seconds_until_pt_midnight()
     if seconds_left <= 60:
         logger.error(
             "To retry: wait about 1 minute, then re-run. "
-            "PST midnight is less than a minute away, so quota resets soon."
+            "PT midnight is less than a minute away, so quota resets soon."
         )
     else:
         hours = int(seconds_left // 3600)
@@ -335,7 +335,7 @@ def _log_quota_hint(exc: Exception) -> None:
         total_seconds = int(seconds_left)
         logger.error(
             "To retry: wait about 1 minute for a short-term 429, "
-            "or wait %dh %dm (sleep %ds) until PST midnight for the daily quota to reset, "
+            "or wait %dh %dm (sleep %ds) until PT midnight for the daily quota to reset, "
             "then re-run.",
             hours,
             minutes,
@@ -440,17 +440,17 @@ def _throttle_api_call(
         sleep_secs = request_interval_secs - elapsed
         from .usage_counter import (
             count_today,
-            seconds_until_pst_midnight,
+            seconds_until_pt_midnight,
         )
 
         used_today = count_today(api_key=api_key)
-        remaining = int(seconds_until_pst_midnight())
+        remaining = int(seconds_until_pt_midnight())
         reset_hours, reset_minutes = divmod(remaining // 60, 60)
         logger.info(
             "Free-tier rate limit: %.1fs elapsed since last API call completed "
             "(< %.0fs interval); sleeping %.1fs. "
             "The # of API call attempts today: %d. "
-            "The daily limit will reset in %d hours %d minutes PST-08:00.",
+            "The daily limit will reset in %d hours %d minutes PT.",
             elapsed,
             request_interval_secs,
             sleep_secs,

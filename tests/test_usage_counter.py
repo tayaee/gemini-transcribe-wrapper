@@ -4,7 +4,7 @@ import json
 import os
 import sys
 import tempfile
-from datetime import timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -60,14 +60,14 @@ def test_summary_line_free_tier_format(cache, monkeypatch):
     """Free-tier default: usage dashboard link + key tail + reset countdown."""
     from datetime import datetime
 
-    base = datetime(2026, 8, 30, 19, 40, 0, tzinfo=usage_counter.PST)  # 4h20m to midnight
-    monkeypatch.setattr(usage_counter, "pst_now", lambda: base)
+    base = datetime(2026, 8, 30, 19, 40, 0, tzinfo=usage_counter.PT)  # 4h20m to midnight
+    monkeypatch.setattr(usage_counter, "pt_now", lambda: base)
 
     line = usage_counter.usage_summary_line(cache)
     print("summary line:", line)
     assert line.startswith("Find your free-tier usage at https://ai.dev")
     assert "rate limits at https://ai.google.dev/gemini-api/docs/rate-limits" in line
-    assert "mid-night PST-08:00" in line
+    assert "midnight PT" in line
     # 4h 20m remaining
     assert "4 hours 20 minutes left" in line
     # No key set -> 'unset'
@@ -96,7 +96,7 @@ def test_summary_line_paid_tier_keeps_legacy_format(cache):
     assert line.endswith(f"(free tier limit: {FREE_TIER_DAILY_LIMIT})")
     assert "API call attempts today " in line
     assert "with key 'unset': attempted 3" in line
-    assert "PST-08:00" in line
+    assert "(PT)" in line
 
     key = "AIzaSyD-1234567890abcdef"
     for _ in range(2):
@@ -107,8 +107,9 @@ def test_summary_line_paid_tier_keeps_legacy_format(cache):
     assert line_key.endswith(f"(free tier limit: {FREE_TIER_DAILY_LIMIT})")
 
 
-def test_pst_offset_is_fixed_utc_minus_8():
-    assert usage_counter.PST == timezone(timedelta(hours=-8))
+def test_pt_timezone():
+    from zoneinfo import ZoneInfo
+    assert usage_counter.PT == ZoneInfo("America/Los_Angeles")
 
 
 def test_stt_increments_counter_per_api_call(cache):
