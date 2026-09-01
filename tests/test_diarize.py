@@ -185,12 +185,9 @@ def test_diarize_on_runs_chunks_at_diarize_default(monkeypatch, tmp_path):
 
     real_compute = api.compute_split_plan
 
-    def spy(total_secs, chunk_secs=None, max_chunk_secs=1740.0):
-        captured["chunk_secs"] = chunk_secs
+    def spy(total_secs, max_chunk_secs):
         captured["max_chunk_secs"] = max_chunk_secs
-        return real_compute(
-            total_secs, chunk_secs=chunk_secs, max_chunk_secs=max_chunk_secs
-        )
+        return real_compute(total_secs, max_chunk_secs=max_chunk_secs)
 
     monkeypatch.setattr(api, "compute_split_plan", spy)
 
@@ -203,7 +200,6 @@ def test_diarize_on_runs_chunks_at_diarize_default(monkeypatch, tmp_path):
     finally:
         api.TranscribeClient = orig
 
-    assert captured["chunk_secs"] == DEFAULT_CHUNK_SECS_DIARIZE
     assert captured["max_chunk_secs"] == DEFAULT_CHUNK_SECS_DIARIZE
 
 
@@ -216,12 +212,9 @@ def test_diarize_off_word_timestamps_off_runs_chunks_at_no_diarize_default(monke
 
     real_compute = api.compute_split_plan
 
-    def spy(total_secs, chunk_secs=None, max_chunk_secs=1740.0):
-        captured["chunk_secs"] = chunk_secs
+    def spy(total_secs, max_chunk_secs):
         captured["max_chunk_secs"] = max_chunk_secs
-        return real_compute(
-            total_secs, chunk_secs=chunk_secs, max_chunk_secs=max_chunk_secs
-        )
+        return real_compute(total_secs, max_chunk_secs=max_chunk_secs)
 
     monkeypatch.setattr(api, "compute_split_plan", spy)
 
@@ -234,7 +227,6 @@ def test_diarize_off_word_timestamps_off_runs_chunks_at_no_diarize_default(monke
     finally:
         api.TranscribeClient = orig
 
-    assert captured["chunk_secs"] == DEFAULT_CHUNK_SECS_NO_DIARIZE
     assert captured["max_chunk_secs"] == DEFAULT_CHUNK_SECS_NO_DIARIZE
 
 
@@ -248,12 +240,9 @@ def test_diarize_off_word_timestamps_on_runs_chunks_at_diarize_default(monkeypat
 
     real_compute = api.compute_split_plan
 
-    def spy(total_secs, chunk_secs=None, max_chunk_secs=1740.0):
-        captured["chunk_secs"] = chunk_secs
+    def spy(total_secs, max_chunk_secs):
         captured["max_chunk_secs"] = max_chunk_secs
-        return real_compute(
-            total_secs, chunk_secs=chunk_secs, max_chunk_secs=max_chunk_secs
-        )
+        return real_compute(total_secs, max_chunk_secs=max_chunk_secs)
 
     monkeypatch.setattr(api, "compute_split_plan", spy)
 
@@ -264,23 +253,19 @@ def test_diarize_off_word_timestamps_on_runs_chunks_at_diarize_default(monkeypat
     finally:
         api.TranscribeClient = orig
 
-    assert captured["chunk_secs"] == DEFAULT_CHUNK_SECS_DIARIZE
     assert captured["max_chunk_secs"] == DEFAULT_CHUNK_SECS_DIARIZE
 
 
 def test_diarize_explicit_chunk_secs_overrides_default(monkeypatch, tmp_path):
-    """User-supplied --chunk-secs always wins over the diarize-mode default."""
+    """User-supplied --max-chunk-secs always wins over the diarize-mode default."""
     src = _make_audio(tmp_path)
     captured: dict[str, float | None] = {}
 
     real_compute = api.compute_split_plan
 
-    def spy(total_secs, chunk_secs=None, max_chunk_secs=1740.0):
-        captured["chunk_secs"] = chunk_secs
+    def spy(total_secs, max_chunk_secs):
         captured["max_chunk_secs"] = max_chunk_secs
-        return real_compute(
-            total_secs, chunk_secs=chunk_secs, max_chunk_secs=max_chunk_secs
-        )
+        return real_compute(total_secs, max_chunk_secs=max_chunk_secs)
 
     monkeypatch.setattr(api, "compute_split_plan", spy)
 
@@ -289,15 +274,12 @@ def test_diarize_explicit_chunk_secs_overrides_default(monkeypatch, tmp_path):
     try:
         api.gemini_transcribe(
             str(src), force=True, gemini_api_key="fake",
-            diarized_srt_file=True, chunk_secs=60.0,
+            diarized_srt_file=True, max_chunk_secs=60.0,
         )
     finally:
         api.TranscribeClient = orig
 
-    assert captured["chunk_secs"] == 60.0
-    # The ceiling is still the diarize-mode default (1740), regardless of
-    # the user-supplied target.
-    assert captured["max_chunk_secs"] == DEFAULT_CHUNK_SECS_DIARIZE
+    assert captured["max_chunk_secs"] == 60.0
 
 
 def test_diarize_off_passes_enable_diarization_false_to_client(tmp_path):

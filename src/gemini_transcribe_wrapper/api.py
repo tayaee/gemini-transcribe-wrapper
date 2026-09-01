@@ -196,7 +196,7 @@ def gemini_transcribe(
     line_interval_secs: float = 1.0,
     paragraph_interval_secs: float = 2.5,
     request_interval_secs: float | None = None,
-    chunk_secs: float | None = None,
+    max_chunk_secs: float | None = None,
     speakers: dict[str, str] | None = None,
     temp_path: str | None = "temp",
     custom_vocabulary: list[str] | None = None,
@@ -247,11 +247,11 @@ def gemini_transcribe(
         line_interval_secs / paragraph_interval_secs: TXT break gaps.
         request_interval_secs: Delay between STT API calls. Defaults to 120.0s for
             "free" tier, 0.0s for "paid" tier.
-        chunk_secs: Optional fixed chunk length in seconds. Overrides the
-            default for the chosen diarization mode (59 min off, 29 min on).
-            A hard ceiling of 29 min (1740s) is enforced when speaker
-            diarization or word-level timestamps are enabled because the
-            Gemini API caps audio at ~30 min per call in those modes.
+        max_chunk_secs: Optional per-chunk ceiling in seconds (developer/internal
+            only). Overrides the default for the chosen diarization mode
+            (3540s off, 1740s on). A hard ceiling of 1740s is enforced when
+            speaker diarization or word-level timestamps are enabled because
+            the Gemini API caps audio at ~30 min per call in those modes.
         word_level_timestamps: Include word-level timestamps in the
             transcription output (default: ``True``). When enabled, the
             Gemini API per-call audio limit drops from ~1 hour to ~30 min,
@@ -333,7 +333,7 @@ def gemini_transcribe(
                 line_interval_secs=line_interval_secs,
                 paragraph_interval_secs=paragraph_interval_secs,
                 request_interval_secs=effective_interval,
-                chunk_secs=chunk_secs,
+                max_chunk_secs=max_chunk_secs,
                 speakers=speakers,
                 temp_path=temp_path,
                 custom_vocabulary=custom_vocabulary,
@@ -377,7 +377,7 @@ def _process_one(
     line_interval_secs: float,
     paragraph_interval_secs: float,
     request_interval_secs: float,
-    chunk_secs: float | None,
+    max_chunk_secs: float | None,
     speakers: dict[str, str] | None,
     temp_path: str | None,
     custom_vocabulary: list[str] | None = None,
@@ -559,17 +559,18 @@ def _process_one(
         # (60 min when neither is active, 30 min when either is active).
         # Both defaults already bake in a 1-min safety margin, so they also
         # serve as the per-chunk ceiling passed to compute_split_plan.
-        effective_chunk_secs = chunk_secs
         needs_short_chunks = diarized_enabled or word_level_timestamps
-        max_chunk_secs = (
+        default_max_chunk_secs = (
             DEFAULT_CHUNK_SECS_DIARIZE if needs_short_chunks else DEFAULT_CHUNK_SECS_NO_DIARIZE
         )
-        if effective_chunk_secs is None:
-            effective_chunk_secs = max_chunk_secs
+        # Front-loaded split: every chunk is at the ceiling, last chunk
+        # absorbs the remainder. No equal-split mode.
+        effective_max_chunk_secs = (
+            max_chunk_secs if max_chunk_secs is not None else default_max_chunk_secs
+        )
         plan = compute_split_plan(
             total_secs,
-            chunk_secs=effective_chunk_secs,
-            max_chunk_secs=max_chunk_secs,
+            max_chunk_secs=effective_max_chunk_secs,
         )
         logger.info("Split plan: %s", _format_split_plan(plan))
 

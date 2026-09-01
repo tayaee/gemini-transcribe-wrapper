@@ -439,26 +439,22 @@ def _throttle_api_call(
     if elapsed is not None and elapsed < request_interval_secs:
         sleep_secs = request_interval_secs - elapsed
         from .usage_counter import (
-            count_today,
+            _format_hours_minutes,
             seconds_until_pt_midnight,
         )
 
-        used_today = count_today(api_key=api_key)
         remaining = int(seconds_until_pt_midnight())
         reset_hours, reset_minutes = divmod(remaining // 60, 60)
-        h_str = f"{reset_hours} hour" if reset_hours == 1 else f"{reset_hours} hours"
-        m_str = f"{reset_minutes} minute" if reset_minutes == 1 else f"{reset_minutes} minutes"
+        time_left = _format_hours_minutes(reset_hours, reset_minutes)
         logger.info(
-            "Free-tier rate limit: %.1fs elapsed since last API call completed "
-            "(< %.0fs interval); sleeping %.1fs. "
-            "The # of API call attempts today: %d. "
-            "The daily limit will reset in %s %s PT.",
+            "Sleeping %.1fs to avoid 429 error on free tier. "
+            "%.1fs elapsed since last API call completed (< %.0fs interval). "
+            "If 429s persist, the daily limit may be hit — retry after "
+            "midnight PT (in %s).",
+            sleep_secs,
             elapsed,
             request_interval_secs,
-            sleep_secs,
-            used_today,
-            h_str,
-            m_str,
+            time_left,
         )
         time.sleep(sleep_secs)
 

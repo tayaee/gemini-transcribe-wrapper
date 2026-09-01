@@ -41,7 +41,7 @@ class TranscribeOptions:
     line_interval_secs: float = 1.0
     paragraph_interval_secs: float = 2.5
     request_interval_secs: float | None = None
-    chunk_secs: float | None = None
+    max_chunk_secs: float | None = None
     speakers: str | None = None
     custom_vocabulary: str | None = None
     custom_vocabulary_file: str | None = None
@@ -203,15 +203,15 @@ def _make_command() -> click.Command:
         help="Delay between API calls (default: 120.0 for free tier, 0.0 for paid tier)",
     )
     @click.option(
-        "--chunk-secs",
+        "--max-chunk-secs",
         type=float,
         default=None,
         help=(
-            "[DEVELOPER/INTERNAL ONLY — not intended for end users] Fixed chunk "
-            "length in seconds (default: auto, 3540s logical units when "
+            "[DEVELOPER/INTERNAL ONLY — not intended for end users] Override the "
+            "per-chunk ceiling in seconds (default: auto, 3540s when "
             "--no-diarize and --no-word-level-timestamps, 1740s when either is on; "
-            "hard ceiling of 1740s enforced to fit the Gemini 30-min per-call limit "
-            "when diarization or word-level timestamps are active)"
+            "the hard ceiling matches the Gemini 30-min per-call limit when "
+            "diarization or word-level timestamps are active)"
         ),
     )
     @click.option(
@@ -241,10 +241,12 @@ def _make_command() -> click.Command:
         "--word-level-timestamps/--no-word-level-timestamps",
         default=True,
         help=(
-            "Enable/disable word-level timestamps in transcription output (default: on). "
-            "When enabled, the Gemini API per-call audio limit drops from ~1 hour (59m) "
-            "to ~30 min (29m), same as --diarized-srt-file. Disable to allow longer chunks "
-            "when word-level timing is not needed."
+            "[DEVELOPER/INTERNAL ONLY — not intended for end users] "
+            "Enable/disable word-level timestamps in transcription output "
+            "(default: on). When enabled, the Gemini API per-call audio limit "
+            "drops from ~1 hour (59m) to ~30 min (29m), same as "
+            "--diarized-srt-file. Disable to allow longer chunks when "
+            "word-level timing is not needed."
         ),
     )
     @click.option(
@@ -292,7 +294,7 @@ def _make_command() -> click.Command:
         line_interval_secs: float,
         paragraph_interval_secs: float,
         request_interval_secs: float | None,
-        chunk_secs: float | None,
+        max_chunk_secs: float | None,
         speakers: str | None,
         custom_vocabulary: str | None,
         custom_vocabulary_file: str | None,
@@ -346,7 +348,7 @@ def _make_command() -> click.Command:
                 line_interval_secs=line_interval_secs,
                 paragraph_interval_secs=paragraph_interval_secs,
                 request_interval_secs=request_interval_secs,
-                chunk_secs=chunk_secs,
+                max_chunk_secs=max_chunk_secs,
                 speakers=speakers,
                 custom_vocabulary=custom_vocabulary,
                 custom_vocabulary_file=custom_vocabulary_file,
@@ -479,8 +481,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.extend(["--custom-vocabulary", str(opts.custom_vocabulary)])
     if opts.custom_vocabulary_file:
         tokens.extend(["--custom-vocabulary-file", str(opts.custom_vocabulary_file)])
-    if opts.chunk_secs is not None:
-        tokens.extend(["--chunk-secs", str(opts.chunk_secs)])
+    if opts.max_chunk_secs is not None:
+        tokens.extend(["--max-chunk-secs", str(opts.max_chunk_secs)])
     if not opts.word_level_timestamps:
         tokens.append("--no-word-level-timestamps")
 
@@ -623,7 +625,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 line_interval_secs=opts.line_interval_secs,
                 paragraph_interval_secs=opts.paragraph_interval_secs,
                 request_interval_secs=opts.request_interval_secs,
-                chunk_secs=opts.chunk_secs,
+                max_chunk_secs=opts.max_chunk_secs,
                 speakers=speakers,
                 temp_path=opts.temp_path,
                 custom_vocabulary=custom_vocab,

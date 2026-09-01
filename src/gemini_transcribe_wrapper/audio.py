@@ -86,83 +86,62 @@ class SplitPlan:
 
 def compute_split_plan(
     total_secs: float,
-    chunk_secs: float | None = None,
-    max_chunk_secs: float = 1740.0,
+    max_chunk_secs: float,
 ) -> SplitPlan:
     """Determine chunk split for a given total duration.
 
-    The Gemini-3.5-transcribe API caps audio per call differently depending
-    on whether speaker diarization is requested:
-      - no diarization: ~60 min per call
-      - with diarization: ~30 min per call
+    Front-loaded only: the first N-1 chunks fill to ``max_chunk_secs`` and
+    the last chunk absorbs the remainder. There is no equal-split option —
+    regardless of total length, chunks come out as a sequence of
+    ``max_chunk_secs``-sized units followed by a single (smaller) tail.
 
-    The caller passes ``max_chunk_secs`` = (per-call limit) − (1-min safety
-    margin). The default here is 1740s (29 min, 30-min limit minus 1 min),
-    which matches the diarization case. The API wrapper picks 3540s
-    (59 min) for the no-diarize case.
+    This means each chunk is at its maximum allowed size — fewer wasted
+    seconds per API call, and the chunk count tracks ``total_secs /
+    max_chunk_secs`` exactly.
 
-    Once the number of chunks is decided, the wrapper packs them front-
-    loaded: the first N-1 chunks fill to ``max_chunk_secs`` and the last
-    chunk absorbs whatever's left. This means each chunk is at its
-    maximum allowed size — fewer wasted seconds per API call, better
-    diarization quality on full-length chunks.
+    Examples (max=1740s, diarize ON):
+      - 90s     -> (90.0,)                            (single chunk, file fits)
+      - 1740s   -> (1740.0,)                          (single full chunk)
+      - 1741s   -> (1740.0, 1.0)                      (1 full + 1s tail)
+      - 1800s   -> (1740.0, 60.0)                     (1 full + short tail)
+      - 5000s   -> (1740.0, 1740.0, 1520.0)           (2 full + tail)
 
-    Examples (max=3540s, no-diarize):
-      - 3833.5s -> [3540.0, 293.5]   (1 full + short tail)
-      - 3600.0s -> [3540.0, 60.0]    (1 full + short tail)
-      - 3540.0s -> [3540.0]          (single full chunk)
-      - 1800.0s -> [1800.0]          (single chunk smaller than max)
-
-    ``chunk_secs`` is treated as a *target* chunk length when supplied. The
-    actual chunk_secs may come out smaller because the per-chunk ceiling is
-    always enforced.
+    Examples (max=3540s, diarize OFF):
+      - 3540s   -> (3540.0,)                          (single full chunk)
+      - 3600s   -> (3540.0, 60.0)                     (1 full + short tail)
+      - 3833.5s -> (3540.0, 293.5)                    (1 full + tail)
     """
-    user_specified = chunk_secs is not None and chunk_secs > 0
-    if chunk_secs is not None and chunk_secs > 0:
-        num_chunks = max(1, round(total_secs / chunk_secs))
-    else:
-        if total_secs <= max_chunk_secs:
-            return SplitPlan(
-                num_chunks=1,
-                chunk_secs=(float(total_secs),),
-                total_secs=total_secs,
-            )
-        num_chunks = max(2, int(total_secs // max_chunk_secs) + 1)
+    if total_secs <= max_chunk_secs:
+        return SplitPlan(
+            num_chunks=1,
+            chunk_secs=(float(total_secs),),
+            total_secs=total_secs,
+        )
+    num_chunks = max(2, int(total_secs // max_chunk_secs) + 1)
 
     # Enforce the ceiling: bump num_chunks up if the rounded value would
     # produce a chunk larger than max_chunk_secs.
     while total_secs / num_chunks > max_chunk_secs:
         num_chunks += 1
 
-    return _front_load(total_secs, num_chunks, max_chunk_secs, user_specified)
+    return _front_load(total_secs, num_chunks, max_chunk_secs)
 
 
 def _front_load(
     total_secs: float,
     num_chunks: int,
     max_chunk_secs: float,
-    user_specified: bool,
 ) -> SplitPlan:
-    """Distribute ``total_secs`` across ``num_chunks``.
+    """Distribute ``total_secs`` across ``num_chunks`` (front-loaded).
 
-    Two modes:
-      - Front-loaded (default): the first N-1 chunks fill to
-        ``max_chunk_secs`` and the last chunk absorbs the remainder.
-      - Equal split (user-specified ``chunk_secs``): each chunk is
-        ``total / num_chunks`` seconds, ideal for debug clips where the
-        caller wants predictable per-chunk sizes.
+    The first N-1 chunks fill to ``max_chunk_secs`` and the last chunk
+    absorbs the remainder. If the remainder happens to round to zero or
+    below, we drop a chunk (the previous one was already max-sized).
     """
     if num_chunks <= 1:
         return SplitPlan(
             num_chunks=1,
             chunk_secs=(float(total_secs),),
-            total_secs=total_secs,
-        )
-    if user_specified:
-        each = total_secs / num_chunks
-        return SplitPlan(
-            num_chunks=num_chunks,
-            chunk_secs=tuple(float(each) for _ in range(num_chunks)),
             total_secs=total_secs,
         )
     full_secs = max_chunk_secs

@@ -17,7 +17,7 @@ from gemini_transcribe_wrapper.audio import compute_split_plan
 
 
 def test_short_audio_single_chunk_default_ceiling():
-    plan = compute_split_plan(100.0)
+    plan = compute_split_plan(100.0, max_chunk_secs=1740.0)
     assert plan.num_chunks == 1
     assert plan.chunk_secs == (100.0,)
     assert plan.offsets == (0.0,)
@@ -25,14 +25,14 @@ def test_short_audio_single_chunk_default_ceiling():
 
 def test_at_default_ceiling_single_chunk():
     """A file exactly at the default 29-min ceiling fits in one chunk."""
-    plan = compute_split_plan(1740.0)
+    plan = compute_split_plan(1740.0, max_chunk_secs=1740.0)
     assert plan.num_chunks == 1
     assert plan.chunk_secs == (1740.0,)
 
 
 def test_just_over_default_ceiling_front_loaded():
     """A 1741s file gets 2 chunks: 1 full (1740s) + tiny tail (1s)."""
-    plan = compute_split_plan(1741.0)
+    plan = compute_split_plan(1741.0, max_chunk_secs=1740.0)
     assert plan.num_chunks == 2
     assert plan.chunk_secs == (1740.0, 1.0)
     assert plan.offsets == (0.0, 1740.0)
@@ -40,7 +40,7 @@ def test_just_over_default_ceiling_front_loaded():
 
 def test_30_min_audio_front_loaded():
     """30 min (1800s) -> 1 full + 1 short tail (60s)."""
-    plan = compute_split_plan(1800.0)
+    plan = compute_split_plan(1800.0, max_chunk_secs=1740.0)
     assert plan.num_chunks == 2
     assert plan.chunk_secs == (1740.0, 60.0)
 
@@ -94,36 +94,58 @@ def test_long_audio_never_exceeds_no_diarize_ceiling():
         assert sum(plan.chunk_secs) == total or abs(sum(plan.chunk_secs) - total) < 0.01
 
 
-# Explicit chunk_secs (user override) --------------------------------------
+# Explicit max_chunk_secs (user override) ----------------------------------
 
 
 def test_explicit_30_sec_chunks_for_120s_file():
-    """120s file with chunk_secs=30 -> 4 equal chunks of 30s (last equals rest)."""
-    plan = compute_split_plan(120.0, chunk_secs=30.0)
+    """120s file with max_chunk_secs=30 -> 4 chunks of 30s (last = full size).
+
+    120 / 30 = 4 exactly. The initial num_chunks would be 5 (120//30+1=5),
+    but the remainder-round-to-zero loop drops one chunk back to 4, and
+    the remaining tail equals a full max-sized chunk.
+    """
+    plan = compute_split_plan(120.0, max_chunk_secs=30.0)
     assert plan.num_chunks == 4
     assert plan.chunk_secs == (30.0, 30.0, 30.0, 30.0)
 
 
-def test_explicit_target_above_default_ceiling_clamps_count():
-    """A 59-min target with the default 29-min ceiling splits into equal chunks."""
-    plan = compute_split_plan(3540.0, chunk_secs=3540.0)
-    # 3540/3 = 1180 (uniform, since user supplied chunk_secs)
-    assert plan.num_chunks == 3
-    assert plan.chunk_secs == (1180.0, 1180.0, 1180.0)
+def test_explicit_max_chunk_secs_front_loaded_for_90s_file():
+    """90s file with max_chunk_secs=29 -> 29 + 29 + 29 + 3 (front-loaded)."""
+    plan = compute_split_plan(90.0, max_chunk_secs=29.0)
+    assert plan.num_chunks == 4
+    assert plan.chunk_secs == (29.0, 29.0, 29.0, 3.0)
 
 
-def test_explicit_target_above_relaxed_ceiling_stays_single_chunk():
-    """A 59-min target with the 59-min ceiling stays at 1 chunk."""
-    plan = compute_split_plan(3540.0, chunk_secs=3540.0, max_chunk_secs=3540.0)
-    assert plan.num_chunks == 1
-    assert plan.chunk_secs == (3540.0,)
+def test_explicit_max_chunk_secs_front_loaded_for_184s_file():
+    """184s file with max_chunk_secs=59 -> 59 + 59 + 59 + 7 (front-loaded)."""
+    plan = compute_split_plan(184.0, max_chunk_secs=59.0)
+    assert plan.num_chunks == 4
+    assert plan.chunk_secs == (59.0, 59.0, 59.0, 7.0)
 
 
 def test_explicit_oversized_chunk_for_short_audio():
-    """A 60s file with chunk_secs=3000 still yields 1 chunk (file fits)."""
-    plan = compute_split_plan(60.0, chunk_secs=3000.0)
+    """A 60s file with max_chunk_secs=3000 still yields 1 chunk (file fits)."""
+    plan = compute_split_plan(60.0, max_chunk_secs=3000.0)
     assert plan.num_chunks == 1
     assert plan.chunk_secs == (60.0,)
+
+
+def test_explicit_max_chunk_secs_under_total_no_equal_split():
+    """When max_chunk_secs < total_secs, the split is front-loaded, NOT equal.
+
+    Regression guard for the old equal-split mode: previously, supplying
+    chunk_secs triggered an equal split. The new contract is always
+    front-loaded (max-sized chunks + remainder).
+    """
+    plan = compute_split_plan(300.0, max_chunk_secs=60.0)
+    # 300/60 = 5 exactly -> 5 chunks of 60s (remainder rounds to 0).
+    assert plan.num_chunks == 5
+    assert plan.chunk_secs == (60.0, 60.0, 60.0, 60.0, 60.0)
+
+    plan = compute_split_plan(310.0, max_chunk_secs=60.0)
+    # 310/60 = 5.17 -> 5 full + 10 tail.
+    assert plan.num_chunks == 6
+    assert plan.chunk_secs == (60.0, 60.0, 60.0, 60.0, 60.0, 10.0)
 
 
 # Offsets ---------------------------------------------------------------

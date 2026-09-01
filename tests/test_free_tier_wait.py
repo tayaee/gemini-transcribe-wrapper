@@ -272,10 +272,12 @@ def test_throttle_api_call_enforces_interval(monkeypatch):
     stt.reset_api_rate_limiter()
 
 
-def test_throttle_api_call_log_includes_today_count_and_reset_countdown(
+def test_throttle_api_call_log_includes_reset_countdown(
     monkeypatch, tmp_path, caplog
 ):
-    """The throttling log line must include today's call count and reset time."""
+    """The throttling log line must include the sleep reason, elapsed time,
+    and a hint to retry after midnight PT if 429s keep recurring.
+    """
     monkeypatch.setenv("GTW_CACHE_DIR", str(tmp_path))
     stt.reset_api_rate_limiter()
 
@@ -287,11 +289,6 @@ def test_throttle_api_call_log_includes_today_count_and_reset_countdown(
     # predictable AND increments land on the mocked PT date.
     base = datetime(2026, 8, 30, 19, 40, 0, tzinfo=usage_counter.PT)
     monkeypatch.setattr(usage_counter, "pt_now", lambda: base)
-
-    # Pre-populate today's count so the message embeds a real number.
-    usage_counter.increment_today(api_key=api_key)
-    usage_counter.increment_today(api_key=api_key)
-    usage_counter.increment_today(api_key=api_key)
 
     # First call establishes a completion timestamp.
     stt._throttle_api_call(120.0, api_key=api_key)
@@ -305,14 +302,16 @@ def test_throttle_api_call_log_includes_today_count_and_reset_countdown(
     assert len(sleeps) == 1
     info_lines = [
         rec.message for rec in caplog.records
-        if "Free-tier rate limit" in rec.message
+        if "Sleeping" in rec.message and "429" in rec.message
     ]
     assert len(info_lines) == 1
     msg = info_lines[0]
-    assert "The # of API call attempts today: 3" in msg
-    # 4h20m to midnight -> "4 hours 20 minutes PT"
-    assert "4 hours 20 minutes PT" in msg
-    assert "sleeping 1" in msg  # ~120s sleep (elapsed=0.0s)
+    assert msg.startswith("Sleeping 120.0s to avoid 429 error on free tier.")
+    assert "0.0s elapsed since last API call completed" in msg
+    assert "(< 120s interval)" in msg
+    # Daily-limit hint must point at midnight PT with the remaining time.
+    assert "midnight PT" in msg
+    assert "4 hours 20 minutes" in msg
 
     stt.reset_api_rate_limiter()
 
