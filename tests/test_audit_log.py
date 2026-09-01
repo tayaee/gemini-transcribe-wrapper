@@ -46,6 +46,7 @@ def test_get_current_username_falls_back_to_getpass(monkeypatch):
 
 
 def test_get_audit_log_path():
+    """When ``api_key`` is None we still return the legacy fallback path."""
     p = stt.get_audit_log_path()
     assert p.parent == Path(stt.tempfile.gettempdir())
     assert p.name.startswith("gemini-transcribe-wrapper-")
@@ -59,6 +60,27 @@ def test_get_audit_log_path():
     host, user = parts[3], parts[4]
     assert host == host.lower() and re.match(r"^[a-z0-9._-]+$", host)
     assert user == user.lower() and re.match(r"^[a-z0-9._-]+$", user)
+
+
+def test_get_audit_log_path_with_key_uses_cache_dir(tmp_path, monkeypatch):
+    """New convention (issue-004, spec §4.3): per-key path under
+    ``~/.cache/gemini-transcribe-wrapper/<api_key_tail>/api-audit.jsonl``.
+
+    Honors ``$GTW_CACHE_DIR`` for tests.
+    """
+    monkeypatch.setenv("GTW_CACHE_DIR", str(tmp_path / "cache"))
+    p = stt.get_audit_log_path(api_key="AIzaKeyAaaaaaaa")
+    assert p.parent.parent == tmp_path / "cache"
+    assert p.parent.name == "Aaaaaaaa"  # last 8 chars, case preserved
+    assert p.name == "api-audit.jsonl"
+
+
+def test_get_audit_log_path_short_key_uses_full_key(tmp_path, monkeypatch):
+    """Short keys (< 8 chars) are used in full as the directory name."""
+    monkeypatch.setenv("GTW_CACHE_DIR", str(tmp_path / "cache"))
+    p = stt.get_audit_log_path(api_key="abc")
+    assert p.parent.name == "abc"
+    assert p.name == "api-audit.jsonl"
 
 
 def test_extract_status_code():
@@ -124,7 +146,8 @@ def test_append_audit_log_writes_valid_jsonl(tmp_path):
 
 def test_transcribe_chunk_logs_audit_on_success_and_failure(tmp_path, monkeypatch):
     log_file = tmp_path / "test_audit.jsonl"
-    monkeypatch.setattr(stt, "get_audit_log_path", lambda: log_file)
+    # ``get_audit_log_path`` now takes an ``api_key`` arg (issue-004).
+    monkeypatch.setattr(stt, "get_audit_log_path", lambda api_key=None: log_file)
 
     chunk_mp3 = tmp_path / "chunk_000.mp3"
     chunk_mp3.write_bytes(b"dummy audio data")

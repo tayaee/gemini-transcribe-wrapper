@@ -81,3 +81,24 @@ path, we write there as before. The new per-key default only applies when
   tests can target `tmp_path` fixtures.
 - Multi-key users get one audit file per key, which is what they want
   for sizing and quota forensics.
+
+## 구현 결과
+
+- **구현 완료 일시**: 2026-09-01
+- **변경 파일**:
+  - `src/gemini_transcribe_wrapper/stt.py` —
+    `get_audit_log_path(api_key: str | None = None)` 라우팅:
+    api_key 제공 시 `~/.cache/gemini-transcribe-wrapper/<key-tail>/api-audit.jsonl`,
+    미제공 시 legacy `<temp>/<host>-<user>.audit.jsonl` fallback.
+    `append_audit_log()` 도 `get_audit_log_path(api_key=api_key)` 사용.
+    Parent directory 자동 생성 (`mkdir parents=True`).
+    `TranscribeClient.__init__()` 의 default 도 첫 번째 키의 per-key
+    path 사용.
+  - `tests/test_audit_log.py` — 기존 monkeypatch 시그니처를
+    `lambda api_key=None: log_file` 로 업데이트, per-key path 신규 테스트 2개 추가.
+- **계획과의 차이**: 없음. Legacy `<temp>` 경로는 fallback 으로 유지하여
+  v1.x → v2 마이그레이션 호환성 확보.
+- **검증 결과**:
+  - `regression-tests/verify-issue-004.sh` → exit 0
+  - `uv run ruff check --fix` → clean
+  - `uv run pytest` → 282 passed

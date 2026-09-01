@@ -234,13 +234,27 @@ def _get_current_username() -> str:
         return "unknown"
 
 
-def get_audit_log_path() -> Path:
-    """Return path to ``<os-temp>/gemini-transcribe-wrapper-<host>-<user>.audit.jsonl``.
+def get_audit_log_path(api_key: str | None = None) -> Path:
+    """Return the default audit-log path for an API key.
 
-    The host and user segments are lowercased and sanitized so each
-    (computer, user) pair gets its own audit log — useful when multiple
-    users share a NAS-mounted temp directory.
+    New convention (issue-004, spec §4.3):
+    ``~/.cache/gemini-transcribe-wrapper/<api_key_tail>/api-audit.jsonl``
+    where ``api_key_tail = api_key[-8:]``. One file per key, so
+    per-key forensics ("how many 429s did key ``AIza…abcd`` hit
+    yesterday?") is a simple ``grep`` over a small file.
+
+    When ``api_key`` is empty (legacy / fallback path), the function
+    still returns the old ``<os-temp>/gemini-transcribe-wrapper-<host>-<user>.audit.jsonl``
+    location so callers that don't know the key yet (e.g. an early
+    audit row before the key is bound) keep writing somewhere stable.
     """
+    from .usage_counter import cache_dir
+
+    if api_key:
+        key_tail = api_key[-8:] if len(api_key) >= 8 else api_key
+        return cache_dir() / key_tail / "api-audit.jsonl"
+    # Legacy fallback: keep the old <temp>/<host>-<user> path so any
+    # downstream dashboards don't break during the v1.x → v2 migration.
     filename = f"gemini-transcribe-wrapper-{_get_computer_shortname()}-{_get_current_username()}.audit.jsonl"
     return Path(tempfile.gettempdir()) / filename
 
@@ -299,9 +313,13 @@ def append_audit_log(
     if isinstance(log_path, (str, Path)):
         target = Path(log_path)
     else:
-        target = get_audit_log_path()
+        # Route to the per-key path when an api_key was provided;
+        # otherwise fall back to the legacy <temp>/<host>-<user> file
+        # (preserved for backward-compat during the v1.x → v2 migration).
+        target = get_audit_log_path(api_key=api_key)
     line = json.dumps(record, ensure_ascii=False) + "\n"
     try:
+        target.parent.mkdir(parents=True, exist_ok=True)
         with open(target, "a", encoding="utf-8") as f:
             f.write(line)
     except Exception as exc:  # noqa: BLE001
@@ -563,7 +581,13 @@ class TranscribeClient:
             or (isinstance(audit_jsonl_file, str) and audit_jsonl_file.strip().lower() == "auto")
             or audit_jsonl_file is None
         ):
-            self.audit_jsonl_file = get_audit_log_path()
+            # Default: per-key path under ~/.cache when we have a key,
+            # legacy <temp>/<host>-<user> fallback otherwise (issue-004,
+            # spec §4.3). The first non-empty key in the pool is used so
+            # multi-key users still get the same single per-key path
+            # the call sites will write to.
+            default_key = self._api_keys[0] if self._api_keys else None
+            self.audit_jsonl_file = get_audit_log_path(api_key=default_key)
         else:
             self.audit_jsonl_file = Path(audit_jsonl_file)
         self.model = model
