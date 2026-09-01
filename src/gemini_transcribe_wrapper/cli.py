@@ -295,10 +295,9 @@ def _make_command() -> click.Command:
         default=None,
         help=(
             "Path to JSONL audit log file (default: "
-            "/tmp/gemini-transcribe-wrapper-<nodename>-<loginid>.audit.jsonl). "
-            "When omitted, the wrapper resolves <nodename> to the lowercase "
-            "hostname and <loginid> to the lowercase OS username, so each "
-            "(computer, user) pair gets its own audit log."
+            "~/.cache/gemini-transcribe-wrapper/<api-key-tail>/audit.jsonl, "
+            "or 'off' to disable). When omitted, each Gemini API key "
+            "maintains its own separate audit log."
         ),
     )
     @click.option(

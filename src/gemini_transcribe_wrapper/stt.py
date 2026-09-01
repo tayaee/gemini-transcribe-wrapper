@@ -239,26 +239,19 @@ def _get_current_username() -> str:
 def get_audit_log_path(api_key: str | None = None) -> Path:
     """Return the default audit-log path for an API key.
 
-    New convention (issue-004, spec §4.3):
-    ``~/.cache/gemini-transcribe-wrapper/<api_key_tail>/api-audit.jsonl``
+    Location:
+    ``~/.cache/gemini-transcribe-wrapper/<api_key_tail>/audit.jsonl``
     where ``api_key_tail = api_key[-8:]``. One file per key, so
-    per-key forensics ("how many 429s did key ``AIza…abcd`` hit
-    yesterday?") is a simple ``grep`` over a small file.
+    each key maintains its own separate audit log.
 
-    When ``api_key`` is empty (legacy / fallback path), the function
-    still returns the old ``<os-temp>/gemini-transcribe-wrapper-<host>-<user>.audit.jsonl``
-    location so callers that don't know the key yet (e.g. an early
-    audit row before the key is bound) keep writing somewhere stable.
+    When ``api_key`` is empty/None, returns ``~/.cache/gemini-transcribe-wrapper/audit.jsonl``.
     """
     from .usage_counter import cache_dir
 
     if api_key:
         key_tail = api_key_tail(api_key)
-        return cache_dir() / key_tail / "api-audit.jsonl"
-    # Legacy fallback: keep the old <temp>/<host>-<user> path so any
-    # downstream dashboards don't break during the v1.x → v2 migration.
-    filename = f"gemini-transcribe-wrapper-{_get_computer_shortname()}-{_get_current_username()}.audit.jsonl"
-    return Path(tempfile.gettempdir()) / filename
+        return cache_dir() / key_tail / "audit.jsonl"
+    return cache_dir() / "audit.jsonl"
 
 
 def _extract_status_code(exc: Exception | None) -> int:
@@ -604,13 +597,7 @@ class TranscribeClient:
             or (isinstance(audit_jsonl_file, str) and audit_jsonl_file.strip().lower() == "auto")
             or audit_jsonl_file is None
         ):
-            # Default: per-key path under ~/.cache when we have a key,
-            # legacy <temp>/<host>-<user> fallback otherwise (issue-004,
-            # spec §4.3). The first non-empty key in the pool is used so
-            # multi-key users still get the same single per-key path
-            # the call sites will write to.
-            default_key = self._api_keys[0] if self._api_keys else None
-            self.audit_jsonl_file = get_audit_log_path(api_key=default_key)
+            self.audit_jsonl_file = None
         else:
             self.audit_jsonl_file = Path(audit_jsonl_file)
         self.model = model

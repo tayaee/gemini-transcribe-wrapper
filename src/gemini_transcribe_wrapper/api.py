@@ -657,7 +657,11 @@ def _process_one(
             tier=tier,
             custom_vocabulary=combined_vocab,
             source_file=str(input_file.resolve()),
-            audit_jsonl_file=audit_target if audit_enabled else False,
+            audit_jsonl_file=(
+                audit_target
+                if _is_explicit_output_path(audit_jsonl_file)
+                else (None if audit_enabled else False)
+            ),
             model=model,
             word_level_timestamps=word_level_timestamps,
         )

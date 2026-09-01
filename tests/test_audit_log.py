@@ -45,26 +45,15 @@ def test_get_current_username_falls_back_to_getpass(monkeypatch):
     assert stt._get_current_username() == "bob"
 
 
-def test_get_audit_log_path():
-    """When ``api_key`` is None we still return the legacy fallback path."""
+def test_get_audit_log_path(tmp_path, monkeypatch):
+    """When ``api_key`` is None, returns ``~/.cache/gemini-transcribe-wrapper/audit.jsonl``."""
+    monkeypatch.setenv("GTW_CACHE_DIR", str(tmp_path / "cache"))
     p = stt.get_audit_log_path()
-    assert p.parent == Path(stt.tempfile.gettempdir())
-    assert p.name.startswith("gemini-transcribe-wrapper-")
-    assert p.name.endswith(".audit.jsonl")
-    # stem layout: gemini-transcribe-wrapper-<host>-<user>
-    stem = p.name[: -len(".audit.jsonl")]
-    parts = stem.split("-")
-    assert parts[0] == "gemini"
-    assert parts[1] == "transcribe"
-    assert parts[2] == "wrapper"
-    host, user = parts[3], parts[4]
-    assert host == host.lower() and re.match(r"^[a-z0-9._-]+$", host)
-    assert user == user.lower() and re.match(r"^[a-z0-9._-]+$", user)
+    assert p == tmp_path / "cache" / "audit.jsonl"
 
 
 def test_get_audit_log_path_with_key_uses_cache_dir(tmp_path, monkeypatch):
-    """New convention (issue-004, spec §4.3): per-key path under
-    ``~/.cache/gemini-transcribe-wrapper/<api_key_tail>/api-audit.jsonl``.
+    """Per-key path under ``~/.cache/gemini-transcribe-wrapper/<api_key_tail>/audit.jsonl``.
 
     Honors ``$GTW_CACHE_DIR`` for tests.
     """
@@ -72,7 +61,7 @@ def test_get_audit_log_path_with_key_uses_cache_dir(tmp_path, monkeypatch):
     p = stt.get_audit_log_path(api_key="AIzaKeyAaaaaaaa")
     assert p.parent.parent == tmp_path / "cache"
     assert p.parent.name == "Aaaaaaaa"  # last 8 chars, case preserved
-    assert p.name == "api-audit.jsonl"
+    assert p.name == "audit.jsonl"
 
 
 def test_get_audit_log_path_short_key_uses_full_key(tmp_path, monkeypatch):
@@ -80,7 +69,7 @@ def test_get_audit_log_path_short_key_uses_full_key(tmp_path, monkeypatch):
     monkeypatch.setenv("GTW_CACHE_DIR", str(tmp_path / "cache"))
     p = stt.get_audit_log_path(api_key="abc")
     assert p.parent.name == "abc"
-    assert p.name == "api-audit.jsonl"
+    assert p.name == "audit.jsonl"
 
 
 def test_extract_status_code():
@@ -258,6 +247,45 @@ def test_audit_log_off_suppresses_writing(tmp_path):
         log_path=client.audit_jsonl_file,
     )
     # It should not fail or raise
+
+
+def test_multi_key_writes_to_distinct_per_key_audit_logs(tmp_path, monkeypatch):
+    """Each API key writes audit entries to its own ~/.cache/.../<key_tail>/audit.jsonl."""
+    monkeypatch.setenv("GTW_CACHE_DIR", str(tmp_path / "cache"))
+
+    key1 = "AIzaKey11111111"
+    key2 = "AIzaKey22222222"
+
+    stt.append_audit_log(
+        input_file_path="/path/to/file1.mp4",
+        audio_chunk_file_path="/path/to/chunk1.mp3",
+        audio_chunk_playtime_s=30.0,
+        api_processing_time_s=1.5,
+        api_http_status_code=200,
+        api_key=key1,
+    )
+    stt.append_audit_log(
+        input_file_path="/path/to/file2.mp4",
+        audio_chunk_file_path="/path/to/chunk2.mp3",
+        audio_chunk_playtime_s=45.0,
+        api_processing_time_s=2.0,
+        api_http_status_code=200,
+        api_key=key2,
+    )
+
+    path1 = tmp_path / "cache" / "11111111" / "audit.jsonl"
+    path2 = tmp_path / "cache" / "22222222" / "audit.jsonl"
+
+    assert path1.exists()
+    assert path2.exists()
+
+    rec1 = json.loads(path1.read_text(encoding="utf-8").strip())
+    rec2 = json.loads(path2.read_text(encoding="utf-8").strip())
+
+    assert rec1["api_key_tail"] == "11111111"
+    assert rec1["input_file_path"] == "/path/to/file1.mp4"
+    assert rec2["api_key_tail"] == "22222222"
+    assert rec2["input_file_path"] == "/path/to/file2.mp4"
 
 
 def test_format_cli_command_quotes_spaces():
