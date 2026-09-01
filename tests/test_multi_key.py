@@ -82,6 +82,11 @@ class _MultiKeyClient(stt.TranscribeClient):
         # manually after the constructor runs.
         self._active_pool: list[str] = list(self._per_key_effects.keys())
         self._cooldown_pool: set[str] = set()
+        # ``_cooldown_secs`` is intentionally ``None`` so tests can
+        # ``monkeypatch.setattr(stt, "_COOLDOWN_SECS", ...)`` and have
+        # the value picked up via the lazy fallback in
+        # ``transcribe_chunk``.
+        self._cooldown_secs: float | None = None
 
         mock_upload = MagicMock()
         mock_upload.uri = "files/test"

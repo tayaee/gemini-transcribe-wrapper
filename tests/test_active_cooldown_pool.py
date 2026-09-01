@@ -80,6 +80,11 @@ class _ScriptedClient(stt.TranscribeClient):
 
         self._call_order: list[tuple[str, int]] = []
         self._calls_per_key: dict[str, int] = {k: 0 for k in per_key_effects}
+        # ``_cooldown_secs`` is intentionally ``None`` so tests can
+        # ``monkeypatch.setattr(stt, "_COOLDOWN_SECS", ...)`` and have
+        # the value picked up via the lazy fallback in
+        # ``transcribe_chunk``.
+        self._cooldown_secs: float | None = None
 
         def _create(**_kwargs):
             active = cast(str, self.api_key)
@@ -383,6 +388,32 @@ def test_active_pool_reactivation_preserves_api_keys_order(
     ]
     # After success, _rr_index advances to position 1 in active pool.
     assert client._rr_index == 1
+
+
+# --- per-instance cooldown_secs override ---------------------------------
+
+
+def test_cooldown_secs_kwarg_overrides_module_default():
+    """``TranscribeClient(cooldown_secs=...)`` lets callers override the
+    module-level ``_COOLDOWN_SECS`` constant without monkeypatching.
+
+    This is the escape hatch used by the audit-log test to skip the
+    600s wait when a single-key client hits the pool-drain path.
+    """
+    client = stt.TranscribeClient(
+        api_keys=["k1aaaaaa", "k2bbbbbb"],
+        cooldown_secs=12.5,
+    )
+    assert client._cooldown_secs == 12.5
+
+
+def test_cooldown_secs_kwarg_none_falls_back_to_module_default():
+    """``cooldown_secs=None`` (the default) keeps the module-level constant
+    so ``monkeypatch.setattr(stt, "_COOLDOWN_SECS", ...)`` still works
+    in tests that bypass the constructor.
+    """
+    client = stt.TranscribeClient(api_keys=["k1aaaaaa"])
+    assert client._cooldown_secs is None
 
 
 if __name__ == "__main__":

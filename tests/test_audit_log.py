@@ -130,7 +130,14 @@ def test_transcribe_chunk_logs_audit_on_success_and_failure(tmp_path, monkeypatc
     chunk_mp3.write_bytes(b"dummy audio data")
 
     # 1. Success case
-    client = stt.TranscribeClient(api_key="AIzaSyDummyKey12345678", request_interval_secs=0.0)
+    # ``cooldown_secs=0.0`` disables the 600s pool-drain wait so a
+    # misconfigured test can't hang the suite. The success path doesn't
+    # touch it, but keeping the knob explicit prevents future regressions.
+    client = stt.TranscribeClient(
+        api_key="AIzaSyDummyKey12345678",
+        request_interval_secs=0.0,
+        cooldown_secs=0.0,
+    )
     mock_upload = MagicMock()
     mock_upload.uri = "files/test"
     mock_upload.name = "files/test"
@@ -167,8 +174,15 @@ def test_transcribe_chunk_logs_audit_on_success_and_failure(tmp_path, monkeypatc
     assert r["api_http_status_code"] == 200
     assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$", r["timestamp"])
 
-    # 2. Failure case (429)
-    client.client.interactions.create = MagicMock(side_effect=RuntimeError("429 Resource exhausted"))
+    # 2. Failure case (non-quota error propagates immediately)
+    # We use a 500-style error here, NOT a 429: a 429 triggers the
+    # active/cooldown pool's quota handling (blacklist + retry on the
+    # next key), which would loop forever with a single-key test client
+    # even with cooldown_secs=0.0. The audit log write path is the
+    # same for both error classes; only the status code differs.
+    client.client.interactions.create = MagicMock(
+        side_effect=RuntimeError("500 Internal Server Error")
+    )
     with pytest.raises(RuntimeError):
         client.transcribe_chunk(
             chunk_mp3,
@@ -185,7 +199,7 @@ def test_transcribe_chunk_logs_audit_on_success_and_failure(tmp_path, monkeypatc
     assert r_err["audio_chunk_file_path"] == str(chunk_mp3.resolve())
     assert r_err["audio_chunk_playtime_s"] == 120.0
     assert r_err["api_processing_time_s"] == -1
-    assert r_err["api_http_status_code"] == 429
+    assert r_err["api_http_status_code"] == 500
 
 
 def test_cli_parser_audit_jsonl_default_and_custom(tmp_path):

@@ -466,6 +466,7 @@ class TranscribeClient:
         enable_diarization: bool = True,
         request_interval_secs: float = 120.0,
         tier: str = "free",
+        cooldown_secs: float | None = None,
         custom_vocabulary: list[str] | None = None,
         source_file: str | Path | None = None,
         audit_jsonl: str | Path | None = None,
@@ -522,6 +523,13 @@ class TranscribeClient:
         self.enable_diarization = enable_diarization
         self.request_interval_secs = request_interval_secs
         self.tier = tier
+        # Per-instance cooldown wait when the active pool drains. ``None``
+        # (default) falls back to the module-level ``_COOLDOWN_SECS`` so
+        # monkeypatching the constant in tests keeps working — see the
+        # lookup inside ``transcribe_chunk`` for the lazy resolution.
+        self._cooldown_secs: float | None = (
+            float(cooldown_secs) if cooldown_secs is not None else None
+        )
         self.custom_vocabulary = list(custom_vocabulary) if custom_vocabulary else None
         self.source_file = str(Path(source_file).resolve()) if source_file else None
         self.audit_jsonl = Path(audit_jsonl) if audit_jsonl else get_audit_log_path()
@@ -693,15 +701,24 @@ class TranscribeClient:
                             error=str(last_quota_exc),
                         )
                         raise last_quota_exc
+                    # Resolve lazily so ``monkeypatch.setattr(stt,
+                    # "_COOLDOWN_SECS", ...)`` in tests is honored even
+                    # when ``self._cooldown_secs`` was set to ``None`` by
+                    # the constructor.
+                    cooldown_secs = (
+                        self._cooldown_secs
+                        if self._cooldown_secs is not None
+                        else _COOLDOWN_SECS
+                    )
                     logger.info(
                         "Active pool drained (%d keys in cooldown). "
                         "Sleeping %.0fs before reactivating all of them "
                         "and retrying chunk %d.",
                         len(cooldown),
-                        _COOLDOWN_SECS,
+                        cooldown_secs,
                         chunk_index,
                     )
-                    time.sleep(_COOLDOWN_SECS)
+                    time.sleep(cooldown_secs)
                     # Reactivate all cooldown keys in batch (preserve
                     # original ``_api_keys`` order for round-robin fairness).
                     original = list(getattr(self, "_api_keys", []) or [])

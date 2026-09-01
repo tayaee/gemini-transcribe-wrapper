@@ -459,89 +459,24 @@ def test_parse_retry_after_seconds_extracts_hints():
     assert stt._parse_retry_after_seconds("PLEASE RETRY IN 17s") == 17.0
 
 
-def test_transcribe_chunk_retries_on_429_with_retry_hint(tmp_path, monkeypatch, caplog):
-    """First 429 with 'Please retry in Xs' → sleep X+120s → retry → succeed."""
-    sleeps: list[float] = []
-    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
-
-    first_exc = RuntimeError(_retry_msg(30.0))
-    # Build the client first so we can grab its _SENTINEL_OK for the retry step.
-    client = _QuotaClient(side_effects=[first_exc])
-    client._effects.append(client._SENTINEL_OK)
-
-    chunk_mp3 = tmp_path / "chunk_000.mp3"
-    chunk_mp3.write_bytes(b"dummy audio data")
-
-    with caplog.at_level(logging.INFO):
-        result = client.transcribe_chunk(
-            chunk_mp3,
-            chunk_index=0,
-            source_file="/input.mp4",
-            chunk_duration_secs=120.0,
-        )
-
-    assert result.text == "안녕하세요"
-    assert client.calls == 2  # first attempt + one retry
-    assert sleeps == [pytest.approx(150.0)]  # 30 + 120
-    # One log line on success (per user spec)
-    cooldown_logs = [
-        rec.getMessage() for rec in caplog.records
-        if "via cooldown succeeded" in rec.getMessage()
-    ]
-    assert len(cooldown_logs) == 1
-    sleeping_logs = [
-        rec.message for rec in caplog.records
-        if "sleeping 150s (hint 30.0s + safety 120s) then retrying once" in rec.message
-    ]
-    assert len(sleeping_logs) == 1
+def test_transcribe_chunk_retries_on_429_with_retry_hint():
+    """Removed: the same-key 'hint + 120s safety' retry path was deleted when
+    the active/cooldown pool was introduced. On a 429 the wrapper now
+    blacklists the key immediately and tries the next active key — see
+    tests/test_active_cooldown_pool.py for the current behavior."""
 
 
-def test_transcribe_chunk_does_not_retry_on_429_without_retry_hint(tmp_path, monkeypatch):
-    """429 with no 'Please retry in Xs' → propagate immediately, no sleep, no retry."""
-    sleeps: list[float] = []
-    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
-
-    client = _QuotaClient(side_effects=[RuntimeError("429 plain error, no hint")])
-
-    chunk_mp3 = tmp_path / "chunk_000.mp3"
-    chunk_mp3.write_bytes(b"dummy audio data")
-
-    with pytest.raises(RuntimeError, match="429"):
-        client.transcribe_chunk(
-            chunk_mp3,
-            chunk_index=0,
-            source_file="/input.mp4",
-            chunk_duration_secs=120.0,
-        )
-
-    assert client.calls == 1
-    assert sleeps == []
+def test_transcribe_chunk_does_not_retry_on_429_without_retry_hint():
+    """Removed: any 429 (with or without a hint) is treated as daily-quota
+    exhaustion and routed through the active/cooldown pool. The pool's
+    drain-then-cooldown-wait behavior is covered in
+    tests/test_active_cooldown_pool.py."""
 
 
-def test_transcribe_chunk_re_raises_original_on_retry_failure(tmp_path, monkeypatch):
-    """Retry also fails → re-raise the ORIGINAL 429, not the second exception."""
-    sleeps: list[float] = []
-    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
-
-    first_exc = RuntimeError(_retry_msg(10.0))
-    second_exc = RuntimeError("still failing after retry")
-    client = _QuotaClient(side_effects=[first_exc, second_exc])
-
-    chunk_mp3 = tmp_path / "chunk_000.mp3"
-    chunk_mp3.write_bytes(b"dummy audio data")
-
-    with pytest.raises(RuntimeError) as excinfo:
-        client.transcribe_chunk(
-            chunk_mp3,
-            chunk_index=0,
-            source_file="/input.mp4",
-            chunk_duration_secs=120.0,
-        )
-
-    # The original (first) error is the one that propagates
-    assert "Please retry in 10.0s" in str(excinfo.value)
-    assert client.calls == 2
-    assert sleeps == [pytest.approx(130.0)]  # 10 + 120
+def test_transcribe_chunk_re_raises_original_on_retry_failure():
+    """Removed: there is no longer a same-key retry step to fail. The pool
+    reactivation behavior (which re-tries the chunk from scratch) is
+    covered in tests/test_active_cooldown_pool.py."""
 
 
 if __name__ == "__main__":
