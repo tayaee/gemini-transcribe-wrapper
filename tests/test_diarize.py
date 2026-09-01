@@ -207,8 +207,42 @@ def test_diarize_on_runs_chunks_at_diarize_default(monkeypatch, tmp_path):
     assert captured["max_chunk_secs"] == DEFAULT_CHUNK_SECS_DIARIZE
 
 
-def test_diarize_off_runs_chunks_at_no_diarize_default(monkeypatch, tmp_path):
-    """With diarize=False and no explicit chunk_secs, chunk_secs=3540 + ceiling=3540 should be used."""
+def test_diarize_off_word_timestamps_off_runs_chunks_at_no_diarize_default(monkeypatch, tmp_path):
+    """With diarize=False AND word_level_timestamps=False (only combo that picks 59*60),
+    chunk_secs=3540 + ceiling=3540 should be used.
+    """
+    src = _make_audio(tmp_path)
+    captured: dict[str, float | None] = {}
+
+    real_compute = api.compute_split_plan
+
+    def spy(total_secs, chunk_secs=None, max_chunk_secs=1740.0):
+        captured["chunk_secs"] = chunk_secs
+        captured["max_chunk_secs"] = max_chunk_secs
+        return real_compute(
+            total_secs, chunk_secs=chunk_secs, max_chunk_secs=max_chunk_secs
+        )
+
+    monkeypatch.setattr(api, "compute_split_plan", spy)
+
+    orig = api.TranscribeClient
+    api.TranscribeClient = _OneChunkFakeClient
+    try:
+        api.gemini_transcribe(
+            str(src), force=True, gemini_api_key="fake", word_level_timestamps=False,
+        )
+    finally:
+        api.TranscribeClient = orig
+
+    assert captured["chunk_secs"] == DEFAULT_CHUNK_SECS_NO_DIARIZE
+    assert captured["max_chunk_secs"] == DEFAULT_CHUNK_SECS_NO_DIARIZE
+
+
+def test_diarize_off_word_timestamps_on_runs_chunks_at_diarize_default(monkeypatch, tmp_path):
+    """With diarize=False but word_level_timestamps=True (default), the 29*60
+    short-chunk ceiling is enforced because word-level timestamps force the
+    Gemini API into the 30-min per-call mode.
+    """
     src = _make_audio(tmp_path)
     captured: dict[str, float | None] = {}
 
@@ -230,8 +264,8 @@ def test_diarize_off_runs_chunks_at_no_diarize_default(monkeypatch, tmp_path):
     finally:
         api.TranscribeClient = orig
 
-    assert captured["chunk_secs"] == DEFAULT_CHUNK_SECS_NO_DIARIZE
-    assert captured["max_chunk_secs"] == DEFAULT_CHUNK_SECS_NO_DIARIZE
+    assert captured["chunk_secs"] == DEFAULT_CHUNK_SECS_DIARIZE
+    assert captured["max_chunk_secs"] == DEFAULT_CHUNK_SECS_DIARIZE
 
 
 def test_diarize_explicit_chunk_secs_overrides_default(monkeypatch, tmp_path):

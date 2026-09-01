@@ -45,6 +45,7 @@ class TranscribeOptions:
     speakers: str | None = None
     custom_vocabulary: str | None = None
     custom_vocabulary_file: str | None = None
+    word_level_timestamps: bool = True
     temp_path: str = "temp"
     audit_jsonl_file: str | Path | bool | None = None
     log_level: str = "info"
@@ -206,9 +207,11 @@ def _make_command() -> click.Command:
         type=float,
         default=None,
         help=(
-            "Fixed chunk length in seconds (default: auto, 59-min logical units when "
-            "--no-diarize, 29-min when --diarize; hard ceiling of 29 min enforced to "
-            "fit the Gemini 30-min per-call limit)"
+            "[DEVELOPER/INTERNAL ONLY — not intended for end users] Fixed chunk "
+            "length in seconds (default: auto, 3540s logical units when "
+            "--no-diarize and --no-word-level-timestamps, 1740s when either is on; "
+            "hard ceiling of 1740s enforced to fit the Gemini 30-min per-call limit "
+            "when diarization or word-level timestamps are active)"
         ),
     )
     @click.option(
@@ -233,6 +236,16 @@ def _make_command() -> click.Command:
              "If the file is missing, a warning is printed and the option is ignored. "
              "Gemini Transcribe rejects custom_vocabulary when timestamps are requested, "
              "so the wrapper applies these as post-recognition bias instead of sending them to the API.",
+    )
+    @click.option(
+        "--word-level-timestamps/--no-word-level-timestamps",
+        default=True,
+        help=(
+            "Enable/disable word-level timestamps in transcription output (default: on). "
+            "When enabled, the Gemini API per-call audio limit drops from ~1 hour (59m) "
+            "to ~30 min (29m), same as --diarized-srt-file. Disable to allow longer chunks "
+            "when word-level timing is not needed."
+        ),
     )
     @click.option(
         "--temp-path",
@@ -283,6 +296,7 @@ def _make_command() -> click.Command:
         speakers: str | None,
         custom_vocabulary: str | None,
         custom_vocabulary_file: str | None,
+        word_level_timestamps: bool,
         temp_path: str,
         audit_jsonl_file: str | None,
         log_level: str,
@@ -336,6 +350,7 @@ def _make_command() -> click.Command:
                 speakers=speakers,
                 custom_vocabulary=custom_vocabulary,
                 custom_vocabulary_file=custom_vocabulary_file,
+                word_level_timestamps=word_level_timestamps,
                 temp_path=temp_path,
                 audit_jsonl_file=audit_jsonl_file,
                 log_level=log_level,
@@ -466,6 +481,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.extend(["--custom-vocabulary-file", str(opts.custom_vocabulary_file)])
     if opts.chunk_secs is not None:
         tokens.extend(["--chunk-secs", str(opts.chunk_secs)])
+    if not opts.word_level_timestamps:
+        tokens.append("--no-word-level-timestamps")
 
     if opts.line_interval_secs is not None:
         tokens.extend(["--line-interval-secs", str(opts.line_interval_secs)])
@@ -612,6 +629,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 custom_vocabulary=custom_vocab,
                 custom_vocabulary_file=opts.custom_vocabulary_file,
                 audit_jsonl_file=opts.audit_jsonl_file,
+                word_level_timestamps=opts.word_level_timestamps,
             )
             produced_all.extend(batch.output_files())
             if any(r.status == TranscribeStatus.FAILED for r in batch.results):

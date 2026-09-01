@@ -90,13 +90,14 @@ def _load_vocabulary_file(path: str | None) -> list[str]:
 # Default chunk length per diarize mode. The user can still override via
 # ``chunk_secs``; these are only the fallbacks when the user doesn't specify.
 # The Gemini-3.5-transcribe API caps audio per call differently depending
-# on whether speaker diarization is requested (60 min off, 30 min on). Both
-# defaults already include a 1-min safety margin, so they also serve as the
-# per-chunk ceiling passed to audio.compute_split_plan.
-# - diarize=False (default): 3540s (59 min) — file fits in one API call up
-#   to ~1 hour.
-# - diarize=True : 1740s (29 min) — shorter chunks aid diarization quality
-#   and stay under the 30-min per-call limit.
+# on whether speaker diarization or word-level timestamps are requested
+# (60 min when neither is active, 30 min when either is active). Both defaults
+# already include a 1-min safety margin, so they also serve as the per-chunk
+# ceiling passed to audio.compute_split_plan.
+# - Neither diarize nor word timestamps: 3540s (59 min) — file fits in one
+#   API call up to ~1 hour.
+# - Diarize OR word timestamps: 1740s (29 min) — shorter chunks stay under
+#   the 30-min per-call limit.
 DEFAULT_CHUNK_SECS_NO_DIARIZE = 3540.0
 DEFAULT_CHUNK_SECS_DIARIZE = 1740.0
 
@@ -202,6 +203,7 @@ def gemini_transcribe(
     custom_vocabulary_file: str | None = None,
     language_codes: list[str] | None = None,
     model: str = MODEL_ID,
+    word_level_timestamps: bool = True,
     # Backward compatibility aliases
     create_transcript_json: bool | None = None,
     create_metadata_json: bool | None = None,
@@ -247,9 +249,13 @@ def gemini_transcribe(
             "free" tier, 0.0s for "paid" tier.
         chunk_secs: Optional fixed chunk length in seconds. Overrides the
             default for the chosen diarization mode (59 min off, 29 min on).
-            A hard ceiling of 29 min (1740s) is always enforced because the
-            Gemini API caps audio at ~30 min per call. Useful for debugging
-            short clips.
+            A hard ceiling of 29 min (1740s) is enforced when speaker
+            diarization or word-level timestamps are enabled because the
+            Gemini API caps audio at ~30 min per call in those modes.
+        word_level_timestamps: Include word-level timestamps in the
+            transcription output (default: ``True``). When enabled, the
+            Gemini API per-call audio limit drops from ~1 hour to ~30 min,
+            same as speaker diarization.
         speakers: Optional mapping of raw speaker ids (e.g. "spk:0") to
             display names used in the .diarized.srt output. Speakers missing
             from the mapping keep their raw id, and a warning is emitted
@@ -333,6 +339,7 @@ def gemini_transcribe(
                 custom_vocabulary=custom_vocabulary,
                 custom_vocabulary_file=custom_vocabulary_file,
                 model=model,
+                word_level_timestamps=word_level_timestamps,
             )
         )
     return BatchTranscribeResult(results=results)
@@ -377,6 +384,7 @@ def _process_one(
     custom_vocabulary_file: str | None = None,
     language_codes: list[str] | None = None,
     model: str = MODEL_ID,
+    word_level_timestamps: bool = True,
 ) -> TranscribeResult:
     input_file = Path(input_path)
 
@@ -547,12 +555,14 @@ def _process_one(
         total_secs = probe_duration_secs(input_file)
         logger.info("%s duration: %.1fs", input_file, total_secs)
         # The Gemini API has a different per-call audio limit depending on
-        # whether speaker diarization is requested (60 min off, 30 min on).
+        # whether speaker diarization or word-level timestamps are requested
+        # (60 min when neither is active, 30 min when either is active).
         # Both defaults already bake in a 1-min safety margin, so they also
         # serve as the per-chunk ceiling passed to compute_split_plan.
         effective_chunk_secs = chunk_secs
+        needs_short_chunks = diarized_enabled or word_level_timestamps
         max_chunk_secs = (
-            DEFAULT_CHUNK_SECS_DIARIZE if diarized_enabled else DEFAULT_CHUNK_SECS_NO_DIARIZE
+            DEFAULT_CHUNK_SECS_DIARIZE if needs_short_chunks else DEFAULT_CHUNK_SECS_NO_DIARIZE
         )
         if effective_chunk_secs is None:
             effective_chunk_secs = max_chunk_secs
@@ -583,6 +593,7 @@ def _process_one(
             source_file=str(input_file.resolve()),
             audit_jsonl_file=audit_target if audit_enabled else False,
             model=model,
+            word_level_timestamps=word_level_timestamps,
         )
         results = transcribe_chunks_sequential(
             client,

@@ -477,6 +477,7 @@ class TranscribeClient:
         source_file: str | Path | None = None,
         audit_jsonl_file: str | Path | bool | None = None,
         model: str = MODEL_ID,
+        word_level_timestamps: bool = True,
     ) -> None:
         # Resolve the effective key list, preserving order and dropping
         # blanks. ``api_key`` is the legacy single-key kwarg kept for
@@ -525,6 +526,7 @@ class TranscribeClient:
             else None
         )
         self.enable_diarization = enable_diarization
+        self.word_level_timestamps = word_level_timestamps
         self.request_interval_secs = request_interval_secs
         self.tier = tier
         # Per-instance cooldown wait when the active pool drains. ``None``
@@ -590,7 +592,8 @@ class TranscribeClient:
         mode: dict[str, Any] = {"type": "verbatim"}
         if self.enable_diarization:
             mode["diarization_mode"] = "speaker"
-        mode["timestamp_granularities"] = ["word"]
+        if self.word_level_timestamps:
+            mode["timestamp_granularities"] = ["word"]
         transcription["mode"] = mode
 
         return _gaos_interactions.GenerationConfig(
