@@ -1,16 +1,23 @@
-"""Multi-key Gemini API key + round-robin + 429 fallback.
+"""Multi-key Gemini API key + round-robin + active/cooldown pool.
 
-When the user supplies multiple API keys (``--gemini-api-keys=k1,k2,...``),
+When the user supplies multiple API keys (``--gemini-api-keys=k1,k2,...``)
+and a per-call throttle (``request_interval_secs=120``), a 429
+encountered during a chunk is effectively "daily quota exhausted" — the
+same key will keep 429ing for the rest of the day.
+
 :class:`stt.TranscribeClient` should:
 
-1. Issue one chunk per key in round-robin order (advancing the pointer
-   after every successful chunk, even if the chunk succeeded on the
-   first key tried).
-2. On a 429-with-hint, apply the existing cooldown+retry once on the
-   same key. If the retry also fails, fall through to the next key.
-3. On a 429-without-hint, skip the cooldown and try the next key.
-4. On exhaustion of all keys, propagate the most recent 429 (still
-   triggers ``QuotaExceededError`` at the batch boundary).
+1. Issue one chunk per key in round-robin order against the
+   ``_active_pool`` (advancing the pointer after every successful
+   chunk, even if the chunk succeeded on the first key tried).
+2. On **any** 429 (with or without a retry hint), immediately
+   blacklist the key into ``_cooldown_pool`` and try the next active
+   key. No same-key retry, no hint-based cooldown sleep.
+3. When the active pool drains (every active key was 429'd during this
+   chunk), sleep ``_COOLDOWN_SECS`` and reactivate every cooldown key
+   in batch (preserving ``_api_keys`` order), then retry the chunk.
+4. Non-quota errors (400/500/etc.) are not absorbed by pool rotation;
+   they propagate so callers see the real failure.
 """
 
 from __future__ import annotations
@@ -70,6 +77,11 @@ class _MultiKeyClient(stt.TranscribeClient):
         self.request_interval_secs = 0.0
         self.tier = "free"
         self.model = stt.MODEL_ID
+        # Active/cooldown pool attributes (mirrors
+        # ``TranscribeClient.__init__``) so tests don't have to set them
+        # manually after the constructor runs.
+        self._active_pool: list[str] = list(self._per_key_effects.keys())
+        self._cooldown_pool: set[str] = set()
 
         mock_upload = MagicMock()
         mock_upload.uri = "files/test"
@@ -149,22 +161,28 @@ def test_round_robin_wraps_around_after_n_keys(tmp_path, monkeypatch):
     assert keys_used == [k0, k1, k2, k0, k1, k2, k0]
 
 
-# --- 429 fallback: with retry hint ---------------------------------------
+# --- 429 → immediate blacklist (no same-key retry) -----------------------
 
 
-def test_429_with_hint_falls_through_to_next_key_on_retry_failure(
+def test_429_with_hint_blacklists_immediately_no_retry(
     tmp_path, monkeypatch, caplog
 ):
-    """Key A 429s with hint → sleep → retry A still 429s → key B succeeds."""
+    """Hint-bearing 429 → blacklist immediately, no same-key retry sleep.
+
+    Old behavior slept ``retry_after + 120s`` and retried the same key.
+    New behavior blacklists in one shot and falls through to the next
+    active key.
+    """
     sleeps: list[float] = []
     monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
     monkeypatch.setattr(stt, "_throttle_api_call", lambda *a, **k: None)
 
     k_a, k_b = "AIzaKeyAaaaaaaa", "AIzaKeyBbbbbbbbb"
-    # Key A: two 429s (initial + retry after cooldown). Key B: OK.
+    # Key A: a single 429 (would have triggered retry+cooldown in the
+    # old code). Key B: OK.
     client = _MultiKeyClient(
         {
-            k_a: [RuntimeError(_retry_msg(5.0)), RuntimeError(_retry_msg(5.0))],
+            k_a: [RuntimeError(_retry_msg(5.0))],
             k_b: [],
         }
     )
@@ -177,24 +195,32 @@ def test_429_with_hint_falls_through_to_next_key_on_retry_failure(
         result = client.transcribe_chunk(chunk, chunk_index=0)
 
     assert result.text == "안녕하세요"
-    # Sleep happened once (A's cooldown). B succeeded without any sleep.
-    assert len(sleeps) == 1
-    assert 120.0 < sleeps[0] < 130.0  # 5s hint + 120s safety
-    # Call order: A1 → A2 (retry) → B1 (fallback).
+    # Crucially: no sleep at all. Old behavior would have slept ~125s.
+    assert sleeps == []
+    # Call order: A1 (429) → B1 (success). A is NEVER retried.
     assert [(k[-4:], n) for k, n in client._call_order] == [
         (k_a[-4:], 1),
-        (k_a[-4:], 2),
         (k_b[-4:], 1),
     ]
-    # The "trying next key" log line was emitted for A.
-    fallback_logs = [
-        rec.message for rec in caplog.records if "trying next key" in rec.message
+    # The "blacklisting" log line was emitted for A.
+    bl_logs = [
+        rec.message for rec in caplog.records if "blacklisting" in rec.message
     ]
-    assert any("429 retry via cooldown failed" in m for m in fallback_logs)
+    assert any("...aaaa" in m for m in bl_logs)
+    # A moved to cooldown, B is the only active key.
+    assert k_a not in client._active_pool
+    assert client._active_pool == [k_b]
+    assert k_a in client._cooldown_pool
 
 
-def test_429_with_hint_succeeds_on_retry_no_fallback(tmp_path, monkeypatch, caplog):
-    """Key A 429s with hint → sleep → retry A succeeds → B is never tried."""
+def test_429_with_hint_no_succeeds_via_retry_no_fallback(
+    tmp_path, monkeypatch, caplog
+):
+    """A 429 (with or without hint) never retries on the same key.
+
+    Even though A's next scripted response would have succeeded, the
+    blacklist is immediate — B takes the chunk.
+    """
     sleeps: list[float] = []
     monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
     monkeypatch.setattr(stt, "_throttle_api_call", lambda *a, **k: None)
@@ -202,7 +228,7 @@ def test_429_with_hint_succeeds_on_retry_no_fallback(tmp_path, monkeypatch, capl
     k_a, k_b = "AIzaKeyAaaaaaaa", "AIzaKeyBbbbbbbbb"
     client = _MultiKeyClient(
         {
-            k_a: [RuntimeError(_retry_msg(3.0))],  # one 429, then OK
+            k_a: [RuntimeError(_retry_msg(3.0))],  # 429 then would-OK
             k_b: [],
         }
     )
@@ -215,22 +241,26 @@ def test_429_with_hint_succeeds_on_retry_no_fallback(tmp_path, monkeypatch, capl
         result = client.transcribe_chunk(chunk, chunk_index=0)
 
     assert result.text == "안녕하세요"
-    assert len(sleeps) == 1
-    assert 120.0 < sleeps[0] < 130.0  # 3s hint + 120s safety
-    # Only A was tried (1st attempt + 1 retry). B untouched.
+    assert sleeps == []
+    # A tried exactly once. B took the chunk.
     assert [(k[-4:], n) for k, n in client._call_order] == [
         (k_a[-4:], 1),
-        (k_a[-4:], 2),
+        (k_b[-4:], 1),
     ]
 
 
-# --- 429 fallback: without retry hint ------------------------------------
+# --- 429 without hint -----------------------------------------------------
 
 
 def test_429_without_hint_tries_next_key_immediately(
     tmp_path, monkeypatch, caplog
 ):
-    """Key A 429s with no hint → no sleep → key B succeeds right away."""
+    """Key A 429s with no hint → blacklist immediately → key B succeeds.
+
+    Hint and non-hint 429s follow the same blacklist path now (the
+    2-minute throttle absorbs short-term rate limits, so any 429 here
+    is treated as daily-quota exhaustion).
+    """
     sleeps: list[float] = []
     monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
     monkeypatch.setattr(stt, "_throttle_api_call", lambda *a, **k: None)
@@ -251,29 +281,42 @@ def test_429_without_hint_tries_next_key_immediately(
         result = client.transcribe_chunk(chunk, chunk_index=0)
 
     assert result.text == "안녕하세요"
-    # No cooldown sleep — fall through to next key.
     assert sleeps == []
     assert [(k[-4:], n) for k, n in client._call_order] == [
         (k_a[-4:], 1),
         (k_b[-4:], 1),
     ]
+    assert client._active_pool == [k_b]
+    assert client._cooldown_pool == {k_a}
 
 
-# --- all keys exhausted ---------------------------------------------------
+# --- active pool drain → cooldown wait + reactivate ---------------------
 
 
-def test_all_keys_exhausted_propagates_last_429(tmp_path, monkeypatch):
-    """Every key 429s → raise the most recent 429."""
+def test_active_pool_drain_waits_then_reactivates_and_retries(
+    tmp_path, monkeypatch, caplog
+):
+    """All keys 429 → sleep ``_COOLDOWN_SECS`` → reactivate → retry chunk.
+
+    In the old design this test asserted the wrapper raised after the
+    first full sweep. The new design sleeps and retries in a loop, so
+    each key gets a single 429 on the first pass and a successful call
+    on the reactivated pass.
+    """
     sleeps: list[float] = []
     monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
     monkeypatch.setattr(stt, "_throttle_api_call", lambda *a, **k: None)
+    monkeypatch.setattr(stt, "_COOLDOWN_SECS", 0.05)  # speed up
 
     k_a, k_b, k_c = "AIzaKeyAaaaaaaa", "AIzaKeyBbbbbbbbb", "AIzaKeyCccccccc"
+    # First call per key 429s; subsequent calls succeed. All three keys
+    # 429 on the first pass, so the active pool drains and triggers the
+    # cooldown-wait path.
     client = _MultiKeyClient(
         {
-            k_a: [RuntimeError(_retry_msg(1.0)), RuntimeError(_retry_msg(1.0))],
+            k_a: [RuntimeError(_retry_msg(1.0))],
             k_b: [RuntimeError("429 plain")],
-            k_c: [RuntimeError(_retry_msg(2.0)), RuntimeError(_retry_msg(2.0))],
+            k_c: [RuntimeError(_retry_msg(2.0))],
         }
     )
     client._api_keys = [k_a, k_b, k_c]
@@ -281,13 +324,28 @@ def test_all_keys_exhausted_propagates_last_429(tmp_path, monkeypatch):
 
     chunk = _chunk(tmp_path, "chunk_000.mp3")
 
-    with pytest.raises(RuntimeError) as excinfo:
-        client.transcribe_chunk(chunk, chunk_index=0)
+    with caplog.at_level(logging.INFO):
+        result = client.transcribe_chunk(chunk, chunk_index=0)
 
-    # The most-recent 429 message is preserved.
-    assert "Please retry in 2.0s" in str(excinfo.value)
-    # Each key was tried at least once.
-    assert {k for k, _ in client._call_order} == {k_a, k_b, k_c}
+    assert result.text == "안녕하세요"
+    # First pass: every key 429s once. Second pass (after cooldown
+    # wait): first key (a) succeeds immediately, chunk returns.
+    assert [(k[-4:], n) for k, n in client._call_order] == [
+        (k_a[-4:], 1),
+        (k_b[-4:], 1),
+        (k_c[-4:], 1),
+        (k_a[-4:], 2),
+    ]
+    # Cooldown wait fired once.
+    assert [s for s in sleeps if s >= 0.04] == [pytest.approx(0.05)]
+    # The "Active pool drained" log was emitted.
+    assert any(
+        "Active pool drained" in rec.message and "Sleeping" in rec.message
+        for rec in caplog.records
+    )
+    # After success, all three keys are back in the active pool.
+    assert sorted(client._active_pool) == sorted([k_a, k_b, k_c])
+    assert client._cooldown_pool == set()
 
 
 # --- per-key throttle isolation ------------------------------------------

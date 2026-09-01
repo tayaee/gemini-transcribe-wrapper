@@ -123,9 +123,11 @@ def _is_quota_error(exc: Exception) -> bool:
 
 _RETRY_AFTER_RE = re.compile(r"please retry in\s+(\d+(?:\.\d+)?)\s*s", re.IGNORECASE)
 
-# Extra safety padding added on top of Gemini's "Please retry in Xs" hint
-# when a 429 is encountered, so the retry fires after the quota cools down.
-_RETRY_SAFETY_SECS = 120.0
+# When the active key pool drains (all keys hit 429 / daily quota),
+# wait this long before re-attempting with the cooldown pool. 10 minutes
+# is long enough that daily-quota'd keys typically remain blocked for the
+# day but short enough that the loop is responsive if a key recovers.
+_COOLDOWN_SECS = 600.0
 
 
 def _parse_retry_after_seconds(message: str) -> float | None:
@@ -449,6 +451,13 @@ class TranscribeClient:
                 seen.add(k)
                 deduped.append(k)
         self._api_keys: list[str] = deduped
+        # Active pool: keys currently eligible for round-robin.
+        # Cooldown pool: keys that hit 429 (daily quota) and are waiting
+        # for ``_COOLDOWN_SECS`` before re-entering the active pool.
+        # When the active pool drains, all cooldown keys are moved back
+        # in batch — see ``_transcribe_chunk``.
+        self._active_pool: list[str] = list(deduped)
+        self._cooldown_pool: set[str] = set()
         self._rr_index: int = 0
         # ``self.api_key`` stays singular so existing per-call helpers
         # (audit log, throttle, usage counter) keep working unchanged.
@@ -596,9 +605,6 @@ class TranscribeClient:
             self.api_key = initial_key
             uploaded = self.client.files.upload(file=str(chunk_mp3))
 
-            start_idx = getattr(self, "_rr_index", 0)
-            n = len(keys)
-
             def _create() -> Any:
                 return self.client.interactions.create(
                     model=self.model,
@@ -612,103 +618,104 @@ class TranscribeClient:
                     generation_config=self._generation_config(),
                 )
 
-            for offset in range(n):
-                idx = (start_idx + offset) % n
-                key = keys[idx]
-                # Install this key on the client for per-call helpers
-                # (throttle / usage counter / audit / record_api_call_completed).
-                self.client = self._client_for(key)
-                self.api_key = key
-                _throttle_api_call(
-                    getattr(self, "request_interval_secs", 120.0),
-                    api_key=key,
-                    tier=getattr(self, "tier", "free"),
-                )
-                from .usage_counter import increment_today
-
-                increment_today(api_key=key)
-
-                attempt_start = time.monotonic()
-                try:
-                    interaction = _create()
-                except Exception as first_exc:
-                    # Apply the existing single-key cooldown+retry path.
-                    # If it ultimately fails for this key, fall through to
-                    # the next key; if it's not a quota error, propagate.
-                    if not _is_quota_error(first_exc):
-                        # Non-quota error (e.g. 400/500): no point trying
-                        # the next key — the request is malformed or the
-                        # service is down for everyone. Audit-log, log
-                        # the reference URL, and re-raise.
-                        status_code = _extract_status_code(first_exc)
-                        append_audit_log(
-                            input_file_path=effective_source_file,
-                            audio_chunk_file_path=effective_chunk_file,
-                            audio_chunk_playtime_s=chunk_dur,
-                            api_processing_time_s=-1.0,
-                            api_http_status_code=status_code,
-                            api_key=key,
-                            timestamp=iso_ts,
-                            log_path=getattr(self, "audit_jsonl", None),
-                        )
-                        logger.error(
-                            "Gemini API call failed. Reference: %s",
-                            MODEL_REF_URL,
-                        )
+            # Dynamic active/cooldown pool: when the active pool drains
+            # (all keys hit 429 / daily quota), sleep ``_COOLDOWN_SECS``
+            # and reactivate every cooldown key in batch, then retry the
+            # chunk from scratch. Avoids per-chunk wasted 429 round-trips
+            # on already-exhausted keys (the original round-robin design).
+            while True:
+                active = list(getattr(self, "_active_pool", []) or [])
+                cooldown = getattr(self, "_cooldown_pool", set()) or set()
+                if not active:
+                    if not cooldown:
+                        # No keys at all — safety net (shouldn't happen
+                        # because __init__ ensures at least one key).
+                        assert last_quota_exc is not None
+                        _log_quota_hint(last_quota_exc)
                         self._log_api_call(
                             chunk_index,
                             1,
                             started_at,
-                            time.monotonic() - attempt_start,
+                            0.0,
                             "failed",
-                            error=str(first_exc),
+                            error=str(last_quota_exc),
                         )
-                        raise
-                    retry_after = _parse_retry_after_seconds(str(first_exc))
-                    if retry_after is None or retry_after <= 0:
-                        # 429 without retry hint: try the next key.
-                        # Audit-log this key's failure so the JSONL trail
-                        # is per-key, not aggregated.
-                        append_audit_log(
-                            input_file_path=effective_source_file,
-                            audio_chunk_file_path=effective_chunk_file,
-                            audio_chunk_playtime_s=chunk_dur,
-                            api_processing_time_s=-1.0,
-                            api_http_status_code=_extract_status_code(first_exc),
-                            api_key=key,
-                            timestamp=iso_ts,
-                            log_path=getattr(self, "audit_jsonl", None),
-                        )
-                        logger.info(
-                            "Key ...%s hit 429 without retry hint; trying next key.",
-                            key[-4:],
-                        )
-                        last_quota_exc = first_exc
-                        continue
-                    sleep_secs = retry_after + _RETRY_SAFETY_SECS
+                        raise last_quota_exc
                     logger.info(
-                        "Caught 429 with 'Please retry in %.1fs' hint from key "
-                        "...%s; sleeping %ds (hint %.1fs + safety %ds) then "
-                        "retrying once with the same key.",
-                        retry_after,
-                        key[-4:],
-                        int(sleep_secs),
-                        retry_after,
-                        int(_RETRY_SAFETY_SECS),
+                        "Active pool drained (%d keys in cooldown). "
+                        "Sleeping %.0fs before reactivating all of them "
+                        "and retrying chunk %d.",
+                        len(cooldown),
+                        _COOLDOWN_SECS,
+                        chunk_index,
                     )
-                    time.sleep(sleep_secs)
-                    attempt_start = time.monotonic()  # reset so duration reflects retry
+                    time.sleep(_COOLDOWN_SECS)
+                    # Reactivate all cooldown keys in batch (preserve
+                    # original ``_api_keys`` order for round-robin fairness).
+                    original = list(getattr(self, "_api_keys", []) or [])
+                    reactivated = [k for k in original if k in cooldown]
+                    extra = [k for k in cooldown if k not in reactivated]
+                    reactivated.extend(extra)
+                    self._active_pool = reactivated
+                    self._cooldown_pool = set()
+                    self._rr_index = 0
+                    continue  # retry chunk with freshly reactivated pool
+
+                start_idx = getattr(self, "_rr_index", 0) % len(active)
+                blacklisted_this_loop: list[str] = []
+
+                for offset in range(len(active)):
+                    idx = (start_idx + offset) % len(active)
+                    key = active[idx]
+                    # Install this key on the client for per-call helpers
+                    # (throttle / usage counter / audit / record_api_call_completed).
+                    self.client = self._client_for(key)
+                    self.api_key = key
+                    _throttle_api_call(
+                        getattr(self, "request_interval_secs", 120.0),
+                        api_key=key,
+                        tier=getattr(self, "tier", "free"),
+                    )
+                    from .usage_counter import increment_today
+
+                    increment_today(api_key=key)
+
+                    attempt_start = time.monotonic()
                     try:
                         interaction = _create()
-                        logger.info(
-                            "429 retry via cooldown succeeded with key ...%s.",
-                            key[-4:],
-                        )
-                    except Exception:  # noqa: BLE001 - any retry failure falls through to next key
-                        # Retry also failed for this key; try the next key.
-                        # Audit-log this key's failure so the JSONL trail
-                        # is per-key. Preserve the *original* error so the
-                        # final raise carries the original 429 message.
+                    except Exception as first_exc:
+                        # Non-quota errors (400/500): rotating keys won't
+                        # help. Audit-log, log reference URL, re-raise.
+                        if not _is_quota_error(first_exc):
+                            status_code = _extract_status_code(first_exc)
+                            append_audit_log(
+                                input_file_path=effective_source_file,
+                                audio_chunk_file_path=effective_chunk_file,
+                                audio_chunk_playtime_s=chunk_dur,
+                                api_processing_time_s=-1.0,
+                                api_http_status_code=status_code,
+                                api_key=key,
+                                timestamp=iso_ts,
+                                log_path=getattr(self, "audit_jsonl", None),
+                            )
+                            logger.error(
+                                "Gemini API call failed. Reference: %s",
+                                MODEL_REF_URL,
+                            )
+                            self._log_api_call(
+                                chunk_index,
+                                1,
+                                started_at,
+                                time.monotonic() - attempt_start,
+                                "failed",
+                                error=str(first_exc),
+                            )
+                            raise
+                        # 429 / quota error: blacklist this key for this
+                        # chunk and try the next active key. The 2-minute
+                        # ``request_interval_secs`` throttle already absorbs
+                        # short-term rate limits, so any 429 encountered
+                        # here is treated as daily-quota exhaustion.
                         append_audit_log(
                             input_file_path=effective_source_file,
                             audio_chunk_file_path=effective_chunk_file,
@@ -720,57 +727,66 @@ class TranscribeClient:
                             log_path=getattr(self, "audit_jsonl", None),
                         )
                         logger.info(
-                            "429 retry via cooldown failed for key ...%s; "
-                            "trying next key.",
+                            "Key ...%s hit 429 (daily quota); blacklisting "
+                            "and trying next active key.",
                             key[-4:],
                         )
                         last_quota_exc = first_exc
+                        blacklisted_this_loop.append(key)
                         continue
 
-                # Success on this key.
-                duration = time.monotonic() - attempt_start
-                text = getattr(interaction, "output_text", None) or ""
-                words = _extract_words(interaction)
-                if text:
-                    from .format import fix_korean_su_text
+                    # Success on this key.
+                    duration = time.monotonic() - attempt_start
+                    text = getattr(interaction, "output_text", None) or ""
+                    words = _extract_words(interaction)
+                    if text:
+                        from .format import fix_korean_su_text
 
-                    text = fix_korean_su_text(text)
-                if not text and words:
-                    text = " ".join(w.text for w in words)
-                # Advance the round-robin so the *next* chunk uses the
-                # following key — even if it succeeded on the first try.
-                if hasattr(self, "_rr_index"):
-                    self._rr_index = (idx + 1) % n
+                        text = fix_korean_su_text(text)
+                    if not text and words:
+                        text = " ".join(w.text for w in words)
+                    # Apply this iteration's blacklistings (keys that
+                    # hit 429 earlier in the inner loop) *before*
+                    # advancing the round-robin pointer so the index
+                    # math stays consistent.
+                    for bl_key in blacklisted_this_loop:
+                        if bl_key in self._active_pool:
+                            self._active_pool.remove(bl_key)
+                        self._cooldown_pool.add(bl_key)
+                    blacklisted_this_loop.clear()
+                    # Advance the round-robin so the *next* chunk uses
+                    # the following key in the (post-blacklist) active
+                    # pool. ``max(1, ...)`` guards against zero-length
+                    # modulo if the pool somehow drained to a single
+                    # surviving key (edge case).
+                    current_active = list(getattr(self, "_active_pool", []) or [])
+                    if key in current_active:
+                        idx_in_pool = current_active.index(key)
+                        self._rr_index = (idx_in_pool + 1) % max(1, len(current_active))
 
-                self._log_api_call(
-                    chunk_index, 1, started_at, duration, "success"
-                )
-                append_audit_log(
-                    input_file_path=effective_source_file,
-                    audio_chunk_file_path=effective_chunk_file,
-                    audio_chunk_playtime_s=chunk_dur,
-                    api_processing_time_s=duration,
-                    api_http_status_code=200,
-                    api_key=key,
-                    timestamp=iso_ts,
-                    log_path=getattr(self, "audit_jsonl", None),
-                )
-                return TranscriptionResult(text=text, words=words)
+                    self._log_api_call(
+                        chunk_index, 1, started_at, duration, "success"
+                    )
+                    append_audit_log(
+                        input_file_path=effective_source_file,
+                        audio_chunk_file_path=effective_chunk_file,
+                        audio_chunk_playtime_s=chunk_dur,
+                        api_processing_time_s=duration,
+                        api_http_status_code=200,
+                        api_key=key,
+                        timestamp=iso_ts,
+                        log_path=getattr(self, "audit_jsonl", None),
+                    )
+                    return TranscriptionResult(text=text, words=words)
 
-            # All keys exhausted. Surface the most recent quota error.
-            # Per-key audit records were already written inside the loop,
-            # so we only log the user-facing quota hint here.
-            assert last_quota_exc is not None
-            _log_quota_hint(last_quota_exc)
-            self._log_api_call(
-                chunk_index,
-                n,
-                started_at,
-                0.0,
-                "failed",
-                error=str(last_quota_exc),
-            )
-            raise last_quota_exc
+                # Inner loop exhausted without success: apply this chunk's
+                # blacklistings in one batch. Outer while loop will then
+                # either reactivate the cooldown pool (when active_pool
+                # just drained) or iterate the chunk again.
+                for key in blacklisted_this_loop:
+                    if key in self._active_pool:
+                        self._active_pool.remove(key)
+                    self._cooldown_pool.add(key)
         except Exception as exc:
             if uploaded is None:
                 status_code = _extract_status_code(exc)
