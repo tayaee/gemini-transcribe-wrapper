@@ -88,16 +88,14 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
         gh run watch "$RUN_ID" || true
     fi
 fi
-echo "Track online: https://github.com/tayaee/gemini-transcribe-wrapper/actions"
+echo "Track actions online: https://github.com/tayaee/gemini-transcribe-wrapper/actions"
+echo PyPi: https://pypi.org/project/gemini-transcribe-wrapper/
+echo GitHub: https://github.com/tayaee/gemini-transcribe-wrapper
+echo '+ git log --oneline --pretty=format:"%ai %h %s" -n 10'
+git log --oneline --pretty=format:"%ai %h %s" -n 10
 
 echo
 echo "=========================================="
 echo " Release Complete! Successfully shipped to GitHub & PyPI."
 echo "=========================================="
-
-echo
-echo PyPi: https://pypi.org/project/gemini-transcribe-wrapper/
-echo GitHub: https://github.com/tayaee/gemini-transcribe-wrapper
-echo '+ git log --oneline --pretty=format:"%ai %h %s" -n 10'
-git log --oneline --pretty=format:"%ai %h %s" -n 10
 
