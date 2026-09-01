@@ -86,3 +86,28 @@ the wrapper — the console stream still works.
   behind.
 - A future iteration could split the log file by PT date for easier
   forensics; out of scope here.
+
+## 구현 결과
+
+- **구현 완료 일시**: 2026-09-01
+- **변경 파일**:
+  - `src/gemini_transcribe_wrapper/_logging.py` (new) — `setup_file_logging(cache_root)`
+    helper: `RotatingFileHandler(maxBytes=5MB, backupCount=2, delay=True)`,
+    `encoding="utf-8"`, ISO-8601 + tz offset formatter (`_TzFormatter`),
+    unwritable-cache-dir fallback (warning + returns `None`),
+    duplicate-handler guard.
+  - `src/gemini_transcribe_wrapper/cli.py` — `--no-file-log` Click flag,
+    `TranscribeOptions.no_file_log: bool = False`,
+    `setup_file_logging()` 호출은 console handler 설정 직후,
+    `if not opts.no_file_log` 게이트.
+  - `tests/test_file_logging.py` (new) — 12 tests: 디렉토리 생성,
+    handler 타입/크기/지연, root 부착, ANSI 없음, ISO 타임스탬프,
+    회전(`.1` 생성), 백업 카운트 초과 정리, `--no-file-log` 플래그
+    default/enabled, `$GTW_CACHE_DIR` 존중, unwritable fallback.
+  - `regression-tests/verify-issue-005.sh` (new) — 11 mechanical checks.
+- **계획과의 차이**: 없음. `delay=True` 와 5MB×3 (current + 2 past) 사양 정확히 구현.
+- **검증 결과**:
+  - `regression-tests/verify-issue-005.sh` → exit 0
+  - `uv run ruff check` → clean
+  - `uv run pytest` → 294 passed (282 + 12 신규)
+  - 모든 기존 `verify-issue-00{1,2,3,4}.sh` → OK (regression 없음)

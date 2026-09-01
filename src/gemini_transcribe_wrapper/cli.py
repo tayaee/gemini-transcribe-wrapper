@@ -54,6 +54,7 @@ class TranscribeOptions:
     loop_until_no_input: bool = False
     loop_always: bool = False
     loop_poll_secs: int = 30
+    no_file_log: bool = False
 
 
 class _GTWCommand(click.Command):
@@ -329,6 +330,18 @@ def _make_command() -> click.Command:
             "1..3600; default 30."
         ),
     )
+    @click.option(
+        "--no-file-log",
+        is_flag=True,
+        default=False,
+        help=(
+            "Disable the rotating file log under "
+            "<cache_dir>/logs/gemini-transcribe-wrapper.log. By default "
+            "the wrapper mirrors console output to that file (5 MB × 3) "
+            "so long-running --loop* sessions survive a tmux detach or "
+            "SSH disconnect."
+        ),
+    )
     @click.argument("path", nargs=-1)
     def _root(
         path: tuple[str, ...],
@@ -360,6 +373,7 @@ def _make_command() -> click.Command:
         loop_until_no_input: bool,
         loop_always: bool,
         loop_poll_secs: int,
+        no_file_log: bool,
     ) -> None:
         # Mutual exclusion check (issue-001). Both flags together would
         # be ambiguous: --loop-until-no-input says "exit when empty" and
@@ -426,6 +440,7 @@ def _make_command() -> click.Command:
                 loop_until_no_input=loop_until_no_input,
                 loop_always=loop_always,
                 loop_poll_secs=loop_poll_secs,
+                no_file_log=no_file_log,
             )
         )
 
@@ -762,6 +777,15 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
     if not root.handlers:
         root.addHandler(handler)
     root.setLevel(log_level)
+
+    # Mirror console output to a rotating file (issue-005, spec §4.4).
+    # Skipped under --no-file-log (CI runs, ephemeral containers, etc.)
+    # or when the cache directory cannot be created (warning logged,
+    # console handler still works).
+    if not opts.no_file_log:
+        from . import _logging as gtw_logging
+
+        gtw_logging.setup_file_logging()
 
     start_time = time.monotonic()
 
