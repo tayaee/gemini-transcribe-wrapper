@@ -103,3 +103,28 @@ A `--color=auto|always|never` flag lets the user override the auto-detection
 - On Windows the default terminal does not interpret ANSI unless the
   user enables it; we still emit the codes and let the terminal sort it
   out — the `--color=never` knob exists for users who don't want this.
+
+## 구현 결과
+
+- **구현 완료 일시**: 2026-09-01
+- **변경 파일**:
+  - `src/gemini_transcribe_wrapper/_logging.py` —
+    `_TzFormatter` 가 class 로 승격되고 `_ColorFormatter` 가 상속.
+    `LEVEL_COLORS` (5 레벨) + `RESET` 상수, `__init__(use_color=False)`,
+    `format()` 에서만 ANSI 래핑. `resolve_color_mode(value)` 헬퍼:
+    `auto` → `sys.stderr.isatty()`, `always`/`never` 는 강제.
+    파일 핸들러는 plain `_TzFormatter` 그대로 유지.
+  - `src/gemini_transcribe_wrapper/cli.py` —
+    `--color` Click option (Choice `auto|always|never`, default `auto`),
+    `TranscribeOptions.color: str = "auto"`,
+    console handler 가 `gtw_logging._ColorFormatter(use_color=...)` 사용.
+  - `tests/test_color_tty.py` (new) — 15 tests: formatter disabled/enabled,
+    tz 상속, level colors, unknown level, `resolve_color_mode` (4 분기),
+    CLI 플래그 (default/always/never/invalid), 파일 핸들러 plain 보장.
+  - `regression-tests/verify-issue-006.sh` (new) — 15 mechanical checks.
+- **계획과의 차이**: 없음. 의존성 추가 없음 (colorlog 미사용, inline 구현).
+- **검증 결과**:
+  - `regression-tests/verify-issue-006.sh` → exit 0
+  - `uv run ruff check` → clean
+  - `uv run pytest` → 309 passed (294 + 15 신규)
+  - 모든 기존 `verify-issue-00{1..5}.sh` → OK (regression 없음)

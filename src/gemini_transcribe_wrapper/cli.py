@@ -9,7 +9,6 @@ import shutil
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 
 import click
@@ -55,6 +54,7 @@ class TranscribeOptions:
     loop_always: bool = False
     loop_poll_secs: int = 30
     no_file_log: bool = False
+    color: str = "auto"
 
 
 class _GTWCommand(click.Command):
@@ -342,6 +342,19 @@ def _make_command() -> click.Command:
             "SSH disconnect."
         ),
     )
+    @click.option(
+        "--color",
+        type=click.Choice(["auto", "always", "never"], case_sensitive=False),
+        default="auto",
+        show_default=True,
+        help=(
+            "Color console output by log level. ``auto`` enables color "
+            "only when stderr is a TTY (so ``2>err.log`` stays clean). "
+            "``always`` forces color (useful with ``2>&1 | less -R``). "
+            "``never`` disables color (useful on terminals that lie "
+            "about isatty). The rotating file log is never colored."
+        ),
+    )
     @click.argument("path", nargs=-1)
     def _root(
         path: tuple[str, ...],
@@ -374,6 +387,7 @@ def _make_command() -> click.Command:
         loop_always: bool,
         loop_poll_secs: int,
         no_file_log: bool,
+        color: str,
     ) -> None:
         # Mutual exclusion check (issue-001). Both flags together would
         # be ambiguous: --loop-until-no-input says "exit when empty" and
@@ -441,6 +455,7 @@ def _make_command() -> click.Command:
                 loop_always=loop_always,
                 loop_poll_secs=loop_poll_secs,
                 no_file_log=no_file_log,
+                color=color,
             )
         )
 
@@ -744,32 +759,19 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
 
     log_level = getattr(logging, opts.log_level.upper())
 
+    # Issue-006: console handler picks a color formatter when stderr is a
+    # TTY (or always/never per the user override). The shared formatter
+    # classes live in :mod:`gemini_transcribe_wrapper._logging`.
+    from . import _logging as gtw_logging
 
-    class _TzFormatter(logging.Formatter):
-        """Formatter whose ``%(asctime)s`` includes the local tz offset.
-
-        ``logging.Formatter.formatTime`` defaults to ``time.localtime()``
-        which produces a tz-naive ``YYYY-MM-DD HH:MM:SS,fff`` — fine when
-        the reader knows the host's tz, ambiguous when logs are forwarded
-        or reviewed later. We use ``datetime.now().astimezone()`` so the
-        suffix (``+09:00`` etc.) is visible in every log line.
-        """
-
-        def formatTime(
-            self,
-            record: logging.LogRecord,
-            datefmt: str | None = None,
-        ) -> str:
-            return (
-                datetime.fromtimestamp(record.created)
-                .astimezone()
-                .isoformat(timespec="milliseconds")
-            )
+    use_color = gtw_logging.resolve_color_mode(opts.color)
+    formatter = gtw_logging._ColorFormatter(
+        "%(asctime)s %(levelname)s %(filename)s:%(lineno)s %(message)s",
+        use_color=use_color,
+    )
 
     handler = logging.StreamHandler()
-    handler.setFormatter(
-        _TzFormatter("%(asctime)s %(levelname)s %(filename)s:%(lineno)s %(message)s")
-    )
+    handler.setFormatter(formatter)
     root = logging.getLogger()
     # Only install our tz-aware handler when the root logger has none.
     # Tests attach their own handlers (pytest's ``caplog``); clobbering
@@ -781,10 +783,10 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
     # Mirror console output to a rotating file (issue-005, spec §4.4).
     # Skipped under --no-file-log (CI runs, ephemeral containers, etc.)
     # or when the cache directory cannot be created (warning logged,
-    # console handler still works).
+    # console handler still works). The file handler always uses the
+    # plain _TzFormatter — no color codes ever leak into log files
+    # (issue-006 §Acceptance).
     if not opts.no_file_log:
-        from . import _logging as gtw_logging
-
         gtw_logging.setup_file_logging()
 
     start_time = time.monotonic()

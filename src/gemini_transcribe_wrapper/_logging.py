@@ -1,27 +1,135 @@
-"""Shared file-logging helper.
+"""Shared logging helpers.
 
-Issue-005 (spec §4.4): installs a rotating file handler so console output
-is mirrored to ``<cache_dir>/logs/gemini-transcribe-wrapper.log`` (5 MB × 3).
-The console and file handlers share an ISO-8601 / tz-aware formatter; the
-file handler never emits ANSI color codes (issue-006 layers coloring on
-top of the console handler only).
+Two formatters share an ISO-8601 + tz-aware ``formatTime``:
+
+* :class:`_TzFormatter` — plain text, used by the rotating file handler.
+* :class:`_ColorFormatter` — wraps the levelname in ANSI color codes when
+  ``use_color=True``. Used by the console ``StreamHandler`` so interactive
+  terminals highlight ``ERROR`` / ``WARNING`` lines.
+
+Also exports :func:`resolve_color_mode` for the ``--color=auto|always|never``
+flag and :func:`setup_file_logging` (issue-005) for the rotating file handler.
+
+Issue-005: rotating file handler (5 MB × 3).
+Issue-006: console-only color, gated by ``sys.stderr.isatty()`` and
+``--color`` override.
 """
 
 from __future__ import annotations
 
 import logging
+import sys
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import ClassVar
 
 from .usage_counter import cache_dir as _default_cache_dir
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# File-handler constants (issue-005)
+# ---------------------------------------------------------------------------
 
 LOG_FILE_NAME = "gemini-transcribe-wrapper.log"
 LOG_SUBDIR = "logs"
 MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 BACKUP_COUNT = 2  # current + 2 past = 3 files total
 ENCODING = "utf-8"
+
+
+# ---------------------------------------------------------------------------
+# Formatters
+# ---------------------------------------------------------------------------
+
+
+class _TzFormatter(logging.Formatter):
+    """Formatter whose ``%(asctime)s`` includes the local tz offset.
+
+    ``logging.Formatter.formatTime`` defaults to ``time.localtime()``
+    which produces a tz-naive ``YYYY-MM-DD HH:MM:SS,fff`` — fine when
+    the reader knows the host's tz, ambiguous when logs are forwarded
+    or reviewed later. We use ``datetime.now().astimezone()`` so the
+    suffix (``+09:00`` etc.) is visible in every log line.
+    """
+
+    def formatTime(
+        self,
+        record: logging.LogRecord,
+        datefmt: str | None = None,
+    ) -> str:
+        return (
+            datetime.fromtimestamp(record.created)
+            .astimezone()
+            .isoformat(timespec="milliseconds")
+        )
+
+
+class _ColorFormatter(_TzFormatter):
+    """Wrap the levelname in ANSI color codes when ``use_color`` is true.
+
+    Only the ``levelname`` field is colored. The timestamp, filename,
+    and message body stay plain so log lines remain greppable across
+    interactive / piped / file contexts and ``grep -E "ERROR"`` works
+    even when colors are stripped.
+    """
+
+    LEVEL_COLORS: ClassVar[dict[str, str]] = {
+        "DEBUG": "\x1b[90m",  # bright black / gray
+        "INFO": "\x1b[37m",  # white
+        "WARNING": "\x1b[33m",  # yellow
+        "ERROR": "\x1b[31m",  # red
+        "CRITICAL": "\x1b[35;1m",  # bold magenta
+    }
+    RESET: ClassVar[str] = "\x1b[0m"
+
+    def __init__(self, *args, use_color: bool = False, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._use_color = use_color
+
+    @property
+    def use_color(self) -> bool:
+        return self._use_color
+
+    def format(self, record: logging.LogRecord) -> str:
+        msg = super().format(record)
+        if not self._use_color:
+            return msg
+        color = self.LEVEL_COLORS.get(record.levelname, "")
+        if not color:
+            return msg
+        return f"{color}{msg}{self.RESET}"
+
+
+# ---------------------------------------------------------------------------
+# Color-mode resolution (--color=auto|always|never)
+# ---------------------------------------------------------------------------
+
+
+def resolve_color_mode(value: str) -> bool:
+    """Map the ``--color`` flag to a concrete boolean.
+
+    ``auto`` → ``sys.stderr.isatty()``
+    ``always`` → ``True`` regardless of TTY
+    ``never`` → ``False`` regardless of TTY
+
+    Unknown values raise ``ValueError`` so the CLI layer can surface a
+    clear error (Click's ``Choice`` already rejects them at parse time,
+    so this is a defense-in-depth check for direct callers).
+    """
+    if value == "auto":
+        return bool(sys.stderr.isatty())
+    if value == "always":
+        return True
+    if value == "never":
+        return False
+    raise ValueError(f"invalid --color value: {value!r} (use auto|always|never)")
+
+
+# ---------------------------------------------------------------------------
+# File-handler install (issue-005)
+# ---------------------------------------------------------------------------
 
 
 def _default_log_path(cache_root: Path | None = None) -> Path:
@@ -38,41 +146,6 @@ def _default_log_path(cache_root: Path | None = None) -> Path:
 def _safe_mkdir(path: Path) -> None:
     """``mkdir(parents=True, exist_ok=True)`` — exposed for monkeypatching."""
     path.mkdir(parents=True, exist_ok=True)
-
-
-def _make_formatter() -> logging.Formatter:
-    """Return a formatter that includes the local tz offset in ``asctime``."""
-    return logging.Formatter(
-        "%(asctime)s %(levelname)s %(filename)s:%(lineno)s %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S%z",
-    )
-
-
-def _TzFormatter() -> logging.Formatter:
-    """Return a :class:`logging.Formatter` whose ``formatTime`` emits ISO-8601
-    with a tz offset (e.g. ``2026-09-01T12:34:56.789+09:00``).
-
-    Implemented as a local subclass to mirror the formatter already used
-    by ``cli.py``'s console handler. The file handler uses the same shape
-    so logs from both destinations are line-for-line comparable.
-    """
-    from datetime import datetime
-
-    class _TzFormatterImpl(logging.Formatter):
-        def formatTime(
-            self,
-            record: logging.LogRecord,
-            datefmt: str | None = None,
-        ) -> str:
-            return (
-                datetime.fromtimestamp(record.created)
-                .astimezone()
-                .isoformat(timespec="milliseconds")
-            )
-
-    return _TzFormatterImpl(
-        "%(asctime)s %(levelname)s %(filename)s:%(lineno)s %(message)s"
-    )
 
 
 def setup_file_logging(cache_root: Path | None = None) -> RotatingFileHandler | None:
@@ -109,7 +182,9 @@ def setup_file_logging(cache_root: Path | None = None) -> RotatingFileHandler | 
         encoding=ENCODING,
         delay=True,  # don't open until first record (issue §Notes)
     )
-    handler.setFormatter(_TzFormatter())
+    # File handler is always plain — issue-006 explicitly bans file coloring
+    # so log files stay grep-able regardless of console settings.
+    handler.setFormatter(_TzFormatter("%(asctime)s %(levelname)s %(filename)s:%(lineno)s %(message)s"))
 
     root = logging.getLogger()
     # Tests may install multiple handlers; never duplicate the file handler.
