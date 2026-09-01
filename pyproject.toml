@@ -1,6 +1,6 @@
 [project]
 name = "gemini-transcribe-wrapper"
-version = "0.0.60"
+version = "0.0.61"
 description = "CLI and Python API to transcribe videos longer than 30 minutes with gemini-3.5-transcribe while mitigating free-tier 429 errors"
 readme = "README.md"
 requires-python = ">=3.10"
