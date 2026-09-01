@@ -86,3 +86,34 @@ In single-key mode, after a 429 the wrapper emits
 - The single-key skip path returns the same exit code as a normal
   run (`1` if any file was skipped due to quota); the loop continues
   via `--loop*` (issue-001).
+
+## 구현 결과
+
+- **구현 완료 일시**: 2026-09-01
+- **변경 파일**:
+  - `src/gemini_transcribe_wrapper/stt.py` — `KEY_COOLDOWN_SECS = 1800.0`,
+    `_live_pool` / `_dead_pool` backing fields, `_prune_dead_pool(now)`
+    helper, outer-while loop sleep-only-until-soonest, single-key raise
+    path. `_active_pool` / `_cooldown_pool` retained as property aliases
+    for backward compat.
+  - `src/gemini_transcribe_wrapper/models.py` — `TranscribeStatus.SKIPPED_QUOTA = "skipped_quota"`.
+  - `src/gemini_transcribe_wrapper/api.py` — single-key 429 → returns
+    `SKIPPED_QUOTA` result (no raise); multi-key 429 still raises
+    `QuotaExceededError`.
+  - `tests/test_per_key_cooldown.py` — 11 new tests covering the new
+    pool model, prune, sleep-until-soonest, single-key skip, enum.
+  - `tests/test_active_cooldown_pool.py` — 2 tests updated to match the
+    new log wording + clock-advance pattern.
+  - `tests/test_quota_abort.py` — split into multi-key (raises
+    `QuotaExceededError`, CLI exit 2) and single-key (returns
+    `SKIPPED_QUOTA`, CLI exit 1) cases.
+  - `tests/test_multi_key.py` — `test_active_pool_drain_waits_then_reactivates_and_retries`
+    updated to use `KEY_COOLDOWN_SECS` + clock-advance pattern.
+  - `regression-tests/verify-issue-003.sh` — mechanical checks for the
+    acceptance criteria.
+- **계획과의 차이**: 없음. 단, `_cooldown_for_key(key)` 헬퍼는 issue-001
+  (`--loop*`) 구현 시 함께 추가 예정으로 본 이슈 범위에서 제외.
+- **검증 결과**:
+  - `regression-tests/verify-issue-003.sh` → exit 0
+  - `uv run ruff check --fix` → clean
+  - `uv run pytest` → 253 passed (no failures, no skips)

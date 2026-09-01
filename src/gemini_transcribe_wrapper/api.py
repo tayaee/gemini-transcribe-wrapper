@@ -752,9 +752,34 @@ def _process_one(
         # file will hit the same limit. Abort the batch immediately so the
         # caller doesn't burn more quota on calls that are guaranteed to
         # fail. The hint was already logged in stt.transcribe_chunk.
+        #
+        # Single-key exception (issue-003, spec §3): when only one API key
+        # is configured, a 429 means the *file* couldn't be processed but
+        # the next file (or the next batch, after the cooldown) is still
+        # worth attempting. Report ``SKIPPED_QUOTA`` for this input and
+        # keep the batch going.
         from .stt import _is_quota_error
 
         if _is_quota_error(exc):
+            if len(gemini_api_keys or []) == 1:
+                logger.warning(
+                    "Skipping %s: quota / rate limit hit while processing "
+                    "with the only configured API key. The batch will "
+                    "continue with the remaining files.",
+                    input_file,
+                )
+                if ctx is not None:
+                    leftover = _collect_leftover(
+                        ctx, chunks=chunks or None, keep_chunks=True
+                    )
+                else:
+                    leftover = TranscribeLeftover()
+                return TranscribeResult(
+                    input=echo,
+                    status=TranscribeStatus.SKIPPED_QUOTA,
+                    error=str(exc),
+                    leftover=leftover,
+                )
             logger.error(
                 "Aborting batch: quota / rate limit hit while processing %s. "
                 "Remaining files will not be processed.",

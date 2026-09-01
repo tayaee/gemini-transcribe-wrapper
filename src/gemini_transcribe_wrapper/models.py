@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 class TranscribeStatus(str, Enum):
     SUCCESS = "success"
     SKIPPED = "skipped"
+    SKIPPED_QUOTA = "skipped_quota"
     LOCKED = "locked"
     FAILED = "failed"
     NOT_FOUND = "not_found"

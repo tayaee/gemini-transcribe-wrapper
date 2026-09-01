@@ -170,11 +170,16 @@ def apply_vocabulary_bias(text: str, vocabulary: list[str] | None) -> str:
 
 _RETRY_AFTER_RE = re.compile(r"please retry in\s+(\d+(?:\.\d+)?)\s*s", re.IGNORECASE)
 
-# When the active key pool drains (all keys hit 429 / daily quota),
-# wait this long before re-attempting with the cooldown pool. 10 minutes
-# is long enough that daily-quota'd keys typically remain blocked for the
-# day but short enough that the loop is responsive if a key recovers.
-_COOLDOWN_SECS = 600.0
+# Per-key minimum cooldown after a 429 / daily-quota hit (issue-003,
+# spec §4.1). 30 minutes is long enough that an exhausted key won't
+# re-429 immediately on retry and short enough that the loop is
+# responsive when a key genuinely recovers mid-day.
+KEY_COOLDOWN_SECS = 1800.0
+
+# Backward-compat alias. Older code (and a handful of tests) still
+# monkeypatch ``stt._COOLDOWN_SECS`` to speed up the recovery wait;
+# keep the name resolvable so those tests keep working.
+_COOLDOWN_SECS = KEY_COOLDOWN_SECS
 
 
 def _parse_retry_after_seconds(message: str) -> float | None:
@@ -503,13 +508,15 @@ class TranscribeClient:
                 seen.add(k)
                 deduped.append(k)
         self._api_keys: list[str] = deduped
-        # Active pool: keys currently eligible for round-robin.
-        # Cooldown pool: keys that hit 429 (daily quota) and are waiting
-        # for ``_COOLDOWN_SECS`` before re-entering the active pool.
-        # When the active pool drains, all cooldown keys are moved back
-        # in batch — see ``_transcribe_chunk``.
-        self._active_pool: list[str] = list(deduped)
-        self._cooldown_pool: set[str] = set()
+        # Live pool: keys currently eligible for round-robin.
+        # Dead pool: keys that hit 429 (daily quota), each with its own
+        # ``cooldown_until`` epoch (monotonic clock). A key auto-recovers
+        # into ``_live_pool`` when its ``cooldown_until`` has elapsed —
+        # see ``_prune_dead_pool``. This replaces the older batch model
+        # (every 10 minutes, reactivate *all* cooldown keys at once) with
+        # a per-key minimum 30-minute skip (issue-003, spec §4.1).
+        self._live_pool: list[str] = list(deduped)
+        self._dead_pool: dict[str, float] = {}
         self._rr_index: int = 0
         # ``self.api_key`` stays singular so existing per-call helpers
         # (audit log, throttle, usage counter) keep working unchanged.
@@ -589,6 +596,66 @@ class TranscribeClient:
             cached = genai.Client(api_key=key, http_options=_NO_RETRY_HTTP_OPTIONS)
             cache[key] = cached
         return cached
+
+    # --- pool aliases (backward compat with old field names) ----------
+    #
+    # The old attribute names ``_active_pool`` and ``_cooldown_pool``
+    # remain reachable so existing tests (test_active_cooldown_pool.py)
+    # and any external monkeypatchers keep working. New code should use
+    # ``_live_pool`` and ``_dead_pool`` directly.
+
+    @property
+    def _active_pool(self) -> list[str]:
+        """Read-only view of the live (round-robin-eligible) pool."""
+        return list(getattr(self, "_live_pool", []) or [])
+
+    @_active_pool.setter
+    def _active_pool(self, value: list[str]) -> None:
+        self._live_pool = list(value)
+
+    @property
+    def _cooldown_pool(self) -> set[str]:
+        """Read-only view of the dead pool as a set of key tails."""
+        dead = getattr(self, "_dead_pool", {}) or {}
+        return set(dead.keys())
+
+    @_cooldown_pool.setter
+    def _cooldown_pool(self, value: set[str]) -> None:
+        # Test-setup convenience: when tests assign a fresh set, treat
+        # the keys as "dead now with cooldown_until = +inf" so the prune
+        # helper doesn't immediately move them back. Tests that want a
+        # recoverable cooldown set ``_dead_pool`` directly.
+        current = dict(getattr(self, "_dead_pool", {}) or {})
+        if not value:
+            self._dead_pool = {}
+            return
+        for k in value:
+            current.setdefault(k, float("inf"))
+        self._dead_pool = current
+
+    def _prune_dead_pool(self, now: float) -> None:
+        """Move any dead key whose ``cooldown_until <= now`` back to live.
+
+        Preserves the original ``_api_keys`` ordering so the next
+        round-robin iteration is fair across all recovered keys (issue-003,
+        spec §4.1).
+        """
+        if not self._dead_pool:
+            return
+        recovered: list[str] = []
+        for k in list(self._dead_pool.keys()):
+            if self._dead_pool[k] <= now:
+                recovered.append(k)
+                del self._dead_pool[k]
+        if not recovered:
+            return
+        # Append recovered keys in their original ``_api_keys`` order so
+        # round-robin fairness is preserved. Keys not in ``_api_keys``
+        # (defensive) are appended after in arbitrary order.
+        original = list(getattr(self, "_api_keys", []) or [])
+        ordered = [k for k in original if k in recovered]
+        extras = [k for k in recovered if k not in ordered]
+        self._live_pool = ordered + extras
 
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
         transcription: dict[str, Any] = {}
@@ -691,16 +758,25 @@ class TranscribeClient:
             # after ~48h) and the next iteration uploads again with the
             # next key.
 
-            # Dynamic active/cooldown pool: when the active pool drains
-            # (all keys hit 429 / daily quota), sleep ``_COOLDOWN_SECS``
-            # and reactivate every cooldown key in batch, then retry the
-            # chunk from scratch. Avoids per-chunk wasted 429 round-trips
-            # on already-exhausted keys (the original round-robin design).
+            # Per-key 30-minute cooldown (issue-003, spec §4.1):
+            #   - On 429, the offending key moves into ``_dead_pool``
+            #     with ``cooldown_until = monotonic + KEY_COOLDOWN_SECS``.
+            #   - Each loop iteration calls ``_prune_dead_pool`` so any
+            #     key whose cooldown has elapsed automatically returns
+            #     to live — preserves round-robin fairness across
+            #     independent key recoveries.
+            #   - When the live pool drains but the dead pool isn't
+            #     empty, sleep only until the *soonest* key recovers
+            #     (not the full 30 minutes). This is the biggest win vs
+            #     the old batch-reactivation model: most keys are out of
+            #     sync, so sleeping 30 min for the slowest one wastes
+            #     time on the fast ones.
             while True:
-                active = list(getattr(self, "_active_pool", []) or [])
-                cooldown = getattr(self, "_cooldown_pool", set()) or set()
+                self._prune_dead_pool(now=time.monotonic())
+                active = list(self._live_pool)
+                dead = self._dead_pool
                 if not active:
-                    if not cooldown:
+                    if not dead:
                         # No keys at all — safety net (shouldn't happen
                         # because __init__ ensures at least one key).
                         assert last_quota_exc is not None
@@ -714,34 +790,50 @@ class TranscribeClient:
                             error=str(last_quota_exc),
                         )
                         raise last_quota_exc
-                    # Resolve lazily so ``monkeypatch.setattr(stt,
-                    # "_COOLDOWN_SECS", ...)`` in tests is honored even
-                    # when ``self._cooldown_secs`` was set to ``None`` by
-                    # the constructor.
-                    cooldown_secs = (
+                    # Single-key exception (issue-003, spec §3): when
+                    # only one key is configured, a 429 means the
+                    # *file* can't be processed right now but the
+                    # caller (``api._process_one``) maps the quota
+                    # exception to ``SKIPPED_QUOTA`` and moves on to
+                    # the next file. Don't loop forever here — raise
+                    # immediately so the batch can continue.
+                    if len(getattr(self, "_api_keys", []) or []) == 1:
+                        assert last_quota_exc is not None
+                        _log_quota_hint(last_quota_exc)
+                        self._log_api_call(
+                            chunk_index,
+                            1,
+                            started_at,
+                            0.0,
+                            "failed",
+                            error=str(last_quota_exc),
+                        )
+                        raise last_quota_exc
+                    # Sleep only until the soonest key recovers. If a
+                    # caller set ``_cooldown_secs`` to override the
+                    # module default, honor it here so the test suite
+                    # can shrink the wait without rewriting the keys.
+                    base = (
                         self._cooldown_secs
                         if self._cooldown_secs is not None
-                        else _COOLDOWN_SECS
+                        else KEY_COOLDOWN_SECS
                     )
+                    soonest = min(dead.values())
+                    sleep_for = max(0.0, soonest - time.monotonic())
+                    # Cap the wait at ``base`` so a stale ``cooldown_until``
+                    # in the dict (e.g. set manually in a test) doesn't
+                    # pin us for hours.
+                    sleep_for = min(sleep_for, base)
                     logger.info(
-                        "Active pool drained (%d keys in cooldown). "
-                        "Sleeping %.0fs before reactivating all of them "
-                        "and retrying chunk %d.",
-                        len(cooldown),
-                        cooldown_secs,
+                        "Live pool empty (%d keys still dead, soonest "
+                        "recovery in %.0fs). Sleeping and retrying chunk %d.",
+                        len(dead),
+                        sleep_for,
                         chunk_index,
                     )
-                    time.sleep(cooldown_secs)
-                    # Reactivate all cooldown keys in batch (preserve
-                    # original ``_api_keys`` order for round-robin fairness).
-                    original = list(getattr(self, "_api_keys", []) or [])
-                    reactivated = [k for k in original if k in cooldown]
-                    extra = [k for k in cooldown if k not in reactivated]
-                    reactivated.extend(extra)
-                    self._active_pool = reactivated
-                    self._cooldown_pool = set()
-                    self._rr_index = 0
-                    continue  # retry chunk with freshly reactivated pool
+                    if sleep_for > 0:
+                        time.sleep(sleep_for)
+                    continue  # prune + retry chunk
 
                 start_idx = getattr(self, "_rr_index", 0) % len(active)
                 blacklisted_this_loop: list[str] = []
@@ -833,9 +925,16 @@ class TranscribeClient:
                                 if len(key) > 4
                                 else "[redacted]"
                             ),
-                            len(self._active_pool) - 1,
-                            "key" if len(self._active_pool) - 1 == 1 else "keys",
+                            max(0, len(self._live_pool) - 1),
+                            "key" if len(self._live_pool) - 1 == 1 else "keys",
                         )
+                        # Mark this key dead with a per-key 30-min cooldown.
+                        # The next call to ``_prune_dead_pool`` at the top
+                        # of the outer loop will move it back to live once
+                        # the cooldown elapses (issue-003, spec §4.1).
+                        self._dead_pool[key] = time.monotonic() + KEY_COOLDOWN_SECS
+                        if key in self._live_pool:
+                            self._live_pool.remove(key)
                         last_quota_exc = first_exc
                         blacklisted_this_loop.append(key)
                         continue
@@ -861,16 +960,21 @@ class TranscribeClient:
                     # advancing the round-robin pointer so the index
                     # math stays consistent.
                     for bl_key in blacklisted_this_loop:
-                        if bl_key in self._active_pool:
-                            self._active_pool.remove(bl_key)
-                        self._cooldown_pool.add(bl_key)
+                        if bl_key in self._live_pool:
+                            self._live_pool.remove(bl_key)
+                        # Only stamp a fresh cooldown if the key doesn't
+                        # already have one — preserves the original
+                        # "first-429 wins" semantics.
+                        self._dead_pool.setdefault(
+                            bl_key, time.monotonic() + KEY_COOLDOWN_SECS
+                        )
                     blacklisted_this_loop.clear()
                     # Advance the round-robin so the *next* chunk uses
-                    # the following key in the (post-blacklist) active
+                    # the following key in the (post-blacklist) live
                     # pool. ``max(1, ...)`` guards against zero-length
                     # modulo if the pool somehow drained to a single
                     # surviving key (edge case).
-                    current_active = list(getattr(self, "_active_pool", []) or [])
+                    current_active = list(self._live_pool)
                     if key in current_active:
                         idx_in_pool = current_active.index(key)
                         self._rr_index = (idx_in_pool + 1) % max(1, len(current_active))
@@ -892,12 +996,17 @@ class TranscribeClient:
 
                 # Inner loop exhausted without success: apply this chunk's
                 # blacklistings in one batch. Outer while loop will then
-                # either reactivate the cooldown pool (when active_pool
-                # just drained) or iterate the chunk again.
+                # either reactivate any expired cooldown keys (via
+                # ``_prune_dead_pool``) or sleep until the soonest key
+                # recovers before retrying.
                 for key in blacklisted_this_loop:
-                    if key in self._active_pool:
-                        self._active_pool.remove(key)
-                    self._cooldown_pool.add(key)
+                    if key in self._live_pool:
+                        self._live_pool.remove(key)
+                    # Only stamp a fresh cooldown if the key doesn't
+                    # already have one (issue-003, spec §4.1).
+                    self._dead_pool.setdefault(
+                        key, time.monotonic() + KEY_COOLDOWN_SECS
+                    )
         except Exception as exc:
             if uploaded is None:
                 status_code = _extract_status_code(exc)

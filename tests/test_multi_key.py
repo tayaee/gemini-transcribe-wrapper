@@ -304,17 +304,26 @@ def test_429_without_hint_tries_next_key_immediately(
 def test_active_pool_drain_waits_then_reactivates_and_retries(
     tmp_path, monkeypatch, caplog
 ):
-    """All keys 429 → sleep ``_COOLDOWN_SECS`` → reactivate → retry chunk.
+    """All keys 429 → sleep until soonest recovery → reactivate → retry chunk.
 
-    In the old design this test asserted the wrapper raised after the
-    first full sweep. The new design sleeps and retries in a loop, so
-    each key gets a single 429 on the first pass and a successful call
-    on the reactivated pass.
+    New per-key cooldown model (issue-003): keys enter ``_dead_pool``
+    with ``cooldown_until = now + KEY_COOLDOWN_SECS``. The outer loop
+    sleeps only until the soonest key recovers. We monkeypatch
+    ``KEY_COOLDOWN_SECS`` to a tiny value and advance the mocked
+    monotonic clock on every ``time.sleep`` so ``_prune_dead_pool``
+    actually recovers the keys.
     """
     sleeps: list[float] = []
-    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr(stt, "KEY_COOLDOWN_SECS", 0.05)  # speed up
+    fake_now = [10_000.0]
+
+    def _sleep(s: float) -> None:
+        sleeps.append(s)
+        fake_now[0] += s
+
+    monkeypatch.setattr(stt.time, "sleep", _sleep)
+    monkeypatch.setattr(stt.time, "monotonic", lambda: fake_now[0])
     monkeypatch.setattr(stt, "_throttle_api_call", lambda *a, **k: None)
-    monkeypatch.setattr(stt, "_COOLDOWN_SECS", 0.05)  # speed up
 
     k_a, k_b, k_c = "AIzaKeyAaaaaaaa", "AIzaKeyBbbbbbbbb", "AIzaKeyCccccccc"
     # First call per key 429s; subsequent calls succeed. All three keys
@@ -344,16 +353,16 @@ def test_active_pool_drain_waits_then_reactivates_and_retries(
         (k_c[-4:], 1),
         (k_a[-4:], 2),
     ]
-    # Cooldown wait fired once.
-    assert [s for s in sleeps if s >= 0.04] == [pytest.approx(0.05)]
-    # The "Active pool drained" log was emitted.
+    # Cooldown wait fired once — soonest recovery, not full 1800s.
+    assert [s for s in sleeps if s > 0.0] == [pytest.approx(0.05, abs=1e-9)]
+    # The "Live pool empty" log was emitted (new wording, issue-003).
     assert any(
-        "Active pool drained" in rec.message and "Sleeping" in rec.message
+        "Live pool empty" in rec.message and "Sleeping" in rec.message
         for rec in caplog.records
     )
-    # After success, all three keys are back in the active pool.
-    assert sorted(client._active_pool) == sorted([k_a, k_b, k_c])
-    assert client._cooldown_pool == set()
+    # After success, all three keys are back in the live pool.
+    assert sorted(client._live_pool) == sorted([k_a, k_b, k_c])
+    assert client._dead_pool == {}
 
 
 # --- per-key throttle isolation ------------------------------------------

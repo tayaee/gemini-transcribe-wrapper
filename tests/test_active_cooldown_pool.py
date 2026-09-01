@@ -279,32 +279,37 @@ def test_non_quota_error_propagates_without_touching_other_keys(
 def test_active_pool_drain_triggers_cooldown_wait_and_reactivation(
     tmp_path, monkeypatch, caplog
 ):
-    """All keys 429 → sleep ``_COOLDOWN_SECS`` → reactivate → retry chunk.
+    """All keys 429 → sleep until soonest recovery → reactivate → retry.
 
-    We monkeypatch ``_COOLDOWN_SECS`` to a tiny value so the test is
-    fast, and use ``call_limit`` on the per-key side effects so the
-    chunk succeeds after one full reactivate cycle.
+    New per-key cooldown model (issue-003): keys enter ``_dead_pool``
+    with ``cooldown_until = now + KEY_COOLDOWN_SECS``. The outer loop
+    sleeps only until the soonest key recovers (not the full cooldown),
+    so when all keys 429 we sleep once and all keys come back together.
+
+    We monkeypatch ``KEY_COOLDOWN_SECS`` to a tiny value and advance
+    the mocked monotonic clock on every ``time.sleep`` so the
+    ``_prune_dead_pool`` call at the top of the outer loop actually
+    sees the recovery time has elapsed.
     """
     sleeps: list[float] = []
-    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr(stt, "KEY_COOLDOWN_SECS", 0.05)  # speed up
+    fake_now = [10_000.0]
+
+    def _sleep(s: float) -> None:
+        sleeps.append(s)
+        fake_now[0] += s
+
+    monkeypatch.setattr(stt.time, "sleep", _sleep)
+    monkeypatch.setattr(stt.time, "monotonic", lambda: fake_now[0])
     monkeypatch.setattr(stt, "_throttle_api_call", lambda *a, **k: None)
-    monkeypatch.setattr(stt, "_COOLDOWN_SECS", 0.05)  # speed up
 
     k_a, k_b = "AIzaKeyAaaaaaaa", "AIzaKeyBbbbbbbbb"
-
-    def _maybe_recover(idx: int):
-        """k_a 429s on its first try, then recovers. k_b same."""
-        if idx == 0:
-            raise RuntimeError(_retry_msg(1.0))
-        return _ok_interaction()
-
     client = _ScriptedClient({k_a: [], k_b: []})
     client._api_keys = [k_a, k_b]
     client._active_pool = [k_a, k_b]
-    client._cooldown_pool = set()
+    client._dead_pool = {}
     client._rr_index = 0
 
-    # Patch the scripted client so call #1 raises and #2+ returns OK.
     calls: dict[str, int] = {k_a: 0, k_b: 0}
 
     def _scripted_create(**_kwargs):
@@ -323,23 +328,21 @@ def test_active_pool_drain_triggers_cooldown_wait_and_reactivation(
         result = client.transcribe_chunk(chunk, chunk_index=0)
 
     assert result.text == "안녕하세요"
-    # First iteration: k_a 429 → blacklist → k_b 429 → blacklist → pool empty.
-    # Cooldown wait fires. Second iteration: both keys recovered, but k_a
-    # is first in the reactivated pool and succeeds immediately, so k_b
-    # is not retried this chunk (it stays in the active pool for the
-    # next chunk to use).
-    assert calls[k_a] == 2  # tried once per iteration
-    assert calls[k_b] == 1  # only the first iteration exhausted it
-    # Cooldown sleep fired once.
-    assert [s for s in sleeps if s >= 0.04] == [pytest.approx(0.05)]
-    # The cooldown wait log was emitted.
+    # First iteration: k_a 429 → dead → k_b 429 → dead → live pool empty.
+    # Outer loop sleeps ~0.05s. Second iteration: both keys recovered,
+    # k_a succeeds on call #2 so k_b is not retried in this chunk.
+    assert calls[k_a] == 2
+    assert calls[k_b] == 1
+    # Cooldown sleep fired once (~0.05s — soonest recovery, not full 1800s).
+    assert [s for s in sleeps if s > 0.0] == [pytest.approx(0.05, abs=1e-9)]
+    # The cooldown wait log was emitted (new wording: "Live pool empty").
     assert any(
-        "Active pool drained" in rec.message and "Sleeping" in rec.message
+        "Live pool empty" in rec.message and "Sleeping" in rec.message
         for rec in caplog.records
     )
-    # Final pool state: both keys back in active (recovery succeeded).
-    assert client._active_pool == [k_a, k_b]
-    assert client._cooldown_pool == set()
+    # Final pool state: both keys back in live (recovery succeeded).
+    assert client._live_pool == [k_a, k_b]
+    assert client._dead_pool == {}
 
 
 def test_active_pool_reactivation_preserves_api_keys_order(
@@ -347,11 +350,23 @@ def test_active_pool_reactivation_preserves_api_keys_order(
 ):
     """Reactivation preserves the original ``_api_keys`` ordering for
     round-robin fairness, even when the cooldown set's iteration order
-    would be different."""
+    would be different.
+
+    Updated for the per-key cooldown model (issue-003): ``_prune_dead_pool``
+    uses ``_api_keys`` order to repopulate ``_live_pool``, so the second
+    iteration's round-robin starts from the same position as the first.
+    """
     monkeypatch.setattr(stt, "_throttle_api_call", lambda *a, **k: None)
-    monkeypatch.setattr(stt, "_COOLDOWN_SECS", 0.0)
+    monkeypatch.setattr(stt, "KEY_COOLDOWN_SECS", 0.0)
     sleeps: list[float] = []
-    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
+    fake_now = [10_000.0]
+
+    def _sleep(s: float) -> None:
+        sleeps.append(s)
+        fake_now[0] += s
+
+    monkeypatch.setattr(stt.time, "sleep", _sleep)
+    monkeypatch.setattr(stt.time, "monotonic", lambda: fake_now[0])
 
     k0, k1, k2 = "AIzaKey0aaaaaa", "AIzaKey1bbbbbb", "AIzaKey2cccccc"
     # All 429 once, then OK.
@@ -368,16 +383,16 @@ def test_active_pool_reactivation_preserves_api_keys_order(
     client = _ScriptedClient({k0: [], k1: [], k2: []})
     client.client.interactions.create = MagicMock(side_effect=_scripted_create)
     client._api_keys = [k0, k1, k2]
-    client._active_pool = [k0, k1, k2]
-    client._cooldown_pool = set()
+    client._live_pool = [k0, k1, k2]
+    client._dead_pool = {}
     client._rr_index = 0
 
     chunk = _chunk(tmp_path, "chunk_000.mp3")
     result = client.transcribe_chunk(chunk, chunk_index=0)
 
     assert result.text == "안녕하세요"
-    # First iteration: k0 429 → blacklist → k1 429 → blacklist → k2 429 → blacklist → pool empty.
-    # Reactivation preserves order [k0, k1, k2] (matches _api_keys).
+    # First iteration: k0 429 → dead → k1 429 → dead → k2 429 → dead → pool empty.
+    # Prune moves them back into live in ``_api_keys`` order [k0, k1, k2].
     # Second iteration: k0 succeeds (call #2 returns OK).
     # So call order: k0, k1, k2, k0 (chunk succeeds on second iteration's k0).
     assert [(k[-4:], n) for k, n in client._call_order] == [
@@ -386,7 +401,7 @@ def test_active_pool_reactivation_preserves_api_keys_order(
         (k2[-4:], 1),
         (k0[-4:], 2),
     ]
-    # After success, _rr_index advances to position 1 in active pool.
+    # After success, _rr_index advances to position 1 in live pool.
     assert client._rr_index == 1
 
 

@@ -1,9 +1,15 @@
-"""Test that a 429 quota error aborts the batch (no further API calls).
+"""Test batch behavior on 429 quota errors.
 
-Hitting the free-tier daily quota is not a per-file condition: every
-subsequent file in the same run would also 429. The wrapper must raise
-:class:`QuotaExceededError` from :func:`gemini_transcribe` after the first
-quota hit so the CLI exits cleanly without burning more API calls.
+Two regimes (issue-003, spec §3):
+
+- **Multi-key**: when the pool drains because every key 429'd, the
+  wrapper raises :class:`QuotaExceededError` from :func:`gemini_transcribe`
+  so the CLI exits with code 2 and no further API calls are burned.
+
+- **Single-key**: a 429 means the file couldn't be processed right now
+  but the next file (after the key recovers) is still worth attempting.
+  The wrapper returns a result with status ``SKIPPED_QUOTA`` and continues
+  with the remaining files.
 """
 
 from __future__ import annotations
@@ -56,13 +62,22 @@ def _make_audio(td: Path, name: str = "input.mp4") -> Path:
 
 
 def test_quota_error_aborts_batch_with_quota_exceeded_error(tmp_path):
-    """First 429 must raise QuotaExceededError, not return a FAILED result."""
+    """Multi-key 429 → :class:`QuotaExceededError` (batch abort).
+
+    When the pool drains because every key 429'd, the wrapper raises
+    ``QuotaExceededError`` so the CLI exits with code 2 and no further
+    API calls are burned. Verified by configuring two quota-hit keys.
+    """
     src = _make_audio(tmp_path)
     orig = api.TranscribeClient
     api.TranscribeClient = _QuotaHitClient
     try:
         with pytest.raises(QuotaExceededError) as excinfo:
-            api.gemini_transcribe(str(src), force=True, gemini_api_key="fake")
+            api.gemini_transcribe(
+                str(src),
+                force=True,
+                gemini_api_keys=["fake_a", "fake_b"],
+            )
     finally:
         api.TranscribeClient = orig
 
@@ -72,7 +87,7 @@ def test_quota_error_aborts_batch_with_quota_exceeded_error(tmp_path):
 
 
 def test_quota_error_stops_at_first_file_in_glob_batch(tmp_path):
-    """When the input expands to multiple files, only the first is attempted."""
+    """Multi-key glob aborts after the first 429 — no other files attempted."""
     _make_audio(tmp_path, "a.mp4")
     _make_audio(tmp_path, "b.mp4")
     _make_audio(tmp_path, "c.mp4")
@@ -83,7 +98,9 @@ def test_quota_error_stops_at_first_file_in_glob_batch(tmp_path):
     try:
         with pytest.raises(QuotaExceededError):
             api.gemini_transcribe(
-                str(tmp_path / "*.mp4"), force=True, gemini_api_key="fake",
+                str(tmp_path / "*.mp4"),
+                force=True,
+                gemini_api_keys=["fake_a", "fake_b"],
             )
     finally:
         api.TranscribeClient = orig
@@ -92,11 +109,84 @@ def test_quota_error_stops_at_first_file_in_glob_batch(tmp_path):
     assert client.calls == 1
 
 
+# --- single-key SKIPPED_QUOTA (issue-003) ---------------------------------
+
+
+def test_single_key_quota_returns_skipped_quota_result(tmp_path):
+    """Single-key 429 → ``SKIPPED_QUOTA`` result, no raise, batch continues."""
+    from gemini_transcribe_wrapper.models import TranscribeStatus
+
+    src = _make_audio(tmp_path)
+    orig = api.TranscribeClient
+    api.TranscribeClient = _QuotaHitClient
+    try:
+        batch = api.gemini_transcribe(
+            str(src),
+            force=True,
+            gemini_api_key="fake",
+        )
+    finally:
+        api.TranscribeClient = orig
+
+    assert len(batch.results) == 1
+    assert batch.results[0].status == TranscribeStatus.SKIPPED_QUOTA
+    # Original 429 is preserved in the error string for forensics.
+    assert "429" in (batch.results[0].error or "")
+
+
+def test_single_key_quota_continues_glob_to_next_file(tmp_path):
+    """Single-key 429 skips the file but tries the next file in the glob."""
+    from gemini_transcribe_wrapper.models import TranscribeStatus
+
+    _make_audio(tmp_path, "a.mp4")
+    _make_audio(tmp_path, "b.mp4")
+    _make_audio(tmp_path, "c.mp4")
+
+    orig = api.TranscribeClient
+    client = _QuotaHitClient()
+    api.TranscribeClient = lambda *a, **k: client
+    try:
+        batch = api.gemini_transcribe(
+            str(tmp_path / "*.mp4"),
+            force=True,
+            gemini_api_key="fake",
+        )
+    finally:
+        api.TranscribeClient = orig
+
+    # All three files were attempted (each got one quota hit).
+    assert client.calls == 3
+    assert len(batch.results) == 3
+    assert all(r.status == TranscribeStatus.SKIPPED_QUOTA for r in batch.results)
+
+
 # --- CLI behavior ----------------------------------------------------------
 
 
 def test_cli_exits_with_code_2_on_quota(monkeypatch, tmp_path):
-    """Running the CLI on a 429-hitting client must exit with code 2."""
+    """Multi-key 429 → CLI exits with code 2 (batch aborted)."""
+    from gemini_transcribe_wrapper import cli
+
+    src = _make_audio(tmp_path)
+
+    # Multi-key: when the pool drains, the wrapper raises
+    # QuotaExceededError and the CLI exits with code 2.
+    monkeypatch.setenv("GEMINI_API_KEYS", "fake_a,fake_b")
+    monkeypatch.setattr(api, "TranscribeClient", _QuotaHitClient)
+    monkeypatch.setattr(sys, "argv", ["gtw", str(src)])
+
+    rc = cli.main()
+    assert rc == 2
+
+
+def test_cli_exits_with_code_1_on_single_key_quota(monkeypatch, tmp_path):
+    """Single-key 429 → CLI exits 1 (no output files produced).
+
+    Distinct from the multi-key path (which exits 2). SKIPPED_QUOTA
+    is reported per-file at WARNING level so the user sees the
+    per-file status; the CLI exit code 1 reflects "no output was
+    produced" rather than the multi-key "batch aborted" code 2.
+    """
     from gemini_transcribe_wrapper import cli
 
     src = _make_audio(tmp_path)
@@ -106,7 +196,8 @@ def test_cli_exits_with_code_2_on_quota(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv", ["gtw", str(src)])
 
     rc = cli.main()
-    assert rc == 2
+    # rc=1 ("no output files produced"), NOT rc=2 (multi-key abort).
+    assert rc == 1
 
 
 if __name__ == "__main__":
