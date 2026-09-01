@@ -545,6 +545,7 @@ def _process_one(
                     paragraph_interval_secs=paragraph_interval_secs,
                     speakers=speakers,
                     model=model,
+                    force=force,
                 )
             except Exception as exc:  # noqa: BLE001 - fall through to full re-run
                 logger.warning("Re-render from transcript failed (%s); re-transcribing", exc)
@@ -874,8 +875,15 @@ def _render_from_transcript(
     paragraph_interval_secs: float,
     speakers: dict[str, str] | None,
     model: str = MODEL_ID,
+    force: bool = False,
 ) -> TranscribeResult:
-    """Regenerate .diarized.srt/.srt/.txt from a transcript (no API call)."""
+    """Regenerate .diarized.srt/.srt/.txt from a transcript (no API call).
+
+    When ``force=True``, every enabled output is regenerated regardless
+    of staleness (matches the CLI's ``--force`` semantics). Otherwise the
+    staleness check is honored: outputs newer than the transcript are
+    left untouched and reported as "Unchanged".
+    """
     results = load_transcript(transcript_path)
     if results is None:
         raise ValueError(f"Invalid transcript: {transcript_path}")
@@ -929,6 +937,8 @@ def _render_from_transcript(
 
         # Only overwrite targets that are stale relative to the transcript;
         # fresh ones are left untouched and reported as unchanged.
+        # ``--force`` bypasses the staleness check so every enabled output
+        # is regenerated unconditionally (matches the CLI's --force UX).
         regenerated: list[str] = []
         unchanged: list[str] = []
         for key, (enabled, final_path) in targets.items():
@@ -937,7 +947,7 @@ def _render_from_transcript(
             tmp_path = tmp_paths.get(key)
             if tmp_path is None or final_path is None:
                 continue
-            if _outputs_valid([final_path], [transcript_path]):
+            if not force and _outputs_valid([final_path], [transcript_path]):
                 unchanged.append(str(final_path))
                 continue
             os.replace(tmp_path, final_path)
