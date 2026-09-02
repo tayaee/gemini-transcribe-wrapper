@@ -892,6 +892,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 logging.getLogger(__name__).error("Error: %s", exc)
                 failed = True
 
+    loop_interrupted = False
     if opts.loop_until_no_input or opts.loop_always:
         from . import _loop as loop_driver
 
@@ -911,9 +912,8 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
             # land here under --loop*. But guard anyway.)
             quota_exceeded = True
         except KeyboardInterrupt:
-            # Loop driver returns 130; we just propagate the exit code
-            # below via a sentinel attribute on opts.
-            opts._loop_interrupted = True
+            # Loop driver returns 130; propagate the exit code below.
+            loop_interrupted = True
     else:
         try:
             _run_one_pass()
@@ -927,7 +927,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
 
     if quota_exceeded:
         return 2
-    if getattr(opts, "_loop_interrupted", False):
+    if loop_interrupted:
         return 130
     if failed:
         return 1

@@ -8,7 +8,6 @@ import logging
 import os
 import re
 import socket
-import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -403,7 +402,7 @@ def _resolve_keys_from_env() -> list[str]:
 def reset_api_rate_limiter() -> None:
     """Reset in-memory and on-disk rate limiter timestamps (for testing)."""
     global _LAST_API_COMPLETION_MONOTONIC, _LAST_API_COMPLETION_WALL
-    global _GLOBAL_RR_INDEX, _GLOBAL_DEAD_POOL
+    global _GLOBAL_RR_INDEX
     _LAST_API_COMPLETION_MONOTONIC = None
     _LAST_API_COMPLETION_WALL = None
     _LAST_API_COMPLETION_MONOTONIC_BY_KEY.clear()
@@ -681,7 +680,6 @@ class TranscribeClient:
             if self._dead_pool[k] <= now:
                 recovered.append(k)
                 del self._dead_pool[k]
-                global _GLOBAL_DEAD_POOL
                 _GLOBAL_DEAD_POOL.pop(k, None)
         if not recovered:
             return
@@ -971,7 +969,6 @@ class TranscribeClient:
                         # of the outer loop will move it back to live once
                         # the cooldown elapses (issue-003, spec §4.1).
                         self._dead_pool[key] = time.monotonic() + KEY_COOLDOWN_SECS
-                        global _GLOBAL_DEAD_POOL
                         _GLOBAL_DEAD_POOL[key] = self._dead_pool[key]
                         if key in self._live_pool:
                             self._live_pool.remove(key)

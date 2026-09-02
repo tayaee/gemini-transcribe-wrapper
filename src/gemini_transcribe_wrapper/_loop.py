@@ -70,7 +70,7 @@ def run_with_loop(
     loop_until_no_input: bool,
     loop_always: bool,
     loop_poll_secs: int,
-    run_pass: Callable[[list[str]], tuple[list[str], list[object]]],
+    run_pass: Callable[[list[str]], object],
 ) -> int:
     """Run ``run_pass`` once (or repeatedly, with polling).
 

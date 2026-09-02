@@ -595,7 +595,14 @@ def test_multi_input_batch_round_robin_advances_keys(tmp_path, monkeypatch):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
 
-        def transcribe_chunk(self, chunk_mp3, **kwargs):
+        def transcribe_chunk(
+            self,
+            chunk_mp3,
+            chunk_index: int = 0,
+            source_file=None,
+            chunk_duration_secs=None,
+            **kwargs,
+        ):
             # Call super transcribe_chunk logic or track the selected key
             start_idx = getattr(self, "_rr_index", 0) % len(self._live_pool)
             chosen_key = self._live_pool[start_idx]

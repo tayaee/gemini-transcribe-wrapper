@@ -56,6 +56,7 @@ dev = [
 ]
 
 [tool.pyright]
+include = ["src"]
 # Pydantic v2 model constructors are called with subset of fields relying on
 # Field() defaults; pyright reports these as missing required arguments.
 reportCallIssue = false
