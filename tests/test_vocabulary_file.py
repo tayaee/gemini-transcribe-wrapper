@@ -68,6 +68,55 @@ def test_load_vocabulary_file_none_returns_empty():
     assert _load_vocabulary_file("") == []
 
 
+def test_load_vocabulary_file_auto_stem_vocab_txt(tmp_path, caplog):
+    media = tmp_path / "sample.mp4"
+    vocab = tmp_path / "sample.vocab.txt"
+    vocab.write_text("용어1\n용어2\n", encoding="utf-8")
+    with caplog.at_level(logging.INFO, logger="gemini_transcribe_wrapper.api"):
+        assert _load_vocabulary_file("auto", input_file=media) == ["용어1", "용어2"]
+    assert any("Auto detected .vocab file:" in rec.message for rec in caplog.records)
+
+
+def test_load_vocabulary_file_auto_filename_vocab_txt(tmp_path):
+    media = tmp_path / "sample.mp4"
+    vocab = tmp_path / "sample.mp4.vocab.txt"
+    vocab.write_text("용어1\n", encoding="utf-8")
+    assert _load_vocabulary_file("auto", input_file=media) == ["용어1"]
+
+
+def test_load_vocabulary_file_auto_dot_vocab_txt(tmp_path):
+    media = tmp_path / "sample.mp4"
+    vocab = tmp_path / ".vocab.txt"
+    vocab.write_text("용어_공통\n", encoding="utf-8")
+    assert _load_vocabulary_file("auto", input_file=media) == ["용어_공통"]
+
+
+def test_load_vocabulary_file_auto_cwd_vocab_txt(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    vocab = tmp_path / ".vocab.txt"
+    vocab.write_text("프로젝트_용어\n", encoding="utf-8")
+    sub_media = tmp_path / "sub" / "lecture.mp4"
+    (tmp_path / "sub").mkdir()
+    assert _load_vocabulary_file("auto", input_file=sub_media) == ["프로젝트_용어"]
+
+
+def test_load_vocabulary_file_auto_not_found_returns_empty_silently(tmp_path, caplog):
+    media = tmp_path / "sample.mp4"
+    with caplog.at_level(logging.WARNING, logger="gemini_transcribe_wrapper.api"):
+        assert _load_vocabulary_file("auto", input_file=media) == []
+    # Auto mode should NOT warn if no file exists
+    assert not any("not found" in rec.message for rec in caplog.records)
+
+
+def test_load_vocabulary_file_off_disables_auto(tmp_path):
+    media = tmp_path / "sample.mp4"
+    vocab = tmp_path / "sample.vocab.txt"
+    vocab.write_text("무시되어야_함\n", encoding="utf-8")
+    assert _load_vocabulary_file("off", input_file=media) == []
+    assert _load_vocabulary_file("none", input_file=media) == []
+    assert _load_vocabulary_file("false", input_file=media) == []
+
+
 # --- post-recognition bias ------------------------------------------------
 
 

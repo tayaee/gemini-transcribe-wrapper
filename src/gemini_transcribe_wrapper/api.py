@@ -61,22 +61,85 @@ class QuotaExceededError(Exception):
         super().__init__(f"{source}: {original}")
 
 
-def _load_vocabulary_file(path: str | None) -> list[str]:
+def _find_auto_vocabulary_file(input_file: Path | str | None) -> Path | None:
+    """Find a candidate .vocab.txt file automatically.
+
+    Searches in order:
+    1. ``<stem>.vocab.txt`` in the input file's directory (e.g. ``video.vocab.txt``)
+    2. ``<filename>.vocab.txt`` in the input file's directory (e.g. ``video.mp4.vocab.txt``)
+    3. ``.vocab.txt`` in the input file's directory
+    4. ``.vocab.txt`` in the current working directory
+    """
+    candidates: list[Path] = []
+    if input_file:
+        in_p = Path(input_file).resolve()
+        candidates.append(in_p.with_suffix(".vocab.txt"))
+        candidates.append(in_p.parent / f"{in_p.name}.vocab.txt")
+        candidates.append(in_p.parent / ".vocab.txt")
+    candidates.append(Path.cwd() / ".vocab.txt")
+
+    seen: set[Path] = set()
+    for cand in candidates:
+        try:
+            resolved = cand.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            if cand.is_file():
+                return cand
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def _load_vocabulary_file(
+    path: str | Path | None = "auto",
+    input_file: Path | str | None = None,
+) -> list[str]:
     """Load custom-vocabulary terms from a text file (one per line).
 
-    - Empty / ``None`` ``path`` → return ``[]``.
-    - Missing file → log a warning and return ``[]`` (the option is
-      treated as if it wasn't given; we never raise here).
+    - If ``path`` is ``"auto"`` (default): automatically search for a
+      matching vocabulary file (e.g. ``<stem>.vocab.txt``,
+      ``<dir>/.vocab.txt``, or ``./.vocab.txt``). If found, loads terms;
+      otherwise silently returns ``[]``.
+    - If ``path`` is an off token (e.g. ``"off"``, ``"none"``, ``"false"``):
+      returns ``[]`` without searching.
+    - If ``path`` is empty or ``None``:
+      If ``input_file`` is given, behaves as ``"auto"``.
+      If neither is given, returns ``[]``.
+    - If ``path`` is an explicit path that is missing: logs a warning and
+      returns ``[]`` (never raises).
     - Blank lines and lines beginning with ``#`` (after stripping) are
       silently skipped (treat them as comments).
-
-    This is the canonical loader used by both ``cli.py`` and the
-    ``api.py`` entry point so the file format is identical regardless
-    of which surface the caller uses.
     """
-    if not path:
-        return []
-    p = Path(path)
+    if path is not None:
+        val = str(path).strip().lower()
+        if val in _OFF_OUTPUT_TOKENS:
+            return []
+        if val == "auto":
+            auto_file = _find_auto_vocabulary_file(input_file)
+            if not auto_file:
+                return []
+            logging.getLogger(__name__).info(
+                "Auto detected .vocab file: %s", auto_file
+            )
+            p = auto_file
+        elif not val:
+            return []
+        else:
+            p = Path(path)
+    else:
+        if input_file is not None:
+            auto_file = _find_auto_vocabulary_file(input_file)
+            if not auto_file:
+                return []
+            logging.getLogger(__name__).info(
+                "Auto detected .vocab file: %s", auto_file
+            )
+            p = auto_file
+        else:
+            return []
+
     if not p.is_file():
         logging.getLogger(__name__).warning(
             "Custom vocabulary file not found: %s. Ignoring.", path,
@@ -202,7 +265,7 @@ def gemini_transcribe(
     speakers: dict[str, str] | None = None,
     temp_path: str | None = "temp",
     custom_vocabulary: list[str] | None = None,
-    custom_vocabulary_file: str | None = None,
+    custom_vocabulary_file: str | None = "auto",
     language_codes: list[str] | None = None,
     model: str = MODEL_ID,
     word_level_timestamps: bool = True,
@@ -388,7 +451,7 @@ def _process_one(
     speakers: dict[str, str] | None,
     temp_path: str | None,
     custom_vocabulary: list[str] | None = None,
-    custom_vocabulary_file: str | None = None,
+    custom_vocabulary_file: str | None = "auto",
     language_codes: list[str] | None = None,
     model: str = MODEL_ID,
     word_level_timestamps: bool = True,
@@ -639,7 +702,9 @@ def _process_one(
         # file load is non-fatal: a missing file just yields [] and logs a
         # warning (see ``_load_vocabulary_file``).
         combined_vocab = list(custom_vocabulary or [])
-        combined_vocab += _load_vocabulary_file(custom_vocabulary_file)
+        combined_vocab += _load_vocabulary_file(
+            custom_vocabulary_file, input_file=input_file
+        )
         combined_vocab = combined_vocab or None
 
         client = TranscribeClient(

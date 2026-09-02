@@ -59,16 +59,24 @@ internal-codename
 
 | Flag | Behavior |
 | --- | --- |
-| `--custom-vocabulary=TERM1;TERM2;...` | Inline list (or a path to a file — auto-detected by extension). Semicolon-separated. |
-| `--custom-vocabulary-file=PATH` | Dedicated vocabulary file path. Always treated as a file. |
+| `--custom-vocabulary-file=PATH` | Path to custom vocabulary file, or `auto` (default: `auto`). When `auto`, automatically picks up `.vocab.txt` (or `<stem>.vocab.txt`) if it exists. Specify `off` to disable. |
 
-If both are provided, terms from both are **merged** (inline first, then
-file), with duplicates removed implicitly by the bias algorithm (the
-greedy match resolves overlaps).
+When `--custom-vocabulary-file auto` (the default) is in effect, the wrapper searches for vocabulary files in the following order:
+1. `<stem>.vocab.txt` in the input file directory (e.g. `recording.vocab.txt` for `recording.mp4`)
+2. `<filename>.vocab.txt` in the input file directory (e.g. `recording.mp4.vocab.txt`)
+3. `.vocab.txt` in the input file directory
+4. `.vocab.txt` in the current working directory
+
+If a vocabulary file is found, it is automatically loaded and applied. If none is found, the wrapper silently proceeds with no vocabulary bias.
+
+To explicitly disable automatic lookup:
+```bash
+gtw --custom-vocabulary-file off sample.mp4
+```
 
 ## Missing-file behavior
 
-If `--custom-vocabulary-file` points at a non-existent path, the wrapper
+If `--custom-vocabulary-file` points at an explicit, non-existent path, the wrapper
 **prints a warning and continues with no vocabulary bias** — it does not
 exit with an error. This keeps long-running batch jobs from failing on a
 typo in the vocabulary path.
@@ -77,8 +85,7 @@ typo in the vocabulary path.
 WARNING  gemini_transcribe_wrapper.api:api.py Custom vocabulary file not found: myvoca.txt. Ignoring.
 ```
 
-To avoid even this warning, omit the flag entirely instead of pointing it
-at an empty path.
+In `auto` mode, missing files do not produce a warning.
 
 ## How the bias works
 
@@ -188,13 +195,12 @@ gtw --custom-vocabulary-file en-vocab.txt recording.mp4
 gtw --custom-vocabulary-file ko-vocab.txt lecture.mp4
 ```
 
-### Combining inline list + file
+### Automatic .vocab.txt pickup
 
 ```bash
-gtw --custom-vocabulary "ProjectX;ProjectY" \
-    --custom-vocabulary-file extra-glossary.txt \
-    sample.mp4
-# Both sources are merged; bias is applied across the combined list.
+# lecture.vocab.txt or .vocab.txt in current directory
+gtw lecture.mp4
+# The wrapper automatically detects and applies lecture.vocab.txt (or .vocab.txt).
 ```
 
 ## When to use this

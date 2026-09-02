@@ -256,6 +256,36 @@ def test_custom_vocabulary_comma_and_semicolon():
     assert parse_custom_vocabulary("word1;word2,word3") == ["word1", "word2", "word3"]
 
 
+def test_custom_vocabulary_cli_option_removed():
+    """--custom-vocabulary option is removed and fails CLI parsing."""
+    with pytest.raises(SystemExit):
+        build_options(["--custom-vocabulary", "word1,word2", "input.mp4"])
+
+
+def test_custom_vocabulary_file_defaults_to_auto():
+    """--custom-vocabulary-file defaults to 'auto' and accepts custom values."""
+    opts_default = build_options(["input.mp4"])
+    assert opts_default.custom_vocabulary_file == "auto"
+
+    opts_custom = build_options(["--custom-vocabulary-file", "my_voca.txt", "input.mp4"])
+    assert opts_custom.custom_vocabulary_file == "my_voca.txt"
+
+    opts_off = build_options(["--custom-vocabulary-file", "off", "input.mp4"])
+    assert opts_off.custom_vocabulary_file == "off"
+
+
+def test_format_cli_command_custom_vocabulary_file():
+    """format_cli_command omits auto, but includes explicit custom-vocabulary-file."""
+    opts_auto = TranscribeOptions(path=["input.mp4"], custom_vocabulary_file="auto")
+    assert "--custom-vocabulary-file" not in format_cli_command("gtw", opts_auto)
+
+    opts_custom = TranscribeOptions(path=["input.mp4"], custom_vocabulary_file="my_voca.txt")
+    assert "--custom-vocabulary-file my_voca.txt" in format_cli_command("gtw", opts_custom)
+
+    opts_off = TranscribeOptions(path=["input.mp4"], custom_vocabulary_file="off")
+    assert "--custom-vocabulary-file off" in format_cli_command("gtw", opts_off)
+
+
 def test_speakers_allows_commas_in_names():
     """--speakers uses ONLY semicolon so names may contain commas."""
     from gemini_transcribe_wrapper.cli import parse_speakers
