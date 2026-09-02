@@ -108,6 +108,7 @@ def align_and_build(
     paragraph_interval_secs: float,
     skip_sync: bool = False,
     speakers: dict[str, str] | None = None,
+    txt_width: int = 65,
 ) -> None:
     """Build .srt.tmp/.diarized.srt.tmp/.txt.tmp from the transcript.
 
@@ -124,6 +125,7 @@ def align_and_build(
         _merged_result(results, chunk_secs),
         line_interval_secs=line_interval_secs,
         paragraph_interval_secs=paragraph_interval_secs,
+        txt_width=txt_width,
     )
 
     atomic_write(srt_tmp, srt_content)

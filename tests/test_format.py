@@ -15,10 +15,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from gemini_transcribe_wrapper.format import (
     _sanitize_word,
     build_txt,
+    display_width,
     fix_korean_su_text,
     format_srt,
     group_words_to_cues,
+    reformat_txt_content,
     sanitize_words,
+    wrap_paragraph,
 )
 from gemini_transcribe_wrapper.stt import (
     TranscribeClient,
@@ -293,6 +296,63 @@ def test_custom_vocabulary_is_not_sent_to_api():
     assert getattr(tc, "custom_vocabulary", None) is None
 
 
+def test_display_width_cjk_and_ascii():
+    """CJK characters count as 2 display columns, ASCII and numbers count as 1."""
+    assert display_width("ORPO") == 4
+    assert display_width("정리") == 4
+    assert display_width("日本語") == 6
+    assert display_width("人工智能") == 8
+    assert display_width("한글 and English 123!") == 4 + 1 + 3 + 1 + 7 + 1 + 3 + 1  # 21
+
+
+def test_wrap_paragraph_respects_cjk_width():
+    """wrap_paragraph wraps at visual column boundary without breaking words."""
+    text = "네. 이번 시간에는 그러면 ORPO의 효과 및 정리를 좀 한번 해보도록 하겠고요."
+    wrapped = wrap_paragraph(text, width=40)
+    lines = wrapped.splitlines()
+    for line in lines:
+        assert display_width(line) <= 40
+
+
+def test_reformat_txt_content_with_user_example():
+    """reformat_txt_content splits paragraphs at '.\\n' and re-wraps each paragraph."""
+    sample_input = (
+        "네. 이번 시간에는 그러면 ORPO의 효과 및 정리를 좀 한번 해보도록\n"
+        "하겠고요. 심포랑 쪽은 비교하는 것까지도 좀 이야기를 한번 해보도록\n"
+        "하겠습니다.\n"
+        "어 그래서 이제 심포랑 너무 비슷한 그 내용이 좀 있긴 하죠. 그래서\n"
+        "이제 도대체 두 개의 차이가 뭔지 심포랑\n"
+        "ORPO의 차이가 도대체 뭔지를 좀 명시적으로 비교하는 시간을 우선은\n"
+        "가져보도록 하겠습니다. 이게 꽤나 효율적으로 적용할 수 있기 때문에 이걸\n"
+        "이제 저희가 이제 이야기를 하는 거고요. 그리고 ORPO의 효과 및\n"
+        "정리를 이제 이번 시간에 마무리하도록 하겠습니다.\n"
+        "그래서 이제 논문에 이제 주요 결과 를 좀 이야기를 한번 해보도록\n"
+        "하겠습니다.\n"
+        "그 논문의 주요 결과를 보게 되면 이제 전반적으로\n"
+        "이제 벤치마크로 보통 튜닝을 벤치마크로 결과를 보긴 하죠."
+    )
+    result = reformat_txt_content(sample_input, width=65)
+    paragraphs = result.strip().split("\n\n")
+    # 4 distinct paragraphs separated by blank lines
+    assert len(paragraphs) == 4
+
+    # Paragraph 1
+    assert "ORPO의 효과 및 정리" in paragraphs[0]
+    assert paragraphs[0].strip().endswith("하겠습니다.")
+
+    # Paragraph 2
+    assert "심포랑 ORPO의 차이" in paragraphs[1]
+    assert paragraphs[1].strip().endswith("마무리하도록 하겠습니다.")
+
+    # Paragraph 3
+    assert "논문에 이제 주요 결과" in paragraphs[2]
+    assert paragraphs[2].strip().endswith("하겠습니다.")
+
+    # Paragraph 4
+    assert "보통 튜닝을" in paragraphs[3]
+    assert paragraphs[3].strip().endswith("결과를 보긴 하죠.")
+
+
 if __name__ == "__main__":
     test_sanitize_swaps_swapped_timestamps()
     test_sanitize_keeps_normal_word_intact()
@@ -306,4 +366,7 @@ if __name__ == "__main__":
     test_sanitize_words_korean_su_followed_by_iss_or_eops()
     test_srt_and_txt_with_su_replacement()
     test_custom_vocabulary_is_not_sent_to_api()
+    test_display_width_cjk_and_ascii()
+    test_wrap_paragraph_respects_cjk_width()
+    test_reformat_txt_content_with_user_example()
     print("PASS: format sanitization tests")

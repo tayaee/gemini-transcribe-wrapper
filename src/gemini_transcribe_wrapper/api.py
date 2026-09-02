@@ -206,6 +206,7 @@ def gemini_transcribe(
     language_codes: list[str] | None = None,
     model: str = MODEL_ID,
     word_level_timestamps: bool = True,
+    txt_width: int = 65,
     # Backward compatibility aliases
     create_transcript_json: bool | None = None,
     create_metadata_json: bool | None = None,
@@ -344,6 +345,7 @@ def gemini_transcribe(
                 custom_vocabulary_file=custom_vocabulary_file,
                 model=model,
                 word_level_timestamps=word_level_timestamps,
+                txt_width=txt_width,
             )
         )
     return BatchTranscribeResult(results=results)
@@ -390,6 +392,7 @@ def _process_one(
     language_codes: list[str] | None = None,
     model: str = MODEL_ID,
     word_level_timestamps: bool = True,
+    txt_width: int = 65,
 ) -> TranscribeResult:
     input_file = Path(input_path)
 
@@ -561,6 +564,7 @@ def _process_one(
                     speakers=speakers,
                     model=model,
                     force=force,
+                    txt_width=txt_width,
                 )
             except Exception as exc:  # noqa: BLE001 - fall through to full re-run
                 logger.warning("Re-render from transcript failed (%s); re-transcribing", exc)
@@ -679,6 +683,7 @@ def _process_one(
             line_interval_secs=line_interval_secs,
             paragraph_interval_secs=paragraph_interval_secs,
             speakers=speakers,
+            txt_width=txt_width,
         )
 
         # Save the transcript (full transcription result for later re-render),
@@ -893,6 +898,7 @@ def _render_from_transcript(
     speakers: dict[str, str] | None,
     model: str = MODEL_ID,
     force: bool = False,
+    txt_width: int = 65,
 ) -> TranscribeResult:
     """Regenerate .diarized.srt/.srt/.txt from a transcript (no API call).
 
@@ -927,6 +933,7 @@ def _render_from_transcript(
             paragraph_interval_secs=paragraph_interval_secs,
             skip_sync=True,
             speakers=speakers,
+            txt_width=txt_width,
         )
 
         targets: dict[str, tuple[bool, Path]] = {

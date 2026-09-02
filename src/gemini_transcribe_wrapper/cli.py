@@ -42,6 +42,7 @@ class TranscribeOptions:
     tier: str = "free"
     line_interval_secs: float = 0.9
     paragraph_interval_secs: float = 2.5
+    txt_width: int = 65
     request_interval_secs: float | None = None
     max_chunk_secs: float | None = None
     speakers: str | None = None
@@ -235,6 +236,13 @@ def _make_command() -> click.Command:
         help="TXT paragraph break threshold (default: 2.5)",
     )
     @click.option(
+        "--txt-width",
+        type=int,
+        default=65,
+        show_default=True,
+        help="Visual display column width for .txt line wrapping (default: 65; CJK fullwidth chars count as 2)",
+    )
+    @click.option(
         "--request-interval-secs",
         type=float,
         default=None,
@@ -382,6 +390,7 @@ def _make_command() -> click.Command:
         tier: str,
         line_interval_secs: float,
         paragraph_interval_secs: float,
+        txt_width: int,
         request_interval_secs: float | None,
         max_chunk_secs: float | None,
         speakers: str | None,
@@ -460,6 +469,7 @@ def _make_command() -> click.Command:
                 tier=tier,
                 line_interval_secs=line_interval_secs,
                 paragraph_interval_secs=paragraph_interval_secs,
+                txt_width=txt_width,
                 request_interval_secs=request_interval_secs,
                 max_chunk_secs=max_chunk_secs,
                 speakers=speakers,
@@ -610,6 +620,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.extend(["--line-interval-secs", str(opts.line_interval_secs)])
     if opts.paragraph_interval_secs is not None:
         tokens.extend(["--paragraph-interval-secs", str(opts.paragraph_interval_secs)])
+    if opts.txt_width != 65:
+        tokens.extend(["--txt-width", str(opts.txt_width)])
 
     effective_interval = (
         (0.0 if opts.tier == "paid" else 120.0)
@@ -861,6 +873,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                     force_all=opts.force_all,
                     line_interval_secs=opts.line_interval_secs,
                     paragraph_interval_secs=opts.paragraph_interval_secs,
+                    txt_width=opts.txt_width,
                     request_interval_secs=opts.request_interval_secs,
                     max_chunk_secs=opts.max_chunk_secs,
                     speakers=speakers,

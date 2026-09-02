@@ -267,5 +267,14 @@ def test_speakers_allows_commas_in_names():
     }
 
 
+def test_txt_width_default_and_custom():
+    """--txt-width defaults to 65 and accepts custom integer width."""
+    default_opts = build_options(["input.mp4"])
+    assert default_opts.txt_width == 65
+
+    custom_opts = build_options(["--txt-width", "80", "input.mp4"])
+    assert custom_opts.txt_width == 80
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

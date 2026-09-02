@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-import textwrap
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 MAX_CHARS_PER_LINE = 30
 MAX_LINES_PER_CUE = 2
 MAX_WORDS_PER_CUE = 12
-TXT_WRAP_WIDTH = 40
+TXT_WRAP_WIDTH = 65
 
 
 def _fmt_ts(secs: float) -> str:
@@ -364,21 +364,96 @@ def _clean_for_txt(text: str) -> str:
     return cleaned.strip()
 
 
+def display_width(text: str) -> int:
+    """Return visual display width (CJK fullwidth/wide = 2, others = 1)."""
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in text)
+
+
+def wrap_paragraph(text: str, width: int = TXT_WRAP_WIDTH) -> str:
+    """Wrap words within a single paragraph to fit within ``width`` visual display columns."""
+    words = text.split()
+    if not words:
+        return ""
+    lines: list[str] = []
+    current_line: list[str] = []
+    current_width = 0
+
+    for word in words:
+        w_len = display_width(word)
+        if not current_line:
+            current_line.append(word)
+            current_width = w_len
+        elif current_width + 1 + w_len <= width:
+            current_line.append(word)
+            current_width += 1 + w_len
+        else:
+            lines.append(" ".join(current_line))
+            current_line = [word]
+            current_width = w_len
+
+    if current_line:
+        lines.append(" ".join(current_line))
+
+    return "\n".join(lines)
+
+
+def reformat_txt_content(text: str, width: int = TXT_WRAP_WIDTH) -> str:
+    """Reformat transcribed text into paragraphs with CJK-aware word wrapping.
+
+    - Identifies paragraph boundaries at lines ending with '.' ('.\\n') or existing blank lines.
+    - Joins words within each paragraph and re-wraps to ``width`` display columns.
+    - Inserts a blank line (\\n\\n) between paragraphs for enhanced readability.
+    """
+    if not text.strip():
+        return ""
+
+    raw_lines = text.splitlines()
+    paragraphs: list[list[str]] = []
+    current_para_lines: list[str] = []
+
+    for line in raw_lines:
+        stripped = line.strip()
+        if not stripped:
+            if current_para_lines:
+                paragraphs.append(current_para_lines)
+                current_para_lines = []
+            continue
+
+        current_para_lines.append(stripped)
+        if stripped.endswith("."):
+            paragraphs.append(current_para_lines)
+            current_para_lines = []
+
+    if current_para_lines:
+        paragraphs.append(current_para_lines)
+
+    formatted_paragraphs: list[str] = []
+    for para_lines in paragraphs:
+        para_text = " ".join(para_lines)
+        para_text = re.sub(r"\s+", " ", para_text).strip()
+        if not para_text:
+            continue
+        wrapped = wrap_paragraph(para_text, width=width)
+        formatted_paragraphs.append(wrapped)
+
+    return "\n\n".join(formatted_paragraphs).rstrip() + "\n"
+
+
 def build_txt(
     result: TranscriptionResult,
     line_interval_secs: float = 0.9,
     paragraph_interval_secs: float = 2.5,
+    txt_width: int = TXT_WRAP_WIDTH,
 ) -> str:
     """Build editor-formatted text from word timestamps with break rules.
 
     - Gap >= paragraph_interval_secs -> paragraph break (\n\n)
     - Gap >= line_interval_secs      -> single newline (\n)
-    - 60-char line wrap via textwrap; max 1 consecutive blank line.
+    - CJK visual width word wrapping (default width 65); paragraph separation on '.\\n'.
     """
     if not result.words:
-        return textwrap.fill(
-            _clean_for_txt(result.text), width=TXT_WRAP_WIDTH, break_long_words=False
-        ) + "\n"
+        cleaned = _clean_for_txt(result.text)
+        return reformat_txt_content(cleaned, width=txt_width)
 
     sanitized_words = sanitize_words(result.words)
     paragraphs: list[str] = []
@@ -409,17 +484,8 @@ def build_txt(
 
     flush_paragraph()
 
-    wrapped: list[str] = []
-    for para in paragraphs:
-        for line in para.split("\n"):
-            wrapped.append(
-                textwrap.fill(line, width=TXT_WRAP_WIDTH, break_long_words=False)
-            )
-        wrapped.append("")
-
-    text = "\n".join(wrapped)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.rstrip() + "\n"
+    raw_text = "\n\n".join(paragraphs)
+    return reformat_txt_content(raw_text, width=txt_width)
 
 
 def atomic_write(path: Path, content: str) -> None:
