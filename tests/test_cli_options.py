@@ -367,6 +367,7 @@ def test_help_compact_and_help_all(capsys):
     assert "--log-level {debug|info|error}" in compact_out
     assert "--color {auto|always|never}" in compact_out
     assert "--tier {free|paid}" in compact_out
+    assert "Re-generate .diarized.srt, .srt, .txt" in compact_out
     assert "Comma- or semicolon-separated Gemini API" in compact_out
     assert "$GEMINI_API_KEYS" in compact_out
     # Full help details should not be in compact help

@@ -74,7 +74,7 @@ _COMPACT_DESCRIPTIONS: dict[str, str] = {
     "language_codes": "Spoken language hints (e.g. 'ko-KR,en-US') [default: ko-KR,en-US]",
     "max_chunk_secs": "Override chunk ceiling in seconds (default: auto, 1800s/3600s)",
     "model": "Gemini audio model id [default: gemini-3.5-transcribe]",
-    "force": "Re-process even if outputs exist",
+    "force": "Re-generate .diarized.srt, .srt, .txt",
     "force_all": "Force re-call Gemini API and regenerate transcript",
     "line_interval_secs": "TXT newline break threshold [default: 0.2]",
     "paragraph_interval_secs": "TXT paragraph break threshold [default: 2.5]",
@@ -458,7 +458,7 @@ def _make_command() -> click.Command:
     @click.option(
         "--force/--no-force",
         default=False,
-        help="(Optional) Re-process even if outputs exist",
+        help="(Optional) Re-generate .diarized.srt, .srt, .txt",
     )
     @click.option(
         "--force-all/--no-force-all",
