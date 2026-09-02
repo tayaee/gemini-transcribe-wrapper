@@ -769,9 +769,10 @@ def _process_one(
                     transcript_migrate_to,
                 )
 
-        logger.info(  # nosemgrep: python-logger-credential-disclosure - key is masked via _mask_key
-            "Done with api key %s: %s",
-            _mask_key(getattr(client, "api_key", None)),
+        key_tail = api_key_tail(getattr(client, "api_key", None))
+        logger.info(  # nosemgrep: python-logger-credential-disclosure - key is masked via api_key_tail
+            "api-key=%s Done. Created %s",
+            key_tail,
             ", ".join(produced) or "(nothing produced)",
             extra={"color": "green"},
         )

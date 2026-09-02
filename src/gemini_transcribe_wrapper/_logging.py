@@ -97,7 +97,11 @@ class _ColorFormatter(_TzFormatter):
         msg = super().format(record)
         if not self._use_color:
             return msg
-        if getattr(record, "color", None) == "green" or record.getMessage().startswith("Done with api key"):
+        if (
+            getattr(record, "color", None) == "green"
+            or "Done. Created" in record.getMessage()
+            or record.getMessage().startswith("Done with api key")
+        ):
             color = self.GREEN
         else:
             color = self.LEVEL_COLORS.get(record.levelname, "")

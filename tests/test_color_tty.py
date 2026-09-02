@@ -195,17 +195,17 @@ def test_file_handler_uses_plain_formatter(tmp_path):
         handler.close()
 
 
-def test_color_formatter_done_with_api_key_is_green():
-    """'Done with api key ...' log lines are colored green on the console."""
+def test_color_formatter_done_created_is_green():
+    """'api-key=... Done. Created ...' log lines are colored green on the console."""
     fmt = gtw_logging._ColorFormatter(
         "%(levelname)s %(message)s",
         use_color=True,
     )
-    rec = _make_record(logging.INFO, "Done with api key ****Mw9g: sample.srt, sample.txt")
+    rec = _make_record(logging.INFO, "api-key=Mw9g Done. Created sample.srt, sample.txt")
     out = fmt.format(rec)
     assert out.startswith(gtw_logging._ColorFormatter.GREEN)
     assert out.endswith(gtw_logging._ColorFormatter.RESET)
-    assert "Done with api key" in out
+    assert "Done. Created" in out
 
 
 def test_color_formatter_extra_color_green():

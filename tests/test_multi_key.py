@@ -213,7 +213,7 @@ def test_429_with_hint_blacklists_immediately_no_retry(
     bl_logs = [
         rec.message for rec in caplog.records if "Removing key" in rec.message
     ]
-    assert any("[redacted]Aaaaaaaa" in m for m in bl_logs)
+    assert any("Removing key Aaaaaaaa" in m for m in bl_logs)
     assert any("1 api key left" in m for m in bl_logs)
     # A moved to cooldown, B is the only active key.
     assert k_a not in client._active_pool
@@ -429,24 +429,20 @@ def test_transcribe_client_deduplicates_keys():
 # --- compact key masking (used in the multi-key startup log) -----------
 
 
-def test_api_mask_key_shows_redacted_tag_and_last_4():
-    """Compact format: ``[redacted]<last4>`` — no first-4 leak.
-
-    The multi-key startup log line uses this to keep the line short
-    even with 9+ keys; the single-key line uses it for consistency.
-    """
+def test_api_mask_key_shows_last_8():
+    """Compact format: 8-char tail."""
     from gemini_transcribe_wrapper.api import _mask_key
 
     masked = _mask_key("AQ.AXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXMw9g")
-    assert masked == "[redacted]Mw9g"
+    assert masked == "XXXXMw9g"
 
 
-def test_api_mask_key_short_key_uses_only_redacted_tag():
-    """Keys ≤ 4 chars are fully masked with just the [redacted] tag."""
+def test_api_mask_key_short_key():
+    """Short keys return the key tail."""
     from gemini_transcribe_wrapper.api import _mask_key
 
-    assert _mask_key("abcd") == "[redacted]"
-    assert _mask_key("k1") == "[redacted]"
+    assert _mask_key("abcd") == "abcd"
+    assert _mask_key("k1") == "k1"
 
 
 # --- per-key upload session (Files API is per-key scoped) -----------------

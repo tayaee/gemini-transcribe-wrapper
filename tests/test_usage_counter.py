@@ -92,16 +92,15 @@ def test_summary_line_singular_hour_and_minute(cache, monkeypatch):
 
 
 def test_summary_line_free_tier_with_key_tail(cache):
-    """When a key is set, only ``[redacted]<last 4>`` is exposed."""
+    """When a key is set, only the 8-char key tail is exposed."""
     key = "AIzaSyD-1234567890abcdef"
     for _ in range(5):
         usage_counter.increment_today(cache, api_key=key)
     line = usage_counter.usage_summary_line(cache, api_key=key)
     print("summary line:", line)
-    assert "ending with '[redacted]cdef'" in line
+    assert "ending with '90abcdef'" in line
     # Whole key must NOT leak
     assert "AIzaSyD" not in line
-    assert "1234567890" not in line
 
 
 def test_summary_line_paid_tier_keeps_legacy_format(cache):
@@ -120,7 +119,7 @@ def test_summary_line_paid_tier_keeps_legacy_format(cache):
         usage_counter.increment_today(cache, api_key=key)
     line_key = usage_counter.usage_summary_line(cache, api_key=key, tier="paid")
     # Legacy 3 calls + 2 key calls = 5 total migrated calls
-    assert "with key '[redacted]cdef': attempted 5" in line_key
+    assert "with key '90abcdef': attempted 5" in line_key
     assert line_key.endswith(f"(free tier limit: {FREE_TIER_DAILY_LIMIT})")
 
 

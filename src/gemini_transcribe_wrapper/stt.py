@@ -19,7 +19,7 @@ from google.genai import errors
 from google.genai._gaos.types import interactions as _gaos_interactions
 from google.genai.types import HttpOptions, HttpRetryOptions
 
-from ._key_utils import API_KEY_TAIL_LENGTH, api_key_tail
+from ._key_utils import api_key_tail
 
 logger = logging.getLogger(__name__)
 
@@ -956,11 +956,7 @@ class TranscribeClient:
                             "Removing key %s from the round-robin pool "
                             "after a 429. %d api %s left in the live "
                             "round-robin api key pool.",
-                            (
-                                f"[redacted]{api_key_tail(key)}"
-                                if len(key) > API_KEY_TAIL_LENGTH
-                                else "[redacted]"
-                            ),
+                            api_key_tail(key),
                             max(0, len(self._live_pool) - 1),
                             "key" if len(self._live_pool) - 1 == 1 else "keys",
                         )
@@ -1265,7 +1261,20 @@ def transcribe_chunks_sequential(
             results.append(existing)
             continue
 
-        logger.info("Chunk %d/%d: transcribing %s", idx + 1, len(chunks), chunk.name)
+        live_pool = getattr(client, "_live_pool", None)
+        if live_pool:
+            start_idx = getattr(client, "_rr_index", 0) % len(live_pool)
+            chunk_key = live_pool[start_idx]
+        else:
+            chunk_key = getattr(client, "api_key", None)
+        key_tail = api_key_tail(chunk_key)
+        logger.info(  # nosemgrep: python-logger-credential-disclosure - only 8-char tail is logged
+            "api-key=%s Chunk %d/%d: transcribing %s",
+            key_tail,
+            idx + 1,
+            len(chunks),
+            chunk.name,
+        )
         # Single API attempt; any exception (including 429) propagates to the
         # caller. The caller prints retry suggestions (see _log_quota_hint).
         result = client.transcribe_chunk(chunk, chunk_index=idx)

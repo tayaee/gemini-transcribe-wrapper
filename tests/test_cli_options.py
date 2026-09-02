@@ -78,15 +78,13 @@ def test_gemini_api_key_singular_treated_as_one_element_list(caplog):
     # mentions a list so we don't check for the literal key value).
     warnings = [rec.message for rec in caplog.records if rec.levelno == logging.WARNING]
     assert any("--gemini-api-key is deprecated" in m for m in warnings)
-    # The masked short key "[redacted]" should appear in the warning.
-    assert any("'[redacted]'" in m for m in warnings)
+    assert any("'k1'" in m for m in warnings)
 
 
 def test_gemini_api_key_singular_does_not_crash_when_masked():
-    """Short keys (≤4 chars) should produce a fully-masked string without IndexError."""
+    """Short keys should produce the key tail without error."""
     masked = _mask_cli_key("k1")
-    assert masked == "[redacted]"
-    assert "k1" not in masked
+    assert masked == "k1"
 
 
 def test_plural_takes_precedence_over_singular(caplog):
@@ -125,11 +123,7 @@ def test_plural_and_singular_same_key_dedupes(caplog):
 
 
 def test_format_cli_command_emits_plural_form():
-    """Round-trip a multi-key value through format_cli_command.
-
-    The command-line log line redacts keys to ``[redacted]<last4>`` so
-    the emitted string never contains a full API key.
-    """
+    """Round-trip a multi-key value through format_cli_command."""
     opts = TranscribeOptions(
         path=["input.mp4"],
         gemini_api_keys=["k1aaa", "k2bbb", "k3ccc"],
@@ -137,13 +131,8 @@ def test_format_cli_command_emits_plural_form():
     )
     out = format_cli_command("gemini-transcribe", opts)
     tokens = out.split()
-    # Plural flag with the redacted semicolon-joined value ([redacted] + last 4 chars).
     assert "--gemini-api-keys" in tokens
-    assert "'[redacted]1aaa;[redacted]2bbb;[redacted]3ccc'" in out
-    # Raw keys must not appear in the emitted command.
-    assert "k1aaa" not in out
-    assert "k2bbb" not in out
-    assert "k3ccc" not in out
+    assert "'k1aaa;k2bbb;k3ccc'" in out
     # Singular alias should never be emitted as its own token.
     assert "--gemini-api-key" not in tokens
 
@@ -228,17 +217,17 @@ def test_resolve_api_keys_empty_when_no_sources(monkeypatch):
 
 
 def test_mask_cli_key_long():
-    """Keys longer than 4 chars show ``[redacted]<last 4>``."""
+    """Keys show the last 8 chars (or full key if shorter)."""
     masked = _mask_cli_key("AIzaSyDlong_api_key_xxx_xyzzzzz")
-    assert masked == "[redacted]zzzz"
+    assert masked == "_xyzzzzz"
     assert "AIzaSyD" not in masked
-    assert "long_api_key_xxx_xyz" not in masked
+    assert "long_api_key" not in masked
 
 
 def test_mask_cli_key_short_is_fully_masked():
-    """Keys ≤ 4 chars collapse to the bare ``[redacted]`` tag."""
-    assert _mask_cli_key("k1") == "[redacted]"
-    assert _mask_cli_key("abcd") == "[redacted]"
+    """Short keys return the key tail."""
+    assert _mask_cli_key("k1") == "k1"
+    assert _mask_cli_key("abcd") == "abcd"
 
 
 def test_gemini_api_keys_comma_and_semicolon():

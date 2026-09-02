@@ -75,17 +75,12 @@ def test_api_key_tail_length_zero_returns_empty():
     assert key_utils.api_key_tail("AIzaSyDummyKey12345678", length=0) == ""
 
 
-# ---------------------------------------------------------------------------
-# _key_utils.mask_key remains unchanged (UX re-emission uses 4-char masked form)
-# ---------------------------------------------------------------------------
-
-
-def test_mask_key_still_returns_4_char_form():
-    """``mask_key`` keeps the ``[redacted]<last 4>`` UX format."""
-    assert key_utils.mask_key("AIzaSyDummyKey12345678") == "[redacted]5678"
+def test_mask_key_returns_8_char_tail():
+    """``mask_key`` returns the last 8 chars for normal keys (or ``unset`` for empty)."""
+    assert key_utils.mask_key("AIzaSyDummyKey12345678") == "12345678"
     assert key_utils.mask_key(None) == "unset"
     assert key_utils.mask_key("") == "unset"
-    assert key_utils.mask_key("abcd") == "[redacted]"  # too short
+    assert key_utils.mask_key("abcd") == "abcd"
 
 
 # ---------------------------------------------------------------------------
