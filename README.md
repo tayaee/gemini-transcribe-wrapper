@@ -107,8 +107,8 @@ sample.txt
 
 ## Relevant Repositories
 
-- [GitHub](https://github.com/tayaee/gemini-transcribe-wrapper)
-- [PyPI](https://pypi.org/project/gemini-transcribe-wrapper/)
+- [https://github.com/tayaee/gemini-transcribe-wrapper](https://github.com/tayaee/gemini-transcribe-wrapper)
+- [https://pypi.org/project/gemini-transcribe-wrapper/](https://pypi.org/project/gemini-transcribe-wrapper/)
 
 ## License
 
