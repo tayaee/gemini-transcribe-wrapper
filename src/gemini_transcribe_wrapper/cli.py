@@ -40,7 +40,7 @@ class TranscribeOptions:
     force: bool = False
     force_all: bool = False
     tier: str = "free"
-    line_interval_secs: float = 0.9
+    line_interval_secs: float = 0.2
     paragraph_interval_secs: float = 2.5
     txt_width: int = 65
     request_interval_secs: float | None = None
@@ -226,8 +226,8 @@ def _make_command() -> click.Command:
     @click.option(
         "--line-interval-secs",
         type=float,
-        default=0.9,
-        help="TXT newline break threshold (default: 0.9)",
+        default=0.2,
+        help="TXT newline break threshold (default: 0.2)",
     )
     @click.option(
         "--paragraph-interval-secs",

@@ -441,7 +441,7 @@ def reformat_txt_content(text: str, width: int = TXT_WRAP_WIDTH) -> str:
 
 def build_txt(
     result: TranscriptionResult,
-    line_interval_secs: float = 0.9,
+    line_interval_secs: float = 0.2,
     paragraph_interval_secs: float = 2.5,
     txt_width: int = TXT_WRAP_WIDTH,
 ) -> str:

@@ -195,7 +195,7 @@ def gemini_transcribe(
     tier: str = "free",
     force: bool = False,
     force_all: bool = False,
-    line_interval_secs: float = 0.9,
+    line_interval_secs: float = 0.2,
     paragraph_interval_secs: float = 2.5,
     request_interval_secs: float | None = None,
     max_chunk_secs: float | None = None,
