@@ -705,6 +705,12 @@ def _process_one(
                 language_header,
                 api_logs=getattr(client, "api_logs", None),
             )
+            key_tail = api_key_tail(getattr(client, "api_key", None))
+            logger.info(  # nosemgrep: python-logger-credential-disclosure - key is masked via api_key_tail
+                "api-key=%s Created %s",
+                key_tail,
+                transcript_path,
+            )
         else:
             try:
                 transcript_path.unlink(missing_ok=True)
@@ -770,12 +776,13 @@ def _process_one(
                 )
 
         key_tail = api_key_tail(getattr(client, "api_key", None))
-        logger.info(  # nosemgrep: python-logger-credential-disclosure - key is masked via api_key_tail
-            "api-key=%s Done. Created %s",
-            key_tail,
-            ", ".join(produced) or "(nothing produced)",
-            extra={"color": "green"},
-        )
+        for out_file in produced:
+            logger.info(  # nosemgrep: python-logger-credential-disclosure - key is masked via api_key_tail
+                "api-key=%s Created %s",
+                key_tail,
+                out_file,
+                extra={"color": "green"},
+            )
 
         # Warn about speakers the custom mapping did not cover, with a
         # recommended re-render command.

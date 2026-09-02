@@ -952,14 +952,27 @@ class TranscribeClient:
                             timestamp=iso_ts,
                             log_path=getattr(self, "audit_jsonl_file", None),
                         )
-                        logger.info(
-                            "Removing key %s from the round-robin pool "
-                            "after a 429. %d api %s left in the live "
-                            "round-robin api key pool.",
-                            api_key_tail(key),
-                            max(0, len(self._live_pool) - 1),
-                            "key" if len(self._live_pool) - 1 == 1 else "keys",
-                        )
+                        remaining_count = max(0, len(self._live_pool) - 1)
+                        if remaining_count > 0 and offset + 1 < len(active):
+                            next_key = active[(start_idx + offset + 1) % len(active)]
+                            logger.info(
+                                "Removing key %s from the round-robin pool "
+                                "after a 429. %d api %s left in the live "
+                                "round-robin api key pool. Picking up next api-key %s.",
+                                api_key_tail(key),
+                                remaining_count,
+                                "key" if remaining_count == 1 else "keys",
+                                api_key_tail(next_key),
+                            )
+                        else:
+                            logger.info(
+                                "Removing key %s from the round-robin pool "
+                                "after a 429. %d api %s left in the live "
+                                "round-robin api key pool.",
+                                api_key_tail(key),
+                                remaining_count,
+                                "key" if remaining_count == 1 else "keys",
+                            )
                         # Mark this key dead with a per-key 30-min cooldown.
                         # The next call to ``_prune_dead_pool`` at the top
                         # of the outer loop will move it back to live once

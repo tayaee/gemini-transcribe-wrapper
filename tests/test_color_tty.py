@@ -219,3 +219,19 @@ def test_color_formatter_extra_color_green():
     out = fmt.format(rec)
     assert out.startswith(gtw_logging._ColorFormatter.GREEN)
     assert out.endswith(gtw_logging._ColorFormatter.RESET)
+
+
+def test_color_formatter_created_output_is_green_and_transcript_is_not():
+    """Created output files with color='green' are green; transcript json without color is uncolored."""
+    fmt = gtw_logging._ColorFormatter(
+        "%(levelname)s %(message)s",
+        use_color=True,
+    )
+    rec_out = _make_record(logging.INFO, "api-key=Mw9g Created sample.srt")
+    rec_out.color = "green"
+    out = fmt.format(rec_out)
+    assert out.startswith(gtw_logging._ColorFormatter.GREEN)
+
+    rec_trans = _make_record(logging.INFO, "api-key=Mw9g Created sample.transcript.json")
+    out_trans = fmt.format(rec_trans)
+    assert not out_trans.startswith(gtw_logging._ColorFormatter.GREEN)
