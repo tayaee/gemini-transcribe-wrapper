@@ -20,11 +20,10 @@ Linux / macOS:
 
 ```bash
 # Set your multiple free-tier API keys in shell variables first:
-export key1=AIzaSyA...
-export key2=AIzaSyB...
+export KEYS="AIzaSyA...,AIzaSyB...,AIzaSyC..."
 
 # Then run any number of input files in one go:
-uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys $key1;...;$key10 *.mp4
+uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys "$KEYS" *.mp4
 ```
 
 For a persistent install (so you can run `gtw` directly without `uvx ...`):
@@ -46,8 +45,8 @@ gtw -v
 ### Transcribe for free
 
 ```bash
-# Recommended — multi-key (10 free-tier keys for active/cooldown pool):
-uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys $key1;...;$key10 *.mp4
+# Recommended — multi-key (multiple free-tier keys with round-robin and cooldown pool):
+gtw --gemini-api-keys "$KEYS" *.mp4
 
 # Single-key (if you only have one free-tier key or use a paid tier):
 gtw sample.mp4   # with `GEMINI_API_KEY` set
@@ -55,21 +54,7 @@ gtw sample.mp4   # with `GEMINI_API_KEY` set
 gtw --gemini-api-keys YOUR_API_KEY sample.mp4
 ```
 
-Output (default: `--no-diarize` — no speaker labels, fewer API calls):
-
-```bash
-sample.transcript.json
-sample.srt
-sample.txt
-```
-
-For speaker-diarized output, opt in with `--diarize`:
-
-```bash
-gtw --diarize sample.mp4
-```
-
-Output (with `--diarize`):
+Output (default: `--diarized-srt-file auto` — with speaker diarization):
 
 ```bash
 sample.diarized.transcript.json
@@ -78,24 +63,37 @@ sample.srt
 sample.txt
 ```
 
+To disable speaker diarization and generate standard subtitles only (halves API calls for long audio):
+
+```bash
+gtw --diarized-srt-file=off sample.mp4
+```
+
+Output (with `--diarized-srt-file=off`):
+
+```bash
+sample.transcript.json
+sample.srt
+sample.txt
+```
+
 ## What are improved by this project?
 
 ### 1. Transcription Quality & Usability
 
-- **Raw AI Output to Ready-to-Use Subtitles**: Converts JSON transcription output directly into formatted `.srt` (with natural timestamp alignment and line breaking), readable `.txt` paragraphs, and (with `--diarize`) `.diarized.srt` files in a single run.
+- **Raw AI Output to Ready-to-Use Subtitles**: Converts JSON transcription output directly into formatted `.srt` (with natural timestamp alignment and line breaking), readable `.txt` paragraphs, and `.diarized.srt` files in a single run.
 - **Korean Transcription Error Correction**: Automatically post-processes common Gemini Korean misrecognitions (e.g. correcting erroneous romanized `"su"` into `"수"` in patterns like `"~할 su 있다/없다"`, `"~할 su밖에"`, `"~할 su도"`, `"~할 su가"` with proper Korean spacing and particle attachment).
 - **Fast Speaker Labeling**: Allows iterative speaker renaming (`--speakers 'spk:0=Host;spk:1=Guest'`) instantly without re-calling the API by reusing saved transcripts.
 
 ### 2. Overcoming Free-Tier Limits & Constraints
 
-- **Audio Length Limit Bypass**: Handles audio files of any length by auto-splitting into safe units (60-min logical units for `--no-diarize`, 30-min chunks for `--diarize`) and transparently stitching timestamps together.
-- **Rate Limit Throttling (Max 2 RPM)**: Applies a monotonic rate limiter (default 60s interval) across all chunks and multi-file batches to prevent 429 rate-limit errors.
+- **Audio Length Limit Bypass**: Handles audio files of any length by auto-splitting into safe units (30-min chunks by default for diarization and word timestamps, 60-min chunks when both are disabled via `--diarized-srt-file=off --no-word-level-timestamps`) and transparently stitching timestamps together.
+- **Rate Limit Throttling (Max 2 RPM)**: Applies a monotonic rate limiter (default 120s interval on free tier) across all chunks and multi-file batches to prevent 429 rate-limit errors.
 - **Daily Quota Tracking**: Tracks daily Pacific-time API usage locally (`~/.cache/gemini-transcribe-wrapper/usage-<sha256(key)[:12]>.json`) with masked key logging (e.g. `API call attempts today 2026-08-30 (PT) with key 'AIza****abcd': attempted 3 (free tier limit: ~25)`).
-- **Free-Tier-Friendly Defaults**: `--no-diarize` is the default to maximize audio duration per API call and minimize API consumption.
-- **Multi-Key Round-Robin + Active/Cooldown Pool**: Pass several keys with `--gemini-api-keys=KEY1;KEY2;...`. The wrapper keeps a separate `_active_pool` (round-robin target) and `_cooldown_pool` (keys that hit 429). On a 429 the key is moved into the cooldown pool immediately — no same-key retry. When the active pool drains, the wrapper sleeps `_COOLDOWN_SECS` (10 min default) and reactivates every cooldown key in batch, then retries the chunk. With **16–20 free-tier keys** (2 Gmail accounts × 10 projects each) you can run continuously even when most keys have hit the daily cap. See [Multi-Key Strategy](docs/multi-key-strategy.md) for sizing guidance.
-- **Graceful 429 Abort (single key)**: On HTTP 429 (rate limit or quota exhausted) when running with a single key, calculates the exact sleep seconds until the Pacific midnight reset and aborts the batch immediately (exit code `2`) to prevent wasting quota.
+- **Multi-Key Round-Robin + Active/Cooldown Pool**: Pass multiple keys with `--gemini-api-keys=KEY1,KEY2,...`. The wrapper tracks active keys and keys in cooldown upon 429 errors. When all keys hit 429, it waits 600s before reloading keys into the live pool and retrying. Key usage state is persisted across runs in `~/.cache/gemini-transcribe-wrapper/last-used-api-key.json` to rotate evenly. With **16–20 free-tier keys** (2 Gmail accounts × 10 projects each) you can run continuously even when most keys have hit the daily cap. See [Multi-Key Strategy](docs/multi-key-strategy.md) for sizing guidance.
+- **Graceful 429 Abort (single key)**: On HTTP 429 (rate limit or quota exhausted) when running with a single key, calculates the exact sleep seconds until the Pacific midnight reset and aborts the batch gracefully.
 - **Custom Vocabulary File (`--custom-vocabulary-file`)**: Register company-internal / frequently-misrecognized terms in a plain text file (one per line) and the wrapper biases the transcript toward those terms as a post-recognition step. Up to 1000 words are accepted by the model; Google recommends ≤100 lines for best results. Missing file → warning + silently ignored. See [Custom Vocabulary](docs/custom-vocabulary.md) for details.
-- **Multi-Language Hint (`--language-codes`)**: Forward a comma-separated list of BCP-47 codes (default `ko-KR,en-US`) to Gemini as `language_codes`. Pass an empty string (`--language-codes=""`) to enable Gemini's auto language detection for mixed-language content. See [Language Hints](docs/language-codes.md) for details.
+- **Multi-Language Hint (`--language-codes`)**: Forward a comma-separated list of BCP-47 codes (default `ko-KR;en-US`) to Gemini as `language_codes`. Pass an empty string (`--language-codes=""`) to enable Gemini's auto language detection for mixed-language content. See [Language Hints](docs/language-codes.md) for details.
 
 ## Documentation & Guides
 

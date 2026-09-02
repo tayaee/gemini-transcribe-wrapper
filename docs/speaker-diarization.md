@@ -53,4 +53,4 @@ Simulation of the iterative renaming (`.diarized.srt` excerpt after each pass):
 
 Tip: each pass is a no-API re-render — the wrapper reads `<base>.diarized.transcript.json` (kept by default) and rewrites `.diarized.srt` from it, so iterating is fast and free.
 
-Note: `--speakers` is ignored when `--diarized-srt-file` is off (the default). Pass `--diarized-srt-file` to enable speaker mapping.
+Note: `--speakers` is ignored when `--diarized-srt-file` is disabled (`--diarized-srt-file=off`). By default, speaker diarization is enabled (`--diarized-srt-file auto`).

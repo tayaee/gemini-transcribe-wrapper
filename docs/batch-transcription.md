@@ -15,4 +15,4 @@ while ! gtw '*.mp4'; do
 done
 ```
 
-Tip: leaving `--diarized-srt-file` unset (disabled) halves (or better) the number of API calls vs enabling it for the same audio, since each call covers ~2× the audio length.
+Tip: setting `--diarized-srt-file=off` halves (or better) the number of API calls vs default diarization for long audio, since each call covers ~2× the audio length.
