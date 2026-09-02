@@ -9,49 +9,31 @@ A free video transcription CLI using gemini-3.5-transcribe that outputs .diarize
 - Get an API key from https://aistudio.google.com/api-keys/ for free.
 - Install uv (https://docs.astral.sh/uv/getting-started/installation/).
 
-### Install the tool
+### Install or upgrade the tool
 
 *(Supports Python 3.10–3.13; Python 3.12 is recommended)*
 
-The wrapper is best run via **`uvx`** (one-shot, no install step — recommended
-for free-tier multi-key usage where each run spreads load differently):
+#### Method 1: The wrapper is best run via **`uvx`** (one-shot, no install step — recommended for free-tier multi-key usage where each run spreads load differently):
 
-Linux / macOS:
-
-```bash
-# Set your multiple free-tier API keys in shell variables first:
-export KEYS="AIzaSyA...,AIzaSyB...,AIzaSyC..."
-
-# Then run any number of input files in one go:
-uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys "$KEYS" *.mp4
-```
-
-For a persistent install (so you can run `gtw` directly without `uvx ...`):
+Linux / macOS / Windows:
 
 ```bash
-export GEMINI_API_KEY=your_key_here
-uv tool install --python 3.12 gemini-transcribe-wrapper@latest
-gtw -v
+uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys "<api keys separated by comma or semicolon>" -h
 ```
 
-Windows (Command Prompt) — persistent install:
+#### Method 2: For a persistent install (so you can run `gtw` directly without `uvx ...`):
 
-```cmd
-set GEMINI_API_KEY=your_key_here
+Linux / macOS / Windows:
+
+```bash
 uv tool install --python 3.12 gemini-transcribe-wrapper@latest
-gtw -v
+gtw --gemini-api-keys "<api keys separated by comma or semicolon>" -h
 ```
 
 ### Transcribe for free
 
 ```bash
-# Recommended — multi-key (multiple free-tier keys with round-robin and cooldown pool):
-gtw --gemini-api-keys "$KEYS" *.mp4
-
-# Single-key (if you only have one free-tier key or use a paid tier):
-gtw sample.mp4   # with `GEMINI_API_KEY` set
-# or
-gtw --gemini-api-keys YOUR_API_KEY sample.mp4
+gtw --gemini-api-keys "<api keys separated by comma or semicolon>" /path/to/sample.mp4
 ```
 
 Output (default: `--diarized-srt-file auto` — with speaker diarization):
@@ -59,20 +41,6 @@ Output (default: `--diarized-srt-file auto` — with speaker diarization):
 ```bash
 sample.diarized.transcript.json
 sample.diarized.srt
-sample.srt
-sample.txt
-```
-
-To disable speaker diarization and generate standard subtitles only (halves API calls for long audio):
-
-```bash
-gtw --diarized-srt-file=off sample.mp4
-```
-
-Output (with `--diarized-srt-file=off`):
-
-```bash
-sample.transcript.json
 sample.srt
 sample.txt
 ```
@@ -107,7 +75,7 @@ sample.txt
 ## Relevant Repositories
 
 - [https://github.com/tayaee/gemini-transcribe-wrapper](https://github.com/tayaee/gemini-transcribe-wrapper)
-- [https://pypi.org/project/gemini-transcribe-wrapper/](https://pypi.org/project/gemini-transcribe-wrapper/)
+- [https://pypi.org/project/gemini-transcribe-wrapper](https://pypi.org/project/gemini-transcribe-wrapper/)
 
 ## License
 
