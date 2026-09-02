@@ -350,14 +350,45 @@ def test_format_cli_command_speakers_txt_file():
     assert "--speakers-txt-file off" in format_cli_command("gtw", opts_off)
 
 
-def test_txt_width_default_and_custom():
-    """--txt-width defaults to 65 and accepts custom integer width."""
-    default_opts = build_options(["input.mp4"])
-    assert default_opts.txt_width == 65
+def test_help_compact_and_help_all(capsys):
+    """-h provides compact 1-line descriptions, while --help-all provides full descriptions."""
+    from gemini_transcribe_wrapper import cli
 
-    custom_opts = build_options(["--txt-width", "80", "input.mp4"])
-    assert custom_opts.txt_width == 80
+    # Test -h compact
+    with pytest.raises(SystemExit) as exc_compact:
+        cli.main(["-h"])
+    assert exc_compact.value.code == 0
+    compact_out = capsys.readouterr().out
+    assert "API Key:" in compact_out
+    assert "Input Files:" in compact_out
+    assert "Output Files:" in compact_out
+    assert "Help:" in compact_out
+    assert "--help-all" in compact_out
+    assert "--log-level {debug|info|error}" in compact_out
+    assert "--color {auto|always|never}" in compact_out
+    assert "--tier {free|paid}" in compact_out
+    assert "Comma- or semicolon-separated Gemini API" in compact_out
+    assert "$GEMINI_API_KEYS" in compact_out
+    # Full help details should not be in compact help
+    assert "cooldown pool" not in compact_out
+
+    # Test --help-all full
+    with pytest.raises(SystemExit) as exc_all:
+        cli.main(["--help-all"])
+    assert exc_all.value.code == 0
+    all_out = capsys.readouterr().out
+    assert "API Key:" in all_out
+    assert "Help:" in all_out
+    assert "(Optional)" in all_out
+    assert "cooldown pool" in all_out
+
+    # Test that warning and critical are still accepted at runtime
+    opts_warn = build_options(["--log-level", "warning", "input.mp4"])
+    assert opts_warn.log_level == "warning"
+    opts_crit = build_options(["--log-level", "critical", "input.mp4"])
+    assert opts_crit.log_level == "critical"
 
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+

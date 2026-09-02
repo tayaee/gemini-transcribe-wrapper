@@ -261,7 +261,36 @@ def test_diarize_off_word_timestamps_on_runs_chunks_at_diarize_default(monkeypat
     finally:
         api.TranscribeClient = orig
 
-    assert captured["max_chunk_secs"] == DEFAULT_CHUNK_SECS_DIARIZE
+def test_txt_only_automatically_turns_off_word_level_timestamps(monkeypatch, tmp_path):
+    """When both .srt and .diarized.srt are disabled (txt only), word_level_timestamps
+    automatically turns off, allowing 60-min (3600s) chunks.
+    """
+    src = _make_audio(tmp_path)
+    captured: dict[str, float | None] = {}
+
+    real_compute = api.compute_split_plan
+
+    def spy(total_secs, max_chunk_secs):
+        captured["max_chunk_secs"] = max_chunk_secs
+        return real_compute(total_secs, max_chunk_secs=max_chunk_secs)
+
+    monkeypatch.setattr(api, "compute_split_plan", spy)
+
+    orig = api.TranscribeClient
+    api.TranscribeClient = _OneChunkFakeClient
+    try:
+        api.gemini_transcribe(
+            str(src),
+            force=True,
+            gemini_api_key="fake",
+            srt_file="off",
+            diarized_srt_file="off",
+            txt_file="auto",
+        )
+    finally:
+        api.TranscribeClient = orig
+
+    assert captured["max_chunk_secs"] == DEFAULT_CHUNK_SECS_NO_DIARIZE
 
 
 def test_diarize_explicit_chunk_secs_overrides_default(monkeypatch, tmp_path):

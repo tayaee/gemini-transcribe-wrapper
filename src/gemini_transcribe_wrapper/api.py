@@ -397,7 +397,7 @@ def gemini_transcribe(
     custom_vocabulary_file: str | None = None,
     language_codes: list[str] | None = None,
     model: str = MODEL_ID,
-    word_level_timestamps: bool = True,
+    word_level_timestamps: bool | None = None,
     txt_width: int = 65,
     # Backward compatibility aliases
     create_transcript_json: bool | None = None,
@@ -445,9 +445,10 @@ def gemini_transcribe(
             speaker diarization or word-level timestamps are enabled because
             the Gemini API caps audio at ~30 min per call in those modes.
         word_level_timestamps: Include word-level timestamps in the
-            transcription output (default: ``True``). When enabled, the
-            Gemini API per-call audio limit drops from ~1 hour to ~30 min,
-            same as speaker diarization.
+            transcription output (default: ``None`` for auto; enabled when
+            .srt or .diarized.srt is on, disabled when only .txt is output).
+            When enabled, the Gemini API per-call audio limit drops from ~1
+            hour to ~30 min, same as speaker diarization.
         speakers: Optional mapping of raw speaker ids (e.g. "spk:0") to
             display names used in the .diarized.srt output. Speakers missing
             from the mapping keep their raw id, and a warning is emitted
@@ -590,7 +591,7 @@ def _process_one(
     custom_vocabulary_file: str | None = None,
     language_codes: list[str] | None = None,
     model: str = MODEL_ID,
-    word_level_timestamps: bool = True,
+    word_level_timestamps: bool | None = None,
     txt_width: int = 65,
 ) -> TranscribeResult:
     input_file = Path(input_path)
@@ -621,6 +622,9 @@ def _process_one(
     audit_enabled, audit_target = _resolve_output_target(
         audit_jsonl_file, audit_default, default_enabled=True
     )
+
+    if word_level_timestamps is None:
+        word_level_timestamps = bool(srt_enabled or diarized_enabled)
 
     transcript_canonical, transcript_migrate_to = _resolve_transcript_path(
         out_dir, out_stem.name, diarized_enabled

@@ -47,7 +47,7 @@ class TranscribeOptions:
     max_chunk_secs: float | None = None
     speakers_txt_file: str | None = "auto"
     vocab_txt_file: str | None = "auto"
-    word_level_timestamps: bool = True
+    word_level_timestamps: bool | None = None
     temp_path: str = "temp"
     audit_jsonl_file: str | Path | bool | None = None
     log_level: str = "info"
@@ -58,7 +58,193 @@ class TranscribeOptions:
     color: str = "auto"
 
 
+_COMPACT_DESCRIPTIONS: dict[str, str] = {
+    "gemini_api_keys": "Comma- or semicolon-separated Gemini API keys [default: $GEMINI_API_KEYS]",
+    "speakers_txt_file": "Speaker mapping file for .diarized.srt, or 'off' [default: auto]",
+    "vocab_txt_file": "Vocabulary file for recognition bias, or 'off' [default: auto]",
+    "audit_jsonl_file": "Path to JSONL audit log file, or 'off'",
+    "diarized_srt_file": "Output .diarized.srt path, 'auto', or 'off' [default: auto]",
+    "metadata_json_file": "Output .metadata.json path, 'auto', or 'off' [default: off]",
+    "output_base": "Base name for output files [default: input stem]",
+    "output_dir": "Directory for output files [default: alongside input]",
+    "srt_file": "Output .srt path, 'auto', or 'off' [default: auto]",
+    "temp_path": "Directory for intermediate temp files [default: temp]",
+    "transcript_json_file": "Output transcript JSON path, 'auto', or 'off' [default: auto]",
+    "txt_file": "Output .txt path, 'auto', or 'off' [default: auto]",
+    "language_codes": "Spoken language hints (e.g. 'ko-KR,en-US') [default: ko-KR,en-US]",
+    "max_chunk_secs": "Override chunk ceiling in seconds (default: auto, 1800s/3600s)",
+    "model": "Gemini audio model id [default: gemini-3.5-transcribe]",
+    "force": "Re-process even if outputs exist",
+    "force_all": "Force re-call Gemini API and regenerate transcript",
+    "line_interval_secs": "TXT newline break threshold [default: 0.2]",
+    "paragraph_interval_secs": "TXT paragraph break threshold [default: 2.5]",
+    "txt_width": "Column width for .txt wrapping [default: 65]",
+    "color": "Color console output by log level [default: auto]",
+    "loop_always": "Re-glob forever with --loop-poll-secs delay",
+    "loop_poll_secs": "Polling sleep seconds under --loop-always [default: 30]",
+    "loop_until_no_input": "Drain folder and exit when no matching files remain",
+    "request_interval_secs": "Delay between API calls [default: 120.0 free, 0.0 paid]",
+    "tier": "Gemini API pricing tier [default: free]",
+    "version": "Show version and exit",
+    "help": "Show compact help and exit",
+    "help_all": "Show full detailed help and exit",
+    "log_level": "Logging level (default: info; use 'debug' for verbose)",
+}
+
+_OPTION_GROUPS: list[tuple[str, list[str]]] = [
+    (
+        "API Key",
+        ["gemini_api_keys"],
+    ),
+    (
+        "Input Files",
+        ["speakers_txt_file", "vocab_txt_file"],
+    ),
+    (
+        "Output Files",
+        [
+            "audit_jsonl_file",
+            "diarized_srt_file",
+            "metadata_json_file",
+            "output_base",
+            "output_dir",
+            "srt_file",
+            "temp_path",
+            "transcript_json_file",
+            "txt_file",
+        ],
+    ),
+    (
+        "Input Options",
+        ["language_codes", "max_chunk_secs", "model"],
+    ),
+    (
+        "Output Options",
+        [
+            "force",
+            "force_all",
+            "line_interval_secs",
+            "paragraph_interval_secs",
+            "txt_width",
+        ],
+    ),
+    (
+        "Other Options",
+        [
+            "color",
+            "loop_always",
+            "loop_poll_secs",
+            "loop_until_no_input",
+            "request_interval_secs",
+            "tier",
+        ],
+    ),
+    (
+        "Help",
+        [
+            "version",
+            "help",
+            "help_all",
+            "log_level",
+        ],
+    ),
+]
+
+
+def _help_all_callback(ctx: click.Context, param: click.Parameter, value: bool) -> None:
+    if value and not ctx.resilient_parsing:
+        ctx.meta["help_all"] = True
+        click.echo(ctx.get_help(), color=ctx.color)
+        ctx.exit()
+
+
+def _term_len(text: str) -> int:
+    return len(click.unstyle(text))
+
+
+def _write_aligned_dl(
+    formatter: click.HelpFormatter,
+    rows: list[tuple[str, str]],
+    first_col: int,
+    col_spacing: int = 2,
+) -> None:
+    for first, second in rows:
+        indent = " " * formatter.current_indent
+        formatter.write(f"{indent}{first}")
+        if not second:
+            formatter.write("\n")
+            continue
+        flen = _term_len(first)
+        if flen <= first_col - col_spacing:
+            formatter.write(" " * (first_col - flen))
+        else:
+            formatter.write("\n")
+            formatter.write(" " * (first_col + formatter.current_indent))
+
+        text_width = max(formatter.width - first_col - 2, 10)
+        wrapped_text = click.wrap_text(second, text_width, preserve_paragraphs=True)
+        lines = wrapped_text.splitlines()
+
+        if lines:
+            formatter.write(f"{lines[0]}\n")
+            indent_cont = " " * (first_col + formatter.current_indent)
+            for line in lines[1:]:
+                formatter.write(f"{indent_cont}{line}\n")
+        else:
+            formatter.write("\n")
+
+
 class _GTWCommand(click.Command):
+    def format_options(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        # Ensure terminal width is utilized so compact 1-line options do not wrap prematurely
+        term_width = shutil.get_terminal_size(fallback=(120, 24)).columns
+        formatter.width = max(formatter.width, term_width - 2, 110)
+
+        records: dict[str, tuple[str, str]] = {}
+        for param in self.get_params(ctx):
+            rec = param.get_help_record(ctx)
+            if rec:
+                name = param.name
+                opts = getattr(param, "opts", [])
+                if any(o in ("-h", "--help") for o in opts) and "--help-all" not in opts:
+                    name = "help"
+                records[name] = rec
+
+        is_full = bool(ctx.meta.get("help_all", False) or ("--help-all" in getattr(sys, "argv", [])))
+
+        all_group_data: list[tuple[str, list[tuple[str, str]]]] = []
+        max_opt_len = 0
+        seen: set[str] = set()
+        for title, param_names in _OPTION_GROUPS:
+            group_records = []
+            for name in param_names:
+                if name in records:
+                    opt_spec, full_help = records[name]
+                    if is_full:
+                        help_text = full_help
+                    else:
+                        help_text = _COMPACT_DESCRIPTIONS.get(name, full_help)
+                    group_records.append((opt_spec, help_text))
+                    max_opt_len = max(max_opt_len, _term_len(opt_spec))
+                    seen.add(name)
+            if group_records:
+                all_group_data.append((title, group_records))
+
+        remaining = [records[k] for k in records if k not in seen]
+        for opt_spec, _ in remaining:
+            max_opt_len = max(max_opt_len, _term_len(opt_spec))
+
+        # Uniform vertical alignment across ALL sections
+        first_col = max_opt_len + 2
+
+        for title, group_records in all_group_data:
+            with formatter.section(title):
+                _write_aligned_dl(formatter, group_records, first_col)
+
+        if remaining:
+            with formatter.section("Additional Options"):
+                _write_aligned_dl(formatter, remaining, first_col)
+
     def format_help_text(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
         text = (
             f"gemini-transcribe v{__version__} - "
@@ -73,9 +259,11 @@ class _GTWCommand(click.Command):
         with formatter.indentation():
             formatter.write(
                 f"{' ' * formatter.current_indent}"
-                'uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys "$GEMINI_API_KEY" -h\n'
+                "uv tool install --python 3.12 gemini-transcribe-wrapper@latest\n"
                 f"{' ' * formatter.current_indent}"
-                'uvx --python 3.12 --from gemini-transcribe-wrapper@latest gtw --gemini-api-keys "$GEMINI_API_KEY" /path/to/*.mp4\n'
+                'gtw --gemini-api-keys "<comma-separated-free-tier-api-keys>" -h\n'
+                f"{' ' * formatter.current_indent}"
+                'gtw --gemini-api-keys "<comma-separated-free-tier-api-keys>" *.mp4\n'
             )
 
     def format_epilog(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
@@ -102,7 +290,10 @@ def _make_command() -> click.Command:
 
     @click.command(
         cls=_GTWCommand,
-        context_settings={"help_option_names": ["-h", "--help"]},
+        context_settings={
+            "help_option_names": ["-h", "--help"],
+            "max_content_width": 240,
+        },
     )
     @click.option(
         "-v",
@@ -112,20 +303,18 @@ def _make_command() -> click.Command:
         help="Show version and exit",
     )
     @click.option(
-        "--output-dir",
-        default=None,
-        help="Directory for output files (default: alongside input)",
-    )
-    @click.option(
-        "--output-base",
-        default=None,
-        help="Base name for output files (default: input stem)",
+        "--help-all",
+        is_flag=True,
+        is_eager=True,
+        expose_value=False,
+        callback=_help_all_callback,
+        help="Show full detailed help and exit",
     )
     @click.option(
         "--gemini-api-keys",
         default=None,
         help=(
-            "Comma- or semicolon-separated list of Gemini API keys (e.g. 'k1,k2,k3' or 'k1;k2;k3'). "
+            "(Optional) Comma- or semicolon-separated list of Gemini API keys (e.g. 'k1,k2,k3' or 'k1;k2;k3'). "
             "Keys are used in round-robin order across chunks; on a 429 "
             "the wrapper moves the key into a cooldown pool and tries the "
             "next active key. "
@@ -138,141 +327,26 @@ def _make_command() -> click.Command:
         default=None,
         hidden=True,
         help=(
-            "[DEPRECATED — use --gemini-api-keys] Single Gemini API key. "
+            "(Optional) [DEPRECATED — use --gemini-api-keys] Single Gemini API key. "
             "Treated as a one-element list passed to --gemini-api-keys."
         ),
     )
     @click.option(
-        "--language-codes",
-        default="ko-KR;en-US",
-        help=(
-            "Comma- or semicolon-separated BCP-47 language hints forwarded to Gemini as 'language_codes'. "
-            "Default 'ko-KR;en-US'. Pass an empty string (--language-codes=\"\") to enable "
-            "auto language detection (Gemini picks the spoken language). "
-            "See https://ai.google.dev/gemini-api/docs/transcribe#supported-languages "
-            "for the full list of supported codes."
-        ),
-    )
-    @click.option(
-        "--model",
-        default=MODEL_ID,
-        show_default=True,
-        help="Gemini audio model id to use for transcription",
-    )
-    @click.option(
-        "--diarized-srt-file",
-        default=None,
-        help=(
-            "Path to output .diarized.srt file, 'auto' for default name, or 'off' to disable (default: auto). "
-            "When enabled, Gemini speaker diarization is performed and written to the diarized SRT. "
-            "Pass --diarized-srt-file=off to disable speaker diarization."
-        ),
-    )
-    @click.option(
-        "--srt-file",
-        default=None,
-        help=(
-            "Path to output .srt file, or 'off' to disable (default: auto). "
-            "When omitted, the filename is determined automatically."
-        ),
-    )
-    @click.option(
-        "--txt-file",
-        default=None,
-        help=(
-            "Path to output .txt file, or 'off' to disable (default: auto). "
-            "When omitted, the filename is determined automatically."
-        ),
-    )
-    @click.option(
-        "--transcript-json-file",
-        default=None,
-        help=(
-            "Path to output transcript JSON file, 'auto' for default, or 'off' to disable (default: auto). "
-            "When omitted, the filename is determined automatically."
-        ),
-    )
-    @click.option(
-        "--metadata-json-file",
-        default=None,
-        help="Path to output .metadata.json file, 'auto' for default name, or 'off' to disable (default: off).",
-    )
-    @click.option(
-        "--force/--no-force",
-        default=False,
-        help="Re-process even if outputs exist",
-    )
-    @click.option(
-        "--force-all/--no-force-all",
-        default=False,
-        help=(
-            "Like --force, but also delete any cached .transcript.json so "
-            "the Gemini API is called again. Useful when the transcript "
-            "itself is wrong (model upgrade, vocabulary change, etc.). "
-            "Mutually exclusive with --force."
-        ),
-    )
-    @click.option(
-        "--tier",
-        type=click.Choice(["free", "paid"], case_sensitive=False),
-        default="free",
-        help=(
-            "Gemini API pricing tier (default: free). When 'free', enforces 60s "
-            "cooldown between API calls; when 'paid', rate limiting is disabled "
-            "unless overridden by --request-interval-secs."
-        ),
-    )
-    @click.option(
-        "--line-interval-secs",
-        type=float,
-        default=0.2,
-        help="TXT newline break threshold (default: 0.2)",
-    )
-    @click.option(
-        "--paragraph-interval-secs",
-        type=float,
-        default=2.5,
-        help="TXT paragraph break threshold (default: 2.5)",
-    )
-    @click.option(
-        "--txt-width",
-        type=int,
-        default=65,
-        show_default=True,
-        help="Visual display column width for .txt line wrapping (default: 65; CJK fullwidth chars count as 2)",
-    )
-    @click.option(
-        "--request-interval-secs",
-        type=float,
-        default=None,
-        help="Delay between API calls (default: 120.0 for free tier, 0.0 for paid tier)",
-    )
-    @click.option(
-        "--max-chunk-secs",
-        type=float,
-        default=None,
-        help=(
-            "[DEVELOPER/INTERNAL ONLY — not intended for end users] Override the "
-            "per-chunk ceiling in seconds (default: auto, 3600s when "
-            "--no-diarize and --no-word-level-timestamps, 1800s when either is on; "
-            "the hard ceiling matches the Gemini 30-min per-call limit when "
-            "diarization or word-level timestamps are active)"
-        ),
-    )
-    @click.option(
         "--speakers-txt-file",
+        metavar="PATH",
         default="auto",
         help=(
-            "Path to speaker mapping text file for .diarized.srt (recommended format: "
+            "(Optional) Path to speaker mapping text file for .diarized.srt (recommended format: "
             "one per line like '[spk:0]=John Doe:'), or 'auto' (default: auto). "
             "Specify 'off' to disable."
         ),
     )
     @click.option(
         "--vocab-txt-file",
+        metavar="PATH",
         default="auto",
         help=(
-            "Path to vocabulary text file, or 'auto' (default: auto). "
+            "(Optional) Path to vocabulary text file, or 'auto' (default: auto). "
             "When 'auto', automatically picks up .vocab.txt if it exists. "
             "Path can also be explicitly specified, or 'off' to disable. "
             "Lines starting with '#' or empty lines are ignored. "
@@ -281,30 +355,152 @@ def _make_command() -> click.Command:
         ),
     )
     @click.option(
-        "--word-level-timestamps/--no-word-level-timestamps",
-        default=True,
+        "--audit-jsonl-file",
+        metavar="PATH",
+        default=None,
         help=(
-            "[DEVELOPER/INTERNAL ONLY — not intended for end users] "
-            "Enable/disable word-level timestamps in transcription output "
-            "(default: on). When enabled, the Gemini API per-call audio limit "
-            "drops from ~1 hour (60m) to ~30 min (30m), same as "
-            "--diarized-srt-file. Disable to allow longer chunks when "
-            "word-level timing is not needed."
+            "(Optional) Path to JSONL audit log file (default: "
+            "~/.cache/gemini-transcribe-wrapper/<api-key-tail>/audit.jsonl, "
+            "or 'off' to disable). When omitted, each Gemini API key "
+            "maintains its own separate audit log."
+        ),
+    )
+    @click.option(
+        "--diarized-srt-file",
+        metavar="PATH",
+        default=None,
+        help=(
+            "(Optional) Path to output .diarized.srt file, 'auto' for default name, or 'off' to disable (default: auto). "
+            "When enabled, Gemini speaker diarization is performed and written to the diarized SRT. "
+            "Pass --diarized-srt-file=off to disable speaker diarization."
+        ),
+    )
+    @click.option(
+        "--metadata-json-file",
+        metavar="PATH",
+        default=None,
+        help="(Optional) Path to output .metadata.json file, 'auto' for default name, or 'off' to disable (default: off).",
+    )
+    @click.option(
+        "--output-base",
+        default=None,
+        help="(Optional) Base name for output files (default: input stem)",
+    )
+    @click.option(
+        "--output-dir",
+        metavar="PATH",
+        default=None,
+        help="(Optional) Directory for output files (default: alongside input)",
+    )
+    @click.option(
+        "--srt-file",
+        metavar="PATH",
+        default=None,
+        help=(
+            "(Optional) Path to output .srt file, or 'off' to disable (default: auto). "
+            "When omitted, the filename is determined automatically."
         ),
     )
     @click.option(
         "--temp-path",
+        metavar="PATH",
         default="temp",
-        help="Directory for intermediate temp files (default: temp)",
+        help="(Optional) Directory for intermediate temp files (default: temp)",
     )
     @click.option(
-        "--audit-jsonl-file",
+        "--transcript-json-file",
+        metavar="PATH",
         default=None,
         help=(
-            "Path to JSONL audit log file (default: "
-            "~/.cache/gemini-transcribe-wrapper/<api-key-tail>/audit.jsonl, "
-            "or 'off' to disable). When omitted, each Gemini API key "
-            "maintains its own separate audit log."
+            "(Optional) Path to output transcript JSON file, 'auto' for default, or 'off' to disable (default: auto). "
+            "When omitted, the filename is determined automatically."
+        ),
+    )
+    @click.option(
+        "--txt-file",
+        metavar="PATH",
+        default=None,
+        help=(
+            "(Optional) Path to output .txt file, or 'off' to disable (default: auto). "
+            "When omitted, the filename is determined automatically."
+        ),
+    )
+    @click.option(
+        "--language-codes",
+        metavar="CSV",
+        default="ko-KR,en-US",
+        help=(
+            "(Optional) Comma-separated BCP-47 language hints forwarded to Gemini as 'language_codes' (e.g. 'ko-KR,en-US'). "
+            "Default 'ko-KR,en-US'. Pass an empty string (--language-codes=\"\") to enable "
+            "auto language detection (Gemini picks the spoken language). "
+            "See https://ai.google.dev/gemini-api/docs/transcribe#supported-languages "
+            "for the full list of supported codes."
+        ),
+    )
+    @click.option(
+        "--max-chunk-secs",
+        type=float,
+        default=None,
+        help=(
+            "(Optional) [DEVELOPER/INTERNAL ONLY — not intended for end users] Override the "
+            "per-chunk ceiling in seconds (default: auto, 3600s when "
+            "only .txt is output, 1800s when .srt or .diarized.srt is on; "
+            "the hard ceiling matches the Gemini 30-min per-call limit when "
+            "diarization or subtitles are active)"
+        ),
+    )
+    @click.option(
+        "--model",
+        default=MODEL_ID,
+        show_default=True,
+        help="(Optional) Gemini audio model id to use for transcription",
+    )
+    @click.option(
+        "--force/--no-force",
+        default=False,
+        help="(Optional) Re-process even if outputs exist",
+    )
+    @click.option(
+        "--force-all/--no-force-all",
+        default=False,
+        help=(
+            "(Optional) Like --force, but also delete any cached .transcript.json so "
+            "the Gemini API is called again. Useful when the transcript "
+            "itself is wrong (model upgrade, vocabulary change, etc.). "
+            "Mutually exclusive with --force."
+        ),
+    )
+    @click.option(
+        "--line-interval-secs",
+        type=float,
+        default=0.2,
+        help="(Optional) TXT newline break threshold (default: 0.2)",
+    )
+    @click.option(
+        "--paragraph-interval-secs",
+        type=float,
+        default=2.5,
+        help="(Optional) TXT paragraph break threshold (default: 2.5)",
+    )
+    @click.option(
+        "--txt-width",
+        type=int,
+        default=65,
+        show_default=True,
+        help="(Optional) Visual display column width for .txt line wrapping (default: 65; CJK fullwidth chars count as 2)",
+    )
+    @click.option(
+        "--color",
+        type=click.Choice(["auto", "always", "never"], case_sensitive=False),
+        metavar="{auto|always|never}",
+        default="auto",
+        show_default=True,
+        help=(
+            "(Optional) Color console output by log level. ``auto`` enables color "
+            "only when stderr is a TTY (so ``2>err.log`` stays clean). "
+            "``always`` forces color (useful with ``2>&1 | less -R``). "
+            "``never`` disables color (useful on terminals that lie "
+            "about isatty). The rotating file log is never colored."
         ),
     )
     @click.option(
@@ -313,26 +509,16 @@ def _make_command() -> click.Command:
             ["debug", "info", "warning", "error", "critical"],
             case_sensitive=False,
         ),
+        metavar="{debug|info|error}",
         default="info",
-        help="Logging level (default: info; use 'debug' for verbose output)",
-    )
-    @click.option(
-        "--loop-until-no-input",
-        is_flag=True,
-        default=False,
-        help=(
-            "Re-glob PATH after each pass and exit when the glob yields "
-            "no matches. Use this for drop-folder workflows: process "
-            "existing files, then wait silently for new arrivals and "
-            "exit when the folder is drained."
-        ),
+        help="(Optional) Logging level (default: info; use 'debug' for verbose output)",
     )
     @click.option(
         "--loop-always",
         is_flag=True,
         default=False,
         help=(
-            "Like --loop-until-no-input but never exit on an empty pass — "
+            "(Optional) Like --loop-until-no-input but never exit on an empty pass — "
             "sleep --loop-poll-secs and re-glob forever. Use this for "
             "24/7 batch watchers."
         ),
@@ -340,12 +526,24 @@ def _make_command() -> click.Command:
     @click.option(
         "--loop-poll-secs",
         type=click.IntRange(1, 3600),
+        metavar="INTEGER",
         default=30,
         show_default=True,
         help=(
-            "Seconds to sleep between empty passes under --loop-always "
+            "(Optional) Seconds to sleep between empty passes under --loop-always "
             "(or after a quota 429 under either --loop* flag). Range "
             "1..3600; default 30."
+        ),
+    )
+    @click.option(
+        "--loop-until-no-input",
+        is_flag=True,
+        default=False,
+        help=(
+            "(Optional) Re-glob PATH after each pass and exit when the glob yields "
+            "no matches. Use this for drop-folder workflows: process "
+            "existing files, then wait silently for new arrivals and "
+            "exit when the folder is drained."
         ),
     )
     @click.option(
@@ -355,16 +553,20 @@ def _make_command() -> click.Command:
         hidden=True,
     )
     @click.option(
-        "--color",
-        type=click.Choice(["auto", "always", "never"], case_sensitive=False),
-        default="auto",
-        show_default=True,
+        "--request-interval-secs",
+        type=float,
+        default=None,
+        help="(Optional) Delay between API calls (default: 120.0 for free tier, 0.0 for paid tier)",
+    )
+    @click.option(
+        "--tier",
+        type=click.Choice(["free", "paid"], case_sensitive=False),
+        metavar="{free|paid}",
+        default="free",
         help=(
-            "Color console output by log level. ``auto`` enables color "
-            "only when stderr is a TTY (so ``2>err.log`` stays clean). "
-            "``always`` forces color (useful with ``2>&1 | less -R``). "
-            "``never`` disables color (useful on terminals that lie "
-            "about isatty). The rotating file log is never colored."
+            "(Optional) Gemini API pricing tier (default: free). When 'free', enforces 60s "
+            "cooldown between API calls; when 'paid', rate limiting is disabled "
+            "unless overridden by --request-interval-secs."
         ),
     )
     @click.argument("path", nargs=-1)
@@ -392,7 +594,6 @@ def _make_command() -> click.Command:
         max_chunk_secs: float | None,
         speakers_txt_file: str | None,
         vocab_txt_file: str | None,
-        word_level_timestamps: bool,
         temp_path: str,
         audit_jsonl_file: str | None,
         log_level: str,
@@ -470,7 +671,6 @@ def _make_command() -> click.Command:
                 max_chunk_secs=max_chunk_secs,
                 speakers_txt_file=speakers_txt_file,
                 vocab_txt_file=vocab_txt_file,
-                word_level_timestamps=word_level_timestamps,
                 temp_path=temp_path,
                 audit_jsonl_file=audit_jsonl_file,
                 log_level=log_level,
@@ -607,8 +807,6 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.extend(["--vocab-txt-file", str(opts.vocab_txt_file)])
     if opts.max_chunk_secs is not None:
         tokens.extend(["--max-chunk-secs", str(opts.max_chunk_secs)])
-    if not opts.word_level_timestamps:
-        tokens.append("--no-word-level-timestamps")
 
     if opts.line_interval_secs is not None:
         tokens.extend(["--line-interval-secs", str(opts.line_interval_secs)])

@@ -55,7 +55,7 @@ sample.txt
 
 ### 2. Overcoming Free-Tier Limits & Constraints
 
-- **Audio Length Limit Bypass**: Handles audio files of any length by auto-splitting into safe units (30-min chunks by default for diarization and word timestamps, 60-min chunks when both are disabled via `--diarized-srt-file=off --no-word-level-timestamps`) and transparently stitching timestamps together.
+- **Audio Length Limit Bypass**: Handles audio files of any length by auto-splitting into safe units (30-min chunks by default for subtitles, 60-min chunks when only `.txt` is output via `--diarized-srt-file=off --srt-file=off`) and transparently stitching timestamps together.
 - **Rate Limit Throttling (Max 2 RPM)**: Applies a monotonic rate limiter (default 120s interval on free tier) across all chunks and multi-file batches to prevent 429 rate-limit errors.
 - **Daily Quota Tracking**: Tracks daily Pacific-time API usage locally (`~/.cache/gemini-transcribe-wrapper/usage-<sha256(key)[:12]>.json`) with masked key logging (e.g. `API call attempts today 2026-08-30 (PT) with key 'AIza****abcd': attempted 3 (free tier limit: ~25)`).
 - **Multi-Key Round-Robin + Active/Cooldown Pool**: Pass multiple keys with `--gemini-api-keys=KEY1,KEY2,...`. The wrapper tracks active keys and keys in cooldown upon 429 errors. When all keys hit 429, it waits 600s before reloading keys into the live pool and retrying. Key usage state is persisted across runs in `~/.cache/gemini-transcribe-wrapper/last-used-api-key.json` to rotate evenly. With **16–20 free-tier keys** (2 Gmail accounts × 10 projects each) you can run continuously even when most keys have hit the daily cap. See [Multi-Key Strategy](docs/multi-key-strategy.md) for sizing guidance.
