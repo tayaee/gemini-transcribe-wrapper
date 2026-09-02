@@ -103,7 +103,6 @@ sample.txt
 - [Language Hints (`--language-codes`)](docs/language-codes.md)
 - [Batch Bulk Transcribing Tip](docs/batch-transcription.md)
 - [Diarizing Tip (Speaker Labels)](docs/speaker-diarization.md)
-- [Python API Examples](examples/)
 
 ## Relevant Repositories
 
