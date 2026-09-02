@@ -65,8 +65,8 @@ class SplitPlan:
     """Per-chunk split for a long audio file.
 
     ``chunk_secs`` is a list of *variable* per-chunk sizes: chunks are
-    filled front-to-back to ``max_chunk_secs`` (e.g. 59 min for no-diarize,
-    29 min for diarize), with the final chunk absorbing the remainder.
+    filled front-to-back to ``max_chunk_secs`` (e.g. 60 min for no-diarize,
+    30 min for diarize), with the final chunk absorbing the remainder.
     """
 
     num_chunks: int
@@ -99,17 +99,17 @@ def compute_split_plan(
     seconds per API call, and the chunk count tracks ``total_secs /
     max_chunk_secs`` exactly.
 
-    Examples (max=1740s, diarize ON):
+    Examples (max=1800s, diarize ON):
       - 90s     -> (90.0,)                            (single chunk, file fits)
-      - 1740s   -> (1740.0,)                          (single full chunk)
-      - 1741s   -> (1740.0, 1.0)                      (1 full + 1s tail)
-      - 1800s   -> (1740.0, 60.0)                     (1 full + short tail)
-      - 5000s   -> (1740.0, 1740.0, 1520.0)           (2 full + tail)
+      - 1800s   -> (1800.0,)                          (single full chunk)
+      - 1801s   -> (1800.0, 1.0)                      (1 full + 1s tail)
+      - 1900s   -> (1800.0, 100.0)                    (1 full + short tail)
+      - 5000s   -> (1800.0, 1800.0, 1400.0)           (2 full + tail)
 
-    Examples (max=3540s, diarize OFF):
-      - 3540s   -> (3540.0,)                          (single full chunk)
-      - 3600s   -> (3540.0, 60.0)                     (1 full + short tail)
-      - 3833.5s -> (3540.0, 293.5)                    (1 full + tail)
+    Examples (max=3600s, diarize OFF):
+      - 3600s   -> (3600.0,)                          (single full chunk)
+      - 3660s   -> (3600.0, 60.0)                     (1 full + short tail)
+      - 3833.5s -> (3600.0, 233.5)                    (1 full + tail)
     """
     if total_secs <= max_chunk_secs:
         return SplitPlan(

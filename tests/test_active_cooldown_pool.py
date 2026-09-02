@@ -337,7 +337,8 @@ def test_active_pool_drain_triggers_cooldown_wait_and_reactivation(
     assert [s for s in sleeps if s > 0.0] == [pytest.approx(0.05, abs=1e-9)]
     # The cooldown wait log was emitted (new wording: "Live pool empty").
     assert any(
-        "Live pool empty" in rec.message and "Sleeping" in rec.message
+        "All keys in the live api key pool ran into error 429" in rec.message
+        and "sleeping" in rec.message.lower()
         for rec in caplog.records
     )
     # Final pool state: both keys back in live (recovery succeeded).

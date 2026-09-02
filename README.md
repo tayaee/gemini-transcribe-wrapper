@@ -88,7 +88,7 @@ sample.txt
 
 ### 2. Overcoming Free-Tier Limits & Constraints
 
-- **Audio Length Limit Bypass**: Handles audio files of any length by auto-splitting into safe units (59-min logical units for `--no-diarize`, 29-min chunks for `--diarize`) and transparently stitching timestamps together.
+- **Audio Length Limit Bypass**: Handles audio files of any length by auto-splitting into safe units (60-min logical units for `--no-diarize`, 30-min chunks for `--diarize`) and transparently stitching timestamps together.
 - **Rate Limit Throttling (Max 2 RPM)**: Applies a monotonic rate limiter (default 60s interval) across all chunks and multi-file batches to prevent 429 rate-limit errors.
 - **Daily Quota Tracking**: Tracks daily Pacific-time API usage locally (`~/.cache/gemini-transcribe-wrapper/usage-<sha256(key)[:12]>.json`) with masked key logging (e.g. `API call attempts today 2026-08-30 (PT) with key 'AIza****abcd': attempted 3 (free tier limit: ~25)`).
 - **Free-Tier-Friendly Defaults**: `--no-diarize` is the default to maximize audio duration per API call and minimize API consumption.

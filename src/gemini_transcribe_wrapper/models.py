@@ -50,11 +50,7 @@ class TranscribeInput(BaseModel):
     )
     diarized_srt_file: str | None = Field(
         None,
-        description=(
-            "Diarized SRT output target (default: 'off'). 'auto' or path string to enable. "
-            "WARNING: Use only when strictly necessary as enabling diarization reduces "
-            "per-call audio limits from ~1 hr to ~30 min, doubling API calls and reducing throughput."
-        ),
+        description="Diarized SRT output target (default: 'auto'). 'off' to disable; path string to override.",
     )
     metadata_json_file: str | None = Field(
         None,

@@ -19,7 +19,7 @@ from google.genai import errors
 from google.genai._gaos.types import interactions as _gaos_interactions
 from google.genai.types import HttpOptions, HttpRetryOptions
 
-from ._key_utils import api_key_tail
+from ._key_utils import api_key_tail, load_last_used_api_key, save_last_used_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -277,8 +277,8 @@ def _extract_error_description(exc: Exception | None) -> str:
         return "OK"
     msg = getattr(exc, "message", None) or str(exc)
     msg = " ".join(msg.strip().splitlines())
-    if len(msg) > 160:
-        msg = msg[:157] + "..."
+    if len(msg) > 500:
+        msg = msg[:497] + "..."
     return msg or "Unknown error"
 
 
@@ -424,6 +424,7 @@ def reset_api_rate_limiter() -> None:
         from .usage_counter import cache_dir
 
         cd = cache_dir()
+        (cd / "last-used-api-key.json").unlink(missing_ok=True)
         for p in cd.glob("last_api_completion*.json"):
             try:
                 p.unlink(missing_ok=True)
@@ -509,6 +510,7 @@ def _throttle_api_call(
             time_left,
         )
         time.sleep(sleep_secs)
+        logger.info("Slow-down sleep finished; continuing with API call...")
 
 
 class TranscribeClient:
@@ -560,8 +562,34 @@ class TranscribeClient:
             k: until for k, until in _GLOBAL_DEAD_POOL.items() if k in deduped
         }
         self._live_pool: list[str] = [k for k in deduped if k not in self._dead_pool]
+        if not self._live_pool and deduped:
+            self._dead_pool.clear()
+            for k in deduped:
+                _GLOBAL_DEAD_POOL.pop(k, None)
+            self._live_pool = list(deduped)
         if self._live_pool:
-            self._rr_index: int = _GLOBAL_RR_INDEX % len(self._live_pool)
+            last_key = load_last_used_api_key()
+            if last_key and len(self._live_pool) > 1:
+                if last_key in self._live_pool:
+                    last_idx = self._live_pool.index(last_key)
+                    self._rr_index = (last_idx + 1) % len(self._live_pool)
+                elif last_key in deduped:
+                    deduped_idx = deduped.index(last_key)
+                    found = False
+                    for step in range(1, len(deduped)):
+                        cand = deduped[(deduped_idx + step) % len(deduped)]
+                        if cand in self._live_pool:
+                            self._rr_index = self._live_pool.index(cand)
+                            found = True
+                            break
+                    if not found:
+                        self._rr_index = 0
+                else:
+                    self._rr_index = 0
+            elif not last_key and len(self._live_pool) > 1 and _GLOBAL_RR_INDEX > 0:
+                self._rr_index = _GLOBAL_RR_INDEX % len(self._live_pool)
+            else:
+                self._rr_index = 0
             self.api_key: str | None = self._live_pool[self._rr_index]
         else:
             self._rr_index = 0
@@ -776,7 +804,6 @@ class TranscribeClient:
         started_at = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
         iso_ts = datetime.now().astimezone().isoformat(timespec="seconds")
         uploaded = None
-        last_quota_exc: Exception | None = None
         try:
             keys = list(getattr(self, "_api_keys", []) or [])
             if not keys:
@@ -817,64 +844,30 @@ class TranscribeClient:
                 active = list(self._live_pool)
                 dead = self._dead_pool
                 if not active:
-                    if not dead:
-                        # No keys at all — safety net (shouldn't happen
-                        # because __init__ ensures at least one key).
-                        assert last_quota_exc is not None
-                        _log_quota_hint(last_quota_exc)
-                        self._log_api_call(
-                            chunk_index,
-                            1,
-                            started_at,
-                            0.0,
-                            "failed",
-                            error=str(last_quota_exc),
-                        )
-                        raise last_quota_exc
-                    # Single-key exception (issue-003, spec §3): when
-                    # only one key is configured, a 429 means the
-                    # *file* can't be processed right now but the
-                    # caller (``api._process_one``) maps the quota
-                    # exception to ``SKIPPED_QUOTA`` and moves on to
-                    # the next file. Don't loop forever here — raise
-                    # immediately so the batch can continue.
-                    if len(getattr(self, "_api_keys", []) or []) == 1:
-                        assert last_quota_exc is not None
-                        _log_quota_hint(last_quota_exc)
-                        self._log_api_call(
-                            chunk_index,
-                            1,
-                            started_at,
-                            0.0,
-                            "failed",
-                            error=str(last_quota_exc),
-                        )
-                        raise last_quota_exc
-                    # Sleep only until the soonest key recovers. If a
-                    # caller set ``_cooldown_secs`` to override the
-                    # module default, honor it here so the test suite
-                    # can shrink the wait without rewriting the keys.
+                    # All keys exhausted (429'd). Sleep 600s (or soonest key recovery if test-patched),
+                    # reload all configured keys, and retry.
+                    soonest = min(dead.values()) if dead else time.monotonic() + 600.0
+                    time_until_soonest = max(0.0, soonest - time.monotonic())
                     base = (
                         self._cooldown_secs
                         if self._cooldown_secs is not None
-                        else KEY_COOLDOWN_SECS
+                        else 600.0
                     )
-                    soonest = min(dead.values())
-                    sleep_for = max(0.0, soonest - time.monotonic())
-                    # Cap the wait at ``base`` so a stale ``cooldown_until``
-                    # in the dict (e.g. set manually in a test) doesn't
-                    # pin us for hours.
-                    sleep_for = min(sleep_for, base)
+                    sleep_for = min(base, time_until_soonest) if time_until_soonest > 0 else base
                     logger.info(
-                        "Live pool empty (%d keys still dead, soonest "
-                        "recovery in %.0fs). Sleeping and retrying chunk %d.",
-                        len(dead),
+                        "All keys in the live api key pool ran into error 429. "
+                        "Chunk %d will be retried after sleeping %.0fs.",
+                        chunk_index + 1,
                         sleep_for,
-                        chunk_index,
                     )
                     if sleep_for > 0:
                         time.sleep(sleep_for)
-                    continue  # prune + retry chunk
+                    self._dead_pool.clear()
+                    for k in keys:
+                        _GLOBAL_DEAD_POOL.pop(k, None)
+                    self._live_pool = list(keys)
+                    self._rr_index = 0
+                    continue  # prune + retry chunk with freshly reloaded keys
 
                 start_idx = getattr(self, "_rr_index", 0) % len(active)
                 blacklisted_this_loop: list[str] = []
@@ -900,14 +893,17 @@ class TranscribeClient:
                     from .usage_counter import increment_today
 
                     increment_today(api_key=key)
+                    save_last_used_api_key(key)
 
                     attempt_start = time.monotonic()
+                    api_call_name = "files.upload(...)"
                     try:
                         # Per-key session: upload + interactions.create
                         # under the same key. The Files API scopes URIs
                         # per key, so we cannot share an upload across
                         # multiple ``self.client`` instances.
                         uploaded = self.client.files.upload(file=str(chunk_mp3))
+                        api_call_name = "interactions.create(...)"
                         interaction = self.client.interactions.create(
                             model=self.model,
                             input=[
@@ -923,8 +919,9 @@ class TranscribeClient:
                         status_code = _extract_status_code(first_exc)
                         err_desc = _extract_error_description(first_exc)
                         logger.info(  # nosemgrep: python-logger-credential-disclosure
-                            "api-key=%s HTTP %d: %s",
+                            "api-key=%s %s => HTTP %d: %s",
                             api_key_tail(key),
+                            api_call_name,
                             status_code,
                             err_desc,
                         )
@@ -973,20 +970,19 @@ class TranscribeClient:
                         remaining_count = max(0, len(self._live_pool) - 1)
                         if remaining_count > 0 and offset + 1 < len(active):
                             next_key = active[(start_idx + offset + 1) % len(active)]
-                            logger.info(
-                                "Removing key %s from the round-robin pool "
-                                "after a 429. %d api %s left in the live "
-                                "round-robin api key pool. Picking up next api-key %s.",
+                            logger.info(  # nosemgrep: python-logger-credential-disclosure
+                                "Removed api key %s from the live api key pool after a 429. "
+                                "%d api %s left in the pool. "
+                                "Trying next api key %s from the pool...",
                                 api_key_tail(key),
                                 remaining_count,
                                 "key" if remaining_count == 1 else "keys",
                                 api_key_tail(next_key),
                             )
                         else:
-                            logger.info(
-                                "Removing key %s from the round-robin pool "
-                                "after a 429. %d api %s left in the live "
-                                "round-robin api key pool.",
+                            logger.info(  # nosemgrep: python-logger-credential-disclosure
+                                "Removed api key %s from the live api key pool after a 429. "
+                                "%d api %s left in the pool.",
                                 api_key_tail(key),
                                 remaining_count,
                                 "key" if remaining_count == 1 else "keys",
@@ -999,14 +995,13 @@ class TranscribeClient:
                         _GLOBAL_DEAD_POOL[key] = self._dead_pool[key]
                         if key in self._live_pool:
                             self._live_pool.remove(key)
-                        last_quota_exc = first_exc
                         blacklisted_this_loop.append(key)
                         continue
 
                     # Success on this key.
                     duration = time.monotonic() - attempt_start
                     logger.info(  # nosemgrep: python-logger-credential-disclosure
-                        "api-key=%s HTTP 200 OK (%.1fs)",
+                        "api-key=%s interactions.create(...) => HTTP 200 OK (%.1fs)",
                         api_key_tail(key),
                         duration,
                     )
@@ -1304,12 +1299,19 @@ def transcribe_chunks_sequential(
         else:
             chunk_key = getattr(client, "api_key", None)
         key_tail = api_key_tail(chunk_key)
+        try:
+            from .audio import probe_duration_secs
+
+            dur = probe_duration_secs(chunk) if chunk.exists() else 0.0
+        except Exception:  # noqa: BLE001
+            dur = 0.0
         logger.info(  # nosemgrep: python-logger-credential-disclosure - only 8-char tail is logged
-            "api-key=%s Chunk %d/%d: transcribing %s",
+            "api-key=%s Chunk %d/%d: transcribing %s (%.1fs)",
             key_tail,
             idx + 1,
             len(chunks),
             chunk.name,
+            dur,
         )
         # Single API attempt; any exception (including 429) propagates to the
         # caller. The caller prints retry suggestions (see _log_quota_hint).

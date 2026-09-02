@@ -129,6 +129,20 @@ def test_temp_path():
         print("failed leftover work_dir:", failed.results[0].leftover.work_dir)
 
 
+def test_extract_error_description_length():
+    from gemini_transcribe_wrapper.stt import _extract_error_description
+
+    assert _extract_error_description(None) == "OK"
+    short_exc = RuntimeError("short error")
+    assert _extract_error_description(short_exc) == "short error"
+    long_msg = "x" * 800
+    long_exc = RuntimeError(long_msg)
+    desc = _extract_error_description(long_exc)
+    assert len(desc) == 500
+    assert desc.endswith("...")
+    assert desc.startswith("x" * 497)
+
+
 if __name__ == "__main__":
     test_failure_keeps_mp3()
     test_checkpoint_resume()

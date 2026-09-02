@@ -211,11 +211,11 @@ def test_429_with_hint_blacklists_immediately_no_retry(
     # remaining-active count. Active pool was [k_a, k_b]; after removing
     # k_a the log should show "1 api key left".
     bl_logs = [
-        rec.message for rec in caplog.records if "Removing key" in rec.message
+        rec.message for rec in caplog.records if "Removed api key" in rec.message
     ]
-    assert any("Removing key Aaaaaaaa" in m for m in bl_logs)
-    assert any("1 api key left" in m for m in bl_logs)
-    assert any("Picking up next api-key bbbbbbbb" in m for m in bl_logs)
+    assert any("Removed api key Aaaaaaaa" in m for m in bl_logs)
+    assert any("1 api key left in the pool" in m for m in bl_logs)
+    assert any("Trying next api key bbbbbbbb from the pool" in m for m in bl_logs)
     # A moved to cooldown, B is the only active key.
     assert k_a not in client._active_pool
     assert client._active_pool == [k_b]
@@ -358,7 +358,8 @@ def test_active_pool_drain_waits_then_reactivates_and_retries(
     assert [s for s in sleeps if s > 0.0] == [pytest.approx(0.05, abs=1e-9)]
     # The "Live pool empty" log was emitted (new wording, issue-003).
     assert any(
-        "Live pool empty" in rec.message and "Sleeping" in rec.message
+        "All keys in the live api key pool ran into error 429" in rec.message
+        and "sleeping" in rec.message.lower()
         for rec in caplog.records
     )
     # After success, all three keys are back in the live pool.
@@ -609,6 +610,7 @@ def test_multi_input_batch_round_robin_advances_keys(tmp_path, monkeypatch):
             # Advance round robin
             self._rr_index = (start_idx + 1) % len(self._live_pool)
             stt._GLOBAL_RR_INDEX = self._rr_index
+            stt.save_last_used_api_key(chosen_key)
             return stt.TranscriptionResult(text="ok", words=[stt.Word("ok", 0.0, 1.0)])
 
     monkeypatch.setattr(api, "TranscribeClient", MockClient)
@@ -628,6 +630,96 @@ def test_multi_input_batch_round_robin_advances_keys(tmp_path, monkeypatch):
     assert sleeps == []
 
     stt.reset_api_rate_limiter()
+
+
+def test_last_used_api_key_persistence(tmp_path, monkeypatch):
+    """Saving and loading last used API key from cache dir."""
+    from gemini_transcribe_wrapper._key_utils import (
+        LAST_USED_KEY_FILE,
+        load_last_used_api_key,
+        save_last_used_api_key,
+    )
+
+    stt.reset_api_rate_limiter()
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("GTW_CACHE_DIR", str(cache))
+
+    assert load_last_used_api_key(cache) is None
+
+    save_last_used_api_key("AIzaSyKey11111111", cache)
+    assert (cache / LAST_USED_KEY_FILE).exists()
+    assert load_last_used_api_key(cache) == "AIzaSyKey11111111"
+
+    save_last_used_api_key("AIzaSyKey22222222", cache)
+    assert load_last_used_api_key(cache) == "AIzaSyKey22222222"
+
+
+def test_client_picks_next_key_from_last_used(tmp_path, monkeypatch):
+    """TranscribeClient resumes from the key following last_used_api_key."""
+    from gemini_transcribe_wrapper._key_utils import save_last_used_api_key
+
+    stt.reset_api_rate_limiter()
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("GTW_CACHE_DIR", str(cache))
+
+    k1 = "AIzaSyKey11111111"
+    k2 = "AIzaSyKey22222222"
+    k3 = "AIzaSyKey33333333"
+    keys = [k1, k2, k3]
+
+    # No last-used file -> starts at k1 (index 0)
+    c0 = stt.TranscribeClient(api_keys=keys)
+    assert c0.api_key == k1
+    assert c0._rr_index == 0
+
+    # Last used k1 -> next is k2 (index 1)
+    save_last_used_api_key(k1, cache)
+    c1 = stt.TranscribeClient(api_keys=keys)
+    assert c1.api_key == k2
+    assert c1._rr_index == 1
+
+    # Last used k2 -> next is k3 (index 2)
+    save_last_used_api_key(k2, cache)
+    c2 = stt.TranscribeClient(api_keys=keys)
+    assert c2.api_key == k3
+    assert c2._rr_index == 2
+
+    # Last used k3 -> next wraps to k1 (index 0)
+    save_last_used_api_key(k3, cache)
+    c3 = stt.TranscribeClient(api_keys=keys)
+    assert c3.api_key == k1
+    assert c3._rr_index == 0
+
+    # Unknown last used key -> fallback to k1 (index 0)
+    save_last_used_api_key("AIzaSyUnknown9999", cache)
+    c_unknown = stt.TranscribeClient(api_keys=keys)
+    assert c_unknown.api_key == k1
+    assert c_unknown._rr_index == 0
+
+
+def test_explicit_api_keys_ignores_env_vars(monkeypatch):
+    """When explicit API keys are provided via CLI or API, env vars are completely ignored."""
+    from gemini_transcribe_wrapper import api
+    from gemini_transcribe_wrapper.cli import _resolve_api_keys
+
+    monkeypatch.setenv("GEMINI_API_KEYS", "env_plural_key_1111;env_plural_key_2222")
+    monkeypatch.setenv("GEMINI_API_KEY", "env_single_key_3333")
+    monkeypatch.setenv("GOOGLE_API_KEY", "env_google_key_4444")
+
+    # CLI resolution
+    explicit_cli = ["explicit_key_1111", "explicit_key_2222"]
+    resolved = _resolve_api_keys(explicit_cli)
+    assert resolved == explicit_cli
+    assert "env_plural_key_1111" not in resolved
+    assert "env_single_key_3333" not in resolved
+    assert "env_google_key_4444" not in resolved
+
+    # STT Client resolution
+    client = stt.TranscribeClient(api_keys=explicit_cli)
+    assert client._api_keys == explicit_cli
+
+    # API _check_api_key
+    api._check_api_key(explicit_cli)
 
 
 if __name__ == "__main__":

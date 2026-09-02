@@ -114,9 +114,10 @@ def test_force_all_executes_api_call_and_deletes_old_transcript(tmp_path, monkey
     dummy_input = tmp_path / "video.mp4"
     dummy_input.write_bytes(b"dummy")
 
-    transcript_path = tmp_path / "video.transcript.json"
+    transcript_path = tmp_path / "video.diarized.transcript.json"
     srt_path = tmp_path / "video.srt"
     txt_path = tmp_path / "video.txt"
+    diarized_srt_path = tmp_path / "video.diarized.srt"
 
     # Pre-populate outputs & transcript
     save_transcript(
@@ -132,6 +133,7 @@ def test_force_all_executes_api_call_and_deletes_old_transcript(tmp_path, monkey
     )
     srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nold transcript\n", encoding="utf-8")
     txt_path.write_text("old transcript\n", encoding="utf-8")
+    diarized_srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nold transcript\n", encoding="utf-8")
 
     api_call_count = 0
 

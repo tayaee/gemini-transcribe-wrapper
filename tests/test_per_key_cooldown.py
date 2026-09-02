@@ -306,27 +306,29 @@ def test_skipped_quota_status_enum_exists():
     assert TranscribeStatus.SKIPPED_QUOTA.value == "skipped_quota"
 
 
-def test_transcribe_chunk_raises_quota_when_single_key_pool_drains(
+def test_transcribe_chunk_single_key_retries_after_cooldown(
     tmp_path, monkeypatch
 ):
-    """Single-key 429 → ``transcribe_chunk`` raises the quota exception
-    so ``_process_one`` can map it to ``SKIPPED_QUOTA`` (issue-003 §4)."""
-    monkeypatch.setattr(stt.time, "sleep", lambda s: None)
+    """Single-key 429 → ``transcribe_chunk`` waits and retries the key."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(stt.time, "sleep", lambda s: sleeps.append(s))
     monkeypatch.setattr(stt, "_throttle_api_call", lambda *a, **k: None)
 
     k = "AIzaOnlyOneKeyy"
-    client = _ScriptedClient({k: [RuntimeError(_retry_msg(1.0))] * 5})
+    # 2 failures followed by success on the 3rd attempt
+    client = _ScriptedClient({k: [RuntimeError(_retry_msg(1.0)), RuntimeError(_retry_msg(2.0))]})
     client._api_keys = [k]
     client._live_pool = [k]
     client._dead_pool = {}
 
     chunk = _chunk(tmp_path, "chunk_000.mp3")
-    with pytest.raises(RuntimeError, match="429"):
-        client.transcribe_chunk(chunk, chunk_index=0)
+    result = client.transcribe_chunk(chunk, chunk_index=0)
 
-    # The single key is now dead with the full 30-min cooldown.
-    assert k in client._dead_pool
-    assert client._dead_pool[k] > 0.0  # populated
+    assert result.text == "안녕하세요"
+    # Slept twice after each 429 drained the single-key pool
+    assert len(sleeps) == 2
+    assert all(s == 600.0 for s in sleeps)
+    assert client._calls_per_key[k] == 3
 
 
 if __name__ == "__main__":

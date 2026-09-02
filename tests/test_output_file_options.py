@@ -182,8 +182,8 @@ def test_resolve_output_target_custom_path():
 # --- End-to-End API Behavior ----------------------------------------------
 
 
-def test_api_defaults_create_srt_and_txt_no_diarized(tmp_path):
-    """By default, .srt and .txt are created, .diarized.srt is not created."""
+def test_api_defaults_create_srt_txt_and_diarized(tmp_path):
+    """By default, .srt, .txt, and .diarized.srt are created."""
     src = _make_audio(tmp_path)
     orig = api.TranscribeClient
     api.TranscribeClient = _FakeClient
@@ -194,10 +194,10 @@ def test_api_defaults_create_srt_and_txt_no_diarized(tmp_path):
 
     assert (tmp_path / "input.srt").exists()
     assert (tmp_path / "input.txt").exists()
-    assert not (tmp_path / "input.diarized.srt").exists()
+    assert (tmp_path / "input.diarized.srt").exists()
     assert res.results[0].output.srt is not None
     assert res.results[0].output.txt is not None
-    assert res.results[0].output.diarized_srt is None
+    assert res.results[0].output.diarized_srt is not None
 
 
 def test_api_srt_file_no_suppresses_srt(tmp_path):

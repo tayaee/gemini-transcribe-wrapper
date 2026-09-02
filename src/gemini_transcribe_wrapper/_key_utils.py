@@ -15,11 +15,17 @@ used by audit logs, blacklist filenames, and per-key cache paths.
 
 from __future__ import annotations
 
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+
 # Conventional tail length used by audit logs / blacklist filenames /
 # per-key cache paths. Defined as a constant so other modules can import
 # it (e.g. ``from ._key_utils import API_KEY_TAIL_LENGTH``) without
 # hard-coding the magic number 8.
 API_KEY_TAIL_LENGTH = 8
+LAST_USED_KEY_FILE = "last-used-api-key.json"
 
 
 def api_key_tail(api_key: str | None, *, length: int = API_KEY_TAIL_LENGTH) -> str:
@@ -44,4 +50,41 @@ def mask_key(key: str | None) -> str:
     if not key:
         return "unset"
     return api_key_tail(key)
+
+
+def save_last_used_api_key(key: str, cache: Path | None = None) -> None:
+    """Record the last used API key to ~/.cache/gemini-transcribe-wrapper/last-used-api-key.json."""
+    if not key or not key.strip():
+        return
+    try:
+        from .usage_counter import cache_dir
+
+        cd = cache or cache_dir()
+        cd.mkdir(parents=True, exist_ok=True)
+        path = cd / LAST_USED_KEY_FILE
+        tmp = path.with_suffix(".json.tmp")
+        data = {
+            "last_used_api_key": key.strip(),
+            "last_used_api_key_tail": api_key_tail(key.strip()),
+            "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    except Exception:  # noqa: BLE001, S110
+        pass
+
+
+def load_last_used_api_key(cache: Path | None = None) -> str | None:
+    """Load the last used API key from ~/.cache/gemini-transcribe-wrapper/last-used-api-key.json."""
+    try:
+        from .usage_counter import cache_dir
+
+        path = (cache or cache_dir()) / LAST_USED_KEY_FILE
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        val = data.get("last_used_api_key")
+        return str(val).strip() if val else None
+    except Exception:  # noqa: BLE001
+        return None
 

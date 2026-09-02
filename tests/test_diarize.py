@@ -37,8 +37,8 @@ from gemini_transcribe_wrapper.stt import TranscriptionResult, Word
 
 def test_default_chunk_secs_match_documented_values():
     """The two mode defaults are exactly what the help text promises."""
-    assert DEFAULT_CHUNK_SECS_NO_DIARIZE == 3540.0
-    assert DEFAULT_CHUNK_SECS_DIARIZE == 1740.0
+    assert DEFAULT_CHUNK_SECS_NO_DIARIZE == 3600.0
+    assert DEFAULT_CHUNK_SECS_DIARIZE == 1800.0
 
 
 def test_transcript_suffixes_are_stable():
@@ -130,12 +130,14 @@ def _make_audio(td: Path, name: str = "input.mp4", duration_secs: int = 2) -> Pa
 
 
 def test_diarize_off_emits_plain_transcript_only(tmp_path):
-    """OFF (default) writes .transcript.json, .srt, .txt — no .diarized.srt."""
+    """OFF (explicit) writes .transcript.json, .srt, .txt — no .diarized.srt."""
     src = _make_audio(tmp_path)
     orig = api.TranscribeClient
     api.TranscribeClient = _OneChunkFakeClient
     try:
-        result = api.gemini_transcribe(str(src), force=True, gemini_api_key="fake")
+        result = api.gemini_transcribe(
+            str(src), force=True, gemini_api_key="fake", diarized_srt_file=False,
+        )
     finally:
         api.TranscribeClient = orig
 
@@ -179,7 +181,7 @@ def test_diarize_on_emits_diarized_outputs(tmp_path):
 
 
 def test_diarize_on_runs_chunks_at_diarize_default(monkeypatch, tmp_path):
-    """With diarize=True and no explicit chunk_secs, chunk_secs=1740 + ceiling=1740 should be used."""
+    """With diarize=True and no explicit chunk_secs, chunk_secs=1800 + ceiling=1800 should be used."""
     src = _make_audio(tmp_path)
     captured: dict[str, float | None] = {}
 
@@ -204,8 +206,8 @@ def test_diarize_on_runs_chunks_at_diarize_default(monkeypatch, tmp_path):
 
 
 def test_diarize_off_word_timestamps_off_runs_chunks_at_no_diarize_default(monkeypatch, tmp_path):
-    """With diarize=False AND word_level_timestamps=False (only combo that picks 59*60),
-    chunk_secs=3540 + ceiling=3540 should be used.
+    """With diarize=False AND word_level_timestamps=False (only combo that picks 60*60),
+    chunk_secs=3600 + ceiling=3600 should be used.
     """
     src = _make_audio(tmp_path)
     captured: dict[str, float | None] = {}
@@ -222,7 +224,11 @@ def test_diarize_off_word_timestamps_off_runs_chunks_at_no_diarize_default(monke
     api.TranscribeClient = _OneChunkFakeClient
     try:
         api.gemini_transcribe(
-            str(src), force=True, gemini_api_key="fake", word_level_timestamps=False,
+            str(src),
+            force=True,
+            gemini_api_key="fake",
+            word_level_timestamps=False,
+            diarized_srt_file=False,
         )
     finally:
         api.TranscribeClient = orig
@@ -249,7 +255,9 @@ def test_diarize_off_word_timestamps_on_runs_chunks_at_diarize_default(monkeypat
     orig = api.TranscribeClient
     api.TranscribeClient = _OneChunkFakeClient
     try:
-        api.gemini_transcribe(str(src), force=True, gemini_api_key="fake")
+        api.gemini_transcribe(
+            str(src), force=True, gemini_api_key="fake", diarized_srt_file=False,
+        )
     finally:
         api.TranscribeClient = orig
 
@@ -295,7 +303,9 @@ def test_diarize_off_passes_enable_diarization_false_to_client(tmp_path):
     orig = api.TranscribeClient
     api.TranscribeClient = _CaptureDiarizeClient
     try:
-        api.gemini_transcribe(str(src), force=True, gemini_api_key="fake")
+        api.gemini_transcribe(
+            str(src), force=True, gemini_api_key="fake", diarized_srt_file=False,
+        )
     finally:
         api.TranscribeClient = orig
 
@@ -336,6 +346,7 @@ def test_speakers_silently_dropped_when_diarize_off(tmp_path, caplog):
         api.gemini_transcribe(
             str(src), force=True, gemini_api_key="fake",
             speakers={"spk:0": "궤도"},
+            diarized_srt_file=False,
         )
     finally:
         api.TranscribeClient = orig

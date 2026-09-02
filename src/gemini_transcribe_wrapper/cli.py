@@ -163,10 +163,9 @@ def _make_command() -> click.Command:
         "--diarized-srt-file",
         default=None,
         help=(
-            "Path to output .diarized.srt file, 'auto' for default name, or 'off' to disable (default: off). "
-            "When set to a path or 'auto', enables Gemini speaker diarization and writes the diarized SRT there. "
-            "WARNING: Use only when strictly necessary. Enabling speaker diarization reduces the per-call "
-            "audio limit from ~1 hour (59m) to ~30 min (29m), which doubles API calls and reduces overall throughput."
+            "Path to output .diarized.srt file, 'auto' for default name, or 'off' to disable (default: auto). "
+            "When enabled, Gemini speaker diarization is performed and written to the diarized SRT. "
+            "Pass --diarized-srt-file=off to disable speaker diarization."
         ),
     )
     @click.option(
@@ -188,7 +187,10 @@ def _make_command() -> click.Command:
     @click.option(
         "--transcript-json-file",
         default=None,
-        help="Path to output .transcript.json file, or 'off' to disable (default: auto).",
+        help=(
+            "Path to output transcript JSON file, 'auto' for default, or 'off' to disable (default: auto). "
+            "When omitted, the filename is determined automatically."
+        ),
     )
     @click.option(
         "--metadata-json-file",
@@ -244,8 +246,8 @@ def _make_command() -> click.Command:
         default=None,
         help=(
             "[DEVELOPER/INTERNAL ONLY — not intended for end users] Override the "
-            "per-chunk ceiling in seconds (default: auto, 3540s when "
-            "--no-diarize and --no-word-level-timestamps, 1740s when either is on; "
+            "per-chunk ceiling in seconds (default: auto, 3600s when "
+            "--no-diarize and --no-word-level-timestamps, 1800s when either is on; "
             "the hard ceiling matches the Gemini 30-min per-call limit when "
             "diarization or word-level timestamps are active)"
         ),
@@ -280,7 +282,7 @@ def _make_command() -> click.Command:
             "[DEVELOPER/INTERNAL ONLY — not intended for end users] "
             "Enable/disable word-level timestamps in transcription output "
             "(default: on). When enabled, the Gemini API per-call audio limit "
-            "drops from ~1 hour (59m) to ~30 min (29m), same as "
+            "drops from ~1 hour (60m) to ~30 min (30m), same as "
             "--diarized-srt-file. Disable to allow longer chunks when "
             "word-level timing is not needed."
         ),
@@ -345,13 +347,7 @@ def _make_command() -> click.Command:
         "--no-file-log",
         is_flag=True,
         default=False,
-        help=(
-            "Disable the rotating file log under "
-            "<cache_dir>/logs/gemini-transcribe-wrapper.log. By default "
-            "the wrapper mirrors console output to that file (5 MB × 3) "
-            "so long-running --loop* sessions survive a tmux detach or "
-            "SSH disconnect."
-        ),
+        hidden=True,
     )
     @click.option(
         "--color",

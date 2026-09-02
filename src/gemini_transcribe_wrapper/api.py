@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,7 @@ from .models import (
     TranscribeStatus,
 )
 from .stt import (
+    _GLOBAL_DEAD_POOL,
     MODEL_ID,
     TranscribeClient,
     get_audit_log_path,
@@ -92,15 +94,13 @@ def _load_vocabulary_file(path: str | None) -> list[str]:
 # ``chunk_secs``; these are only the fallbacks when the user doesn't specify.
 # The Gemini-3.5-transcribe API caps audio per call differently depending
 # on whether speaker diarization or word-level timestamps are requested
-# (60 min when neither is active, 30 min when either is active). Both defaults
-# already include a 1-min safety margin, so they also serve as the per-chunk
-# ceiling passed to audio.compute_split_plan.
-# - Neither diarize nor word timestamps: 3540s (59 min) — file fits in one
-#   API call up to ~1 hour.
-# - Diarize OR word timestamps: 1740s (29 min) — shorter chunks stay under
+# (60 min when neither is active, 30 min when either is active).
+# - Neither diarize nor word timestamps: 3600s (60 min) — file fits in one
+#   API call up to 1 hour.
+# - Diarize OR word timestamps: 1800s (30 min) — shorter chunks stay under
 #   the 30-min per-call limit.
-DEFAULT_CHUNK_SECS_NO_DIARIZE = 3540.0
-DEFAULT_CHUNK_SECS_DIARIZE = 1740.0
+DEFAULT_CHUNK_SECS_NO_DIARIZE = 3600.0
+DEFAULT_CHUNK_SECS_DIARIZE = 1800.0
 
 TRANSCRIPT_SUFFIX_DIARIZED = ".diarized.transcript.json"
 TRANSCRIPT_SUFFIX_PLAIN = ".transcript.json"
@@ -237,10 +237,7 @@ def gemini_transcribe(
         txt_file: TXT output target (default: 'auto'). 'off' to disable; path to override.
         transcript_json_file: Transcript JSON output target (default: 'auto'). 'off' to disable; path to override.
         audit_jsonl_file: Audit JSONL output target (default: 'auto'). 'off' to disable; path to override.
-        diarized_srt_file: Diarized SRT output target (default: 'off'). 'auto' or path to enable.
-            WARNING: Use only when strictly necessary. Enabling speaker diarization
-            reduces per-call audio limits from ~1 hour (59m) to ~30 min (29m),
-            doubling API calls and reducing overall throughput.
+        diarized_srt_file: Diarized SRT output target (default: 'auto'). 'off' to disable; path to override.
         metadata_json_file: Metadata JSON output target (default: 'off'). 'auto' or path to enable.
         tier: Gemini API pricing tier ("free" or "paid", default: "free").
             When "free", enforces 60s cooldown between API calls.
@@ -251,7 +248,7 @@ def gemini_transcribe(
             "free" tier, 0.0s for "paid" tier.
         max_chunk_secs: Optional per-chunk ceiling in seconds (developer/internal
             only). Overrides the default for the chosen diarization mode
-            (3540s off, 1740s on). A hard ceiling of 1740s is enforced when
+            (3600s off, 1800s on). A hard ceiling of 1800s is enforced when
             speaker diarization or word-level timestamps are enabled because
             the Gemini API caps audio at ~30 min per call in those modes.
         word_level_timestamps: Include word-level timestamps in the
@@ -414,7 +411,7 @@ def _process_one(
         txt_file, txt_default, default_enabled=True
     )
     diarized_enabled, diarized_target = _resolve_output_target(
-        diarized_srt_file, diarized_default, default_enabled=False
+        diarized_srt_file, diarized_default, default_enabled=True
     )
     metadata_enabled, metadata_target = _resolve_output_target(
         metadata_json_file, metadata_default, default_enabled=False
@@ -594,18 +591,18 @@ def _process_one(
         try:
             _check_api_key(gemini_api_keys)
         except RuntimeError as exc:
-            logger.error("Failed processing %s: %s", input_file, exc)
+            err_msg = str(exc) or repr(exc)
+            logger.error("Failed processing %s: %s", input_file, err_msg)
             return TranscribeResult(
-                input=echo, status=TranscribeStatus.FAILED, error=str(exc)
+                input=echo, status=TranscribeStatus.FAILED, error=err_msg
             )
 
         total_secs = probe_duration_secs(input_file)
         logger.info("%s duration: %.1fs", input_file, total_secs)
         # The Gemini API has a different per-call audio limit depending on
         # whether speaker diarization or word-level timestamps are requested
-        # (60 min when neither is active, 30 min when either is active).
-        # Both defaults already bake in a 1-min safety margin, so they also
-        # serve as the per-chunk ceiling passed to compute_split_plan.
+        # (60 min when neither is active, 30 min when either is active), which
+        # serve as the default per-chunk ceiling passed to compute_split_plan.
         needs_short_chunks = diarized_enabled or word_level_timestamps
         default_max_chunk_secs = (
             DEFAULT_CHUNK_SECS_DIARIZE if needs_short_chunks else DEFAULT_CHUNK_SECS_NO_DIARIZE
@@ -615,28 +612,16 @@ def _process_one(
         effective_max_chunk_secs = (
             max_chunk_secs if max_chunk_secs is not None else default_max_chunk_secs
         )
-        if needs_short_chunks:
-            ceiling_reason = (
-                "diarization and/or word-level timestamps are enabled "
-                "(Gemini API caps audio at ~30 min per call)"
-            )
-        else:
-            ceiling_reason = (
-                "no diarization and word-level timestamps are off "
-                "(Gemini API caps audio at ~60 min per call)"
-            )
         if max_chunk_secs is None:
-            ceiling_source = "default"
-            ceiling_value = default_max_chunk_secs
+            logger.info(
+                "Per-chunk ceiling: %.1fs (1800s for .srt or .diarized.srt, or 3600s for .txt will be used by default)",
+                default_max_chunk_secs,
+            )
         else:
-            ceiling_source = "user-supplied --max-chunk-secs"
-            ceiling_value = max_chunk_secs
-        logger.info(
-            "Per-chunk ceiling: %.1fs (source: %s; reason: %s).",
-            ceiling_value,
-            ceiling_source,
-            ceiling_reason,
-        )
+            logger.info(
+                "Per-chunk ceiling: %.1fs (source: user-supplied --max-chunk-secs; default is 1800s for .srt or .diarized.srt, or 3600s for .txt)",
+                max_chunk_secs,
+            )
         plan = compute_split_plan(
             total_secs,
             max_chunk_secs=effective_max_chunk_secs,
@@ -850,7 +835,8 @@ def _process_one(
         # leftover so the caller can clean up if desired. Also blacklist
         # the input file (issue-002, spec §4.2) so subsequent passes skip
         # it instead of burning more API quota on the same poison input.
-        logger.error("Failed processing %s: %s", input_file, exc)
+        err_msg = str(exc) or repr(exc)
+        logger.error("Failed processing %s: %s", input_file, err_msg)
         if gemini_api_keys:
             from .blacklist import InputBlacklist
             from .stt import _extract_status_code
@@ -1195,13 +1181,14 @@ def _check_api_key(api_keys: list[str] | None) -> None:
     candidates: list[str] = []
     if api_keys:
         candidates.extend(k.strip() for k in api_keys if k and k.strip())
-    plural = os.environ.get("GEMINI_API_KEYS", "")
-    if plural:
-        candidates.extend(part.strip() for part in re.split(r"[,;]", plural) if part.strip())
-    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
-        val = os.environ.get(var)
-        if val and val.strip():
-            candidates.append(val.strip())
+    if not candidates:
+        plural = os.environ.get("GEMINI_API_KEYS", "")
+        if plural:
+            candidates.extend(part.strip() for part in re.split(r"[,;]", plural) if part.strip())
+        for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+            val = os.environ.get(var)
+            if val and val.strip():
+                candidates.append(val.strip())
     # Dedupe, preserve order, drop empties.
     seen: set[str] = set()
     deduped: list[str] = []
@@ -1215,16 +1202,21 @@ def _check_api_key(api_keys: list[str] | None) -> None:
             "or pass --gemini-api-keys=key1,key2,... (deprecated: "
             "--gemini-api-key KEY)."
         )
-    # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
-    if len(deduped) == 1:
-        logger.info("Using GEMINI_API_KEY=%s", _mask_key(deduped[0]))  # nosemgrep
-    else:
-        masked = [_mask_key(k) for k in deduped]
-        logger.info(  # nosemgrep
-            "Using %d Gemini API keys (round-robin + 429 fallback): %s",
-            len(deduped),
-            ", ".join(masked),
-        )
+    now = time.monotonic()
+    for k, until in list(_GLOBAL_DEAD_POOL.items()):
+        if now >= until:
+            _GLOBAL_DEAD_POOL.pop(k, None)
+    live_keys = [k for k in deduped if k not in _GLOBAL_DEAD_POOL]
+    all_masked = ", ".join(_mask_key(k) for k in deduped)
+    live_masked = ", ".join(_mask_key(k) for k in live_keys)
+
+    logger.info(  # nosemgrep: python-logger-credential-disclosure
+        "All api keys given (%d): %s, live api keys (%d): %s",
+        len(deduped),
+        all_masked,
+        len(live_keys),
+        live_masked,
+    )
 
 
 def _cleanup_workdir(ctx: WorkContext, keep_chunks: bool) -> None:
@@ -1244,8 +1236,8 @@ def _format_split_plan(plan) -> str:
     """Render the split plan for human-readable logging.
 
     Single chunk:    "1 chunk: 3833.5s"
-    Multiple chunks: "2 chunks: 1 full (3540.0s), last chunk 293.5s"
-    Three or more:   "3 chunks: 2 full (1740.0s each), last chunk 1520.0s"
+    Multiple chunks: "2 chunks: 1 full (3600.0s), last chunk 233.5s"
+    Three or more:   "3 chunks: 2 full (1800.0s each), last chunk 1400.0s"
     """
     n = plan.num_chunks
     sizes = list(plan.chunk_secs)
