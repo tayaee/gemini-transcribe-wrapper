@@ -39,10 +39,10 @@ else
     fail "api_key_tail lacks None/empty guard"
 fi
 
-# 4. mask_key still returns 4-char form (UX re-emission unchanged)
+# 4. mask_key returns [redacted]<last 8 chars>
 if grep -qE 'def mask_key\(' "$KEY_UTILS" \
-   && grep -q '\[redacted\]{key\[-4:\]\}' "$KEY_UTILS"; then
-    ok "mask_key still produces [redacted]<last 4>"
+   && grep -q '\[redacted\]{api_key_tail(key)}' "$KEY_UTILS"; then
+    ok "mask_key produces [redacted]<last 8>"
 else
     fail "mask_key format regression"
 fi

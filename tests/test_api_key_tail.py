@@ -76,11 +76,11 @@ def test_api_key_tail_length_zero_returns_empty():
 
 
 def test_mask_key_returns_8_char_tail():
-    """``mask_key`` returns the last 8 chars for normal keys (or ``unset`` for empty)."""
-    assert key_utils.mask_key("AIzaSyDummyKey12345678") == "12345678"
+    """``mask_key`` returns [redacted]<last 8 chars> for normal keys (or ``unset`` for empty)."""
+    assert key_utils.mask_key("AIzaSyDummyKey12345678") == "[redacted]12345678"
     assert key_utils.mask_key(None) == "unset"
     assert key_utils.mask_key("") == "unset"
-    assert key_utils.mask_key("abcd") == "abcd"
+    assert key_utils.mask_key("abcd") == "[redacted]abcd"
 
 
 # ---------------------------------------------------------------------------

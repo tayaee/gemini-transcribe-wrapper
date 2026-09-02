@@ -432,19 +432,19 @@ def test_transcribe_client_deduplicates_keys():
 
 
 def test_api_mask_key_shows_last_8():
-    """Compact format: 8-char tail."""
+    """Compact format: [redacted]<8-char tail>."""
     from gemini_transcribe_wrapper.api import _mask_key
 
     masked = _mask_key("AQ.AXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXMw9g")
-    assert masked == "XXXXMw9g"
+    assert masked == "[redacted]XXXXMw9g"
 
 
 def test_api_mask_key_short_key():
-    """Short keys return the key tail."""
+    """Short keys return [redacted]<key>."""
     from gemini_transcribe_wrapper.api import _mask_key
 
-    assert _mask_key("abcd") == "abcd"
-    assert _mask_key("k1") == "k1"
+    assert _mask_key("abcd") == "[redacted]abcd"
+    assert _mask_key("k1") == "[redacted]k1"
 
 
 # --- per-key upload session (Files API is per-key scoped) -----------------

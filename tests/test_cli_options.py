@@ -78,13 +78,13 @@ def test_gemini_api_key_singular_treated_as_one_element_list(caplog):
     # mentions a list so we don't check for the literal key value).
     warnings = [rec.message for rec in caplog.records if rec.levelno == logging.WARNING]
     assert any("--gemini-api-key is deprecated" in m for m in warnings)
-    assert any("'k1'" in m for m in warnings)
+    assert any("'[redacted]k1'" in m for m in warnings)
 
 
 def test_gemini_api_key_singular_does_not_crash_when_masked():
-    """Short keys should produce the key tail without error."""
+    """Short keys should produce [redacted]<key> without error."""
     masked = _mask_cli_key("k1")
-    assert masked == "k1"
+    assert masked == "[redacted]k1"
 
 
 def test_plural_takes_precedence_over_singular(caplog):
@@ -132,7 +132,7 @@ def test_format_cli_command_emits_plural_form():
     out = format_cli_command("gemini-transcribe", opts)
     tokens = out.split()
     assert "--gemini-api-keys" in tokens
-    assert "'k1aaa;k2bbb;k3ccc'" in out
+    assert "'[redacted]k1aaa;[redacted]k2bbb;[redacted]k3ccc'" in out
     # Singular alias should never be emitted as its own token.
     assert "--gemini-api-key" not in tokens
 
@@ -217,17 +217,17 @@ def test_resolve_api_keys_empty_when_no_sources(monkeypatch):
 
 
 def test_mask_cli_key_long():
-    """Keys show the last 8 chars (or full key if shorter)."""
+    """Keys show [redacted]<8 chars> (or full key if shorter)."""
     masked = _mask_cli_key("AIzaSyDlong_api_key_xxx_xyzzzzz")
-    assert masked == "_xyzzzzz"
+    assert masked == "[redacted]_xyzzzzz"
     assert "AIzaSyD" not in masked
     assert "long_api_key" not in masked
 
 
 def test_mask_cli_key_short_is_fully_masked():
-    """Short keys return the key tail."""
-    assert _mask_cli_key("k1") == "k1"
-    assert _mask_cli_key("abcd") == "abcd"
+    """Short keys return [redacted]<key>."""
+    assert _mask_cli_key("k1") == "[redacted]k1"
+    assert _mask_cli_key("abcd") == "[redacted]abcd"
 
 
 def test_gemini_api_keys_comma_and_semicolon():

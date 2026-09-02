@@ -18,24 +18,24 @@ from gemini_transcribe_wrapper._key_utils import mask_key
 
 
 def test_mask_key_long_key_shows_last_eight():
-    """Realistic Gemini keys (39+ chars) render as the 8-char tail."""
+    """Realistic Gemini keys (39+ chars) render as [redacted]<8-char tail>."""
     key = "AQ.AXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXMw9g"
-    assert mask_key(key) == "XXXXMw9g"
+    assert mask_key(key) == "[redacted]XXXXMw9g"
 
 
 def test_mask_key_five_char_key_shows_only_tail():
-    """Boundary: a 5-char key returns all 5 chars."""
-    assert mask_key("abcde") == "abcde"
+    """Boundary: a 5-char key returns [redacted]<5 chars>."""
+    assert mask_key("abcde") == "[redacted]abcde"
 
 
 def test_mask_key_four_char_key():
-    """4-char key returns all 4 chars."""
-    assert mask_key("abcd") == "abcd"
+    """4-char key returns [redacted]<4 chars>."""
+    assert mask_key("abcd") == "[redacted]abcd"
 
 
 def test_mask_key_three_char_key():
-    """3-char key returns all 3 chars."""
-    assert mask_key("k1z") == "k1z"
+    """3-char key returns [redacted]<3 chars>."""
+    assert mask_key("k1z") == "[redacted]k1z"
 
 
 def test_mask_key_empty_string_returns_unset():
@@ -65,6 +65,6 @@ def test_mask_key_distinguishes_keys_by_tail():
     """Two different long keys produce two different masked forms."""
     a = mask_key("AIzaSyD-1234567890abcdef")
     b = mask_key("AIzaSyD-1234567890xyzz")
-    assert a == "90abcdef"
-    assert b == "7890xyzz"
+    assert a == "[redacted]90abcdef"
+    assert b == "[redacted]7890xyzz"
     assert a != b

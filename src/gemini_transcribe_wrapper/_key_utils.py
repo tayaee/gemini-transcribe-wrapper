@@ -46,10 +46,10 @@ def api_key_tail(api_key: str | None, *, length: int = API_KEY_TAIL_LENGTH) -> s
 
 
 def mask_key(key: str | None) -> str:
-    """Return the last 8 characters for ``key`` (or ``"unset"`` if None/empty)."""
+    """Return ``"[redacted]<last 8 characters>"`` for ``key`` (or ``"unset"`` if None/empty)."""
     if not key:
         return "unset"
-    return api_key_tail(key)
+    return f"[redacted]{api_key_tail(key)}"
 
 
 def save_last_used_api_key(key: str, cache: Path | None = None) -> None:

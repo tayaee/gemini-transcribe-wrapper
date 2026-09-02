@@ -98,7 +98,7 @@ def test_summary_line_free_tier_with_key_tail(cache):
         usage_counter.increment_today(cache, api_key=key)
     line = usage_counter.usage_summary_line(cache, api_key=key)
     print("summary line:", line)
-    assert "ending with '90abcdef'" in line
+    assert "ending with '[redacted]90abcdef'" in line
     # Whole key must NOT leak
     assert "AIzaSyD" not in line
 
@@ -119,7 +119,7 @@ def test_summary_line_paid_tier_keeps_legacy_format(cache):
         usage_counter.increment_today(cache, api_key=key)
     line_key = usage_counter.usage_summary_line(cache, api_key=key, tier="paid")
     # Legacy 3 calls + 2 key calls = 5 total migrated calls
-    assert "with key '90abcdef': attempted 5" in line_key
+    assert "with key '[redacted]90abcdef': attempted 5" in line_key
     assert line_key.endswith(f"(free tier limit: {FREE_TIER_DAILY_LIMIT})")
 
 
