@@ -1,6 +1,6 @@
 """Custom-vocabulary file loading + post-recognition bias.
 
-The ``--custom-vocabulary-file`` option points at a UTF-8 text file
+The ``--vocab-txt-file`` option points at a UTF-8 text file
 (one term per line). The loader skips blank lines and ``#`` comments,
 warns and returns ``[]`` when the file is missing, and is otherwise
 non-fatal. After Gemini returns the transcript, the wrapper applies

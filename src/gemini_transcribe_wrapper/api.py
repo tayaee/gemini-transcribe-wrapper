@@ -393,7 +393,8 @@ def gemini_transcribe(
     speakers_txt_file: str | None = "auto",
     temp_path: str | None = "temp",
     custom_vocabulary: list[str] | None = None,
-    custom_vocabulary_file: str | None = "auto",
+    vocab_txt_file: str | None = "auto",
+    custom_vocabulary_file: str | None = None,
     language_codes: list[str] | None = None,
     model: str = MODEL_ID,
     word_level_timestamps: bool = True,
@@ -534,7 +535,11 @@ def gemini_transcribe(
                 speakers_txt_file=speakers_txt_file,
                 temp_path=temp_path,
                 custom_vocabulary=custom_vocabulary,
-                custom_vocabulary_file=custom_vocabulary_file,
+                vocab_txt_file=(
+                    custom_vocabulary_file
+                    if custom_vocabulary_file is not None
+                    else vocab_txt_file
+                ),
                 model=model,
                 word_level_timestamps=word_level_timestamps,
                 txt_width=txt_width,
@@ -581,7 +586,8 @@ def _process_one(
     temp_path: str | None,
     speakers_txt_file: str | None = "auto",
     custom_vocabulary: list[str] | None = None,
-    custom_vocabulary_file: str | None = "auto",
+    vocab_txt_file: str | None = "auto",
+    custom_vocabulary_file: str | None = None,
     language_codes: list[str] | None = None,
     model: str = MODEL_ID,
     word_level_timestamps: bool = True,
@@ -839,8 +845,13 @@ def _process_one(
         # file load is non-fatal: a missing file just yields [] and logs a
         # warning (see ``_load_vocabulary_file``).
         combined_vocab = list(custom_vocabulary or [])
+        effective_vocab_file = (
+            custom_vocabulary_file
+            if custom_vocabulary_file is not None
+            else vocab_txt_file
+        )
         combined_vocab += _load_vocabulary_file(
-            custom_vocabulary_file, input_file=input_file
+            effective_vocab_file, input_file=input_file
         )
         combined_vocab = combined_vocab or None
 

@@ -7,7 +7,7 @@ those terms as a post-recognition step.
 ## TL;DR
 
 ```bash
-# myvoca.txt (one term per line, # for comments)
+# my.vocab.txt (one term per line, # for comments)
 #Company Glossary
 ProjectX
 Gemini
@@ -16,7 +16,7 @@ internal-codename
 ```
 
 ```bash
-gtw --custom-vocabulary-file myvoca.txt sample.mp4
+gtw --vocab-txt-file my.vocab.txt sample.mp4
 ```
 
 ## Why this exists
@@ -59,9 +59,9 @@ internal-codename
 
 | Flag | Behavior |
 | --- | --- |
-| `--custom-vocabulary-file=PATH` | Path to custom vocabulary file, or `auto` (default: `auto`). When `auto`, automatically picks up `.vocab.txt` (or `<stem>.vocab.txt`) if it exists. Specify `off` to disable. |
+| `--vocab-txt-file=PATH` | Path to vocabulary text file, or `auto` (default: `auto`). When `auto`, automatically picks up `.vocab.txt` (or `<stem>.vocab.txt`) if it exists. Specify `off` to disable. |
 
-When `--custom-vocabulary-file auto` (the default) is in effect, the wrapper searches for vocabulary files in the following order:
+When `--vocab-txt-file auto` (the default) is in effect, the wrapper searches for vocabulary files in the following order:
 1. `<stem>.vocab.txt` in the input file directory (e.g. `recording.vocab.txt` for `recording.mp4`)
 2. `<filename>.vocab.txt` in the input file directory (e.g. `recording.mp4.vocab.txt`)
 3. `.vocab.txt` in the input file directory
@@ -71,18 +71,18 @@ If a vocabulary file is found, it is automatically loaded and applied. If none i
 
 To explicitly disable automatic lookup:
 ```bash
-gtw --custom-vocabulary-file off sample.mp4
+gtw --vocab-txt-file off sample.mp4
 ```
 
 ## Missing-file behavior
 
-If `--custom-vocabulary-file` points at an explicit, non-existent path, the wrapper
+If `--vocab-txt-file` points at an explicit, non-existent path, the wrapper
 **prints a warning and continues with no vocabulary bias** — it does not
 exit with an error. This keeps long-running batch jobs from failing on a
 typo in the vocabulary path.
 
 ```
-WARNING  gemini_transcribe_wrapper.api:api.py Custom vocabulary file not found: myvoca.txt. Ignoring.
+WARNING  gemini_transcribe_wrapper.api:api.py Custom vocabulary file not found: my.vocab.txt. Ignoring.
 ```
 
 In `auto` mode, missing files do not produce a warning.
@@ -127,7 +127,7 @@ from gemini_transcribe_wrapper import gemini_transcribe
 batch = gemini_transcribe(
     input_file="interview.mp4",
     custom_vocabulary=["ProjectX", "Gemini"],          # inline list
-    custom_vocabulary_file="myvoca.txt",                # file path
+    vocab_txt_file="my.vocab.txt",                      # file path
 )
 ```
 
@@ -176,7 +176,7 @@ Gemini Pro
 ```
 
 ```bash
-gtw --custom-vocabulary-file en-vocab.txt recording.mp4
+gtw --vocab-txt-file en-vocab.txt recording.mp4
 ```
 
 ### Korean phrase corpus
@@ -192,7 +192,7 @@ gtw --custom-vocabulary-file en-vocab.txt recording.mp4
 ```
 
 ```bash
-gtw --custom-vocabulary-file ko-vocab.txt lecture.mp4
+gtw --vocab-txt-file ko-vocab.txt lecture.mp4
 ```
 
 ### Automatic .vocab.txt pickup

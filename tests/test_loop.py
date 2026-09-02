@@ -49,7 +49,7 @@ def _make_opts(**overrides):
         "request_interval_secs": 120.0,
         "max_chunk_secs": None,
         "speakers_txt_file": "auto",
-        "custom_vocabulary_file": "auto",
+        "vocab_txt_file": "auto",
         "word_level_timestamps": True,
         "temp_path": "temp",
         "audit_jsonl_file": None,

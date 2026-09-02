@@ -46,7 +46,7 @@ class TranscribeOptions:
     request_interval_secs: float | None = None
     max_chunk_secs: float | None = None
     speakers_txt_file: str | None = "auto"
-    custom_vocabulary_file: str | None = "auto"
+    vocab_txt_file: str | None = "auto"
     word_level_timestamps: bool = True
     temp_path: str = "temp"
     audit_jsonl_file: str | Path | bool | None = None
@@ -269,10 +269,10 @@ def _make_command() -> click.Command:
         ),
     )
     @click.option(
-        "--custom-vocabulary-file",
+        "--vocab-txt-file",
         default="auto",
         help=(
-            "Path to custom vocabulary file, or 'auto' (default: auto). "
+            "Path to vocabulary text file, or 'auto' (default: auto). "
             "When 'auto', automatically picks up .vocab.txt if it exists. "
             "Path can also be explicitly specified, or 'off' to disable. "
             "Lines starting with '#' or empty lines are ignored. "
@@ -391,7 +391,7 @@ def _make_command() -> click.Command:
         request_interval_secs: float | None,
         max_chunk_secs: float | None,
         speakers_txt_file: str | None,
-        custom_vocabulary_file: str | None,
+        vocab_txt_file: str | None,
         word_level_timestamps: bool,
         temp_path: str,
         audit_jsonl_file: str | None,
@@ -469,7 +469,7 @@ def _make_command() -> click.Command:
                 request_interval_secs=request_interval_secs,
                 max_chunk_secs=max_chunk_secs,
                 speakers_txt_file=speakers_txt_file,
-                custom_vocabulary_file=custom_vocabulary_file,
+                vocab_txt_file=vocab_txt_file,
                 word_level_timestamps=word_level_timestamps,
                 temp_path=temp_path,
                 audit_jsonl_file=audit_jsonl_file,
@@ -524,19 +524,18 @@ def parse_custom_vocabulary(spec: str | None) -> list[str] | None:
     return items if items else None
 
 
-def load_custom_vocabulary_file(
+def load_vocab_txt_file(
     path: str | Path | None = "auto",
     input_file: Path | str | None = None,
 ) -> list[str]:
-    """CLI wrapper for :func:`api._load_vocabulary_file`.
-
-    Kept as a thin shim so callers in this module (and tests) can keep
-    using the ``cli.load_custom_vocabulary_file`` symbol. The single
-    source of truth lives in :mod:`api`.
-    """
+    """CLI wrapper for :func:`api._load_vocabulary_file`."""
     from .api import _load_vocabulary_file
 
     return _load_vocabulary_file(path, input_file=input_file)
+
+
+# Backward compatibility alias
+load_custom_vocabulary_file = load_vocab_txt_file
 
 
 def load_speakers_file(
@@ -604,8 +603,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.extend(["--temp-path", str(opts.temp_path)])
     if opts.speakers_txt_file and opts.speakers_txt_file != "auto":
         tokens.extend(["--speakers-txt-file", str(opts.speakers_txt_file)])
-    if opts.custom_vocabulary_file and opts.custom_vocabulary_file != "auto":
-        tokens.extend(["--custom-vocabulary-file", str(opts.custom_vocabulary_file)])
+    if opts.vocab_txt_file and opts.vocab_txt_file != "auto":
+        tokens.extend(["--vocab-txt-file", str(opts.vocab_txt_file)])
     if opts.max_chunk_secs is not None:
         tokens.extend(["--max-chunk-secs", str(opts.max_chunk_secs)])
     if not opts.word_level_timestamps:
@@ -861,7 +860,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                     max_chunk_secs=opts.max_chunk_secs,
                     speakers_txt_file=opts.speakers_txt_file,
                     temp_path=opts.temp_path,
-                    custom_vocabulary_file=opts.custom_vocabulary_file,
+                    vocab_txt_file=opts.vocab_txt_file,
                     audit_jsonl_file=opts.audit_jsonl_file,
                     word_level_timestamps=opts.word_level_timestamps,
                 )
