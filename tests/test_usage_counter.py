@@ -124,8 +124,12 @@ def test_summary_line_paid_tier_keeps_legacy_format(cache):
 
 
 def test_pt_timezone():
-    from zoneinfo import ZoneInfo
-    assert usage_counter.PT == ZoneInfo("America/Los_Angeles")
+    from datetime import tzinfo
+
+    assert isinstance(usage_counter.PT, tzinfo)
+    now = usage_counter.pt_now()
+    assert now.tzinfo is not None
+    assert len(usage_counter.pt_date()) == 10
 
 
 def test_stt_increments_counter_per_api_call(cache):

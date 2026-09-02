@@ -12,16 +12,21 @@ import logging
 import os
 import time
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from filelock import FileLock
 
 logger = logging.getLogger(__name__)
 
 FREE_TIER_DAILY_LIMIT = "~25"
-PT = ZoneInfo("America/Los_Angeles")
+
+try:
+    PT: tzinfo = ZoneInfo("America/Los_Angeles")
+except (ZoneInfoNotFoundError, KeyError, Exception):  # noqa: BLE001 - fallback when IANA zoneinfo is unavailable (Windows without tzdata)
+    PT = timezone(timedelta(hours=-8), name="America/Los_Angeles")
+
 PST = PT  # backward compatibility alias
 USAGE_FILE = "usage.json"
 _KEY_HASH_LEN = 12  # hex chars of SHA-256 used in per-key usage filenames.
