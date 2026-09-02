@@ -45,7 +45,7 @@ class TranscribeOptions:
     txt_width: int = 65
     request_interval_secs: float | None = None
     max_chunk_secs: float | None = None
-    speakers: str | None = None
+    speakers_txt_file: str | None = "auto"
     custom_vocabulary_file: str | None = "auto"
     word_level_timestamps: bool = True
     temp_path: str = "temp"
@@ -260,12 +260,12 @@ def _make_command() -> click.Command:
         ),
     )
     @click.option(
-        "--speakers",
-        default=None,
+        "--speakers-txt-file",
+        default="auto",
         help=(
-            "Semicolon-separated speaker name mapping for .diarized.srt, "
-            "e.g. 'spk:0=John Doe;spk:1=Jane Doe;'. (Note: only ';' is used as a "
-            "delimiter because speaker names may contain commas)."
+            "Path to speaker mapping text file for .diarized.srt (recommended format: "
+            "one per line like '[spk:0]=John Doe:'), or 'auto' (default: auto). "
+            "Specify 'off' to disable."
         ),
     )
     @click.option(
@@ -390,7 +390,7 @@ def _make_command() -> click.Command:
         txt_width: int,
         request_interval_secs: float | None,
         max_chunk_secs: float | None,
-        speakers: str | None,
+        speakers_txt_file: str | None,
         custom_vocabulary_file: str | None,
         word_level_timestamps: bool,
         temp_path: str,
@@ -468,7 +468,7 @@ def _make_command() -> click.Command:
                 txt_width=txt_width,
                 request_interval_secs=request_interval_secs,
                 max_chunk_secs=max_chunk_secs,
-                speakers=speakers,
+                speakers_txt_file=speakers_txt_file,
                 custom_vocabulary_file=custom_vocabulary_file,
                 word_level_timestamps=word_level_timestamps,
                 temp_path=temp_path,
@@ -539,22 +539,21 @@ def load_custom_vocabulary_file(
     return _load_vocabulary_file(path, input_file=input_file)
 
 
+def load_speakers_file(
+    path: str | Path | None = "auto",
+    input_file: Path | str | None = None,
+) -> dict[str, str]:
+    """CLI wrapper for :func:`api._load_speakers_file`."""
+    from .api import _load_speakers_file
+
+    return _load_speakers_file(path, input_file=input_file)
+
+
 def parse_speakers(spec: str) -> dict[str, str]:
-    """Parse 'spk:0=John Doe;spk:1=Jane Doe;' into {'spk:0': 'John Doe', 'spk:1': 'Jane Doe'}."""
-    mapping: dict[str, str] = {}
-    for part in spec.split(";"):
-        part = part.strip()
-        if not part:
-            continue
-        if "=" not in part:
-            raise ValueError(f"Invalid --speakers entry (expected id=name): {part!r}")
-        raw, name = part.split("=", 1)
-        raw = raw.strip()
-        name = name.strip()
-        if not raw or not name:
-            raise ValueError(f"Invalid --speakers entry (expected id=name): {part!r}")
-        mapping[raw] = name
-    return mapping
+    """Parse speaker mappings from text content or spec."""
+    from .api import parse_speakers as _api_parse_speakers
+
+    return _api_parse_speakers(spec)
 
 
 def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
@@ -603,8 +602,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
         tokens.extend(["--output-base", str(opts.output_base)])
     if opts.temp_path is not None:
         tokens.extend(["--temp-path", str(opts.temp_path)])
-    if opts.speakers:
-        tokens.extend(["--speakers", str(opts.speakers)])
+    if opts.speakers_txt_file and opts.speakers_txt_file != "auto":
+        tokens.extend(["--speakers-txt-file", str(opts.speakers_txt_file)])
     if opts.custom_vocabulary_file and opts.custom_vocabulary_file != "auto":
         tokens.extend(["--custom-vocabulary-file", str(opts.custom_vocabulary_file)])
     if opts.max_chunk_secs is not None:
@@ -835,14 +834,6 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
     failed = False
     quota_exceeded = False
 
-    speakers: dict[str, str] | None = None
-    if opts.speakers:
-        try:
-            speakers = parse_speakers(opts.speakers)
-        except ValueError as exc:
-            logging.getLogger(__name__).error("Error: %s", exc)
-            return 1
-
     def _run_one_pass() -> None:
         """One pass over ``opts.path`` (issue-001's loop driver calls this)."""
         nonlocal quota_exceeded, failed  # type: ignore[misc]
@@ -868,7 +859,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                     txt_width=opts.txt_width,
                     request_interval_secs=opts.request_interval_secs,
                     max_chunk_secs=opts.max_chunk_secs,
-                    speakers=speakers,
+                    speakers_txt_file=opts.speakers_txt_file,
                     temp_path=opts.temp_path,
                     custom_vocabulary_file=opts.custom_vocabulary_file,
                     audit_jsonl_file=opts.audit_jsonl_file,

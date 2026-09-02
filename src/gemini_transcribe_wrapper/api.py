@@ -153,6 +153,133 @@ def _load_vocabulary_file(
         items.append(line)
     return items
 
+
+def parse_speakers(content: str) -> dict[str, str]:
+    """Parse speaker mappings from text content or spec.
+
+    Expected format is one speaker mapping per line:
+        spk:0=John Doe
+        spk:1=Jane Doe
+        [spk:0]=John Doe:
+        [spk:0] =John Doe:
+
+    Also tolerates multiple semicolon-separated mappings on the same line:
+        spk:0=John Doe; spk:1=Jane Doe
+
+    Lines starting with '#' and empty entries are ignored.
+    Spaces around '=' are preserved so exact pattern matching (including spaces)
+    works for string replacement.
+    """
+    mapping: dict[str, str] = {}
+    for line in content.splitlines():
+        line_clean = line.rstrip("\r\n")
+        if not line_clean.strip() or line_clean.strip().startswith("#"):
+            continue
+        for part in line_clean.split(";"):
+            if not part.strip() or part.strip().startswith("#"):
+                continue
+            if "=" not in part:
+                raise ValueError(f"Invalid speaker entry (expected id=name): {part.strip()!r}")
+            raw, name = part.split("=", 1)
+            raw = raw.lstrip()
+            name = name.rstrip()
+            if not raw.strip() or not name.strip():
+                raise ValueError(f"Invalid speaker entry (expected id=name): {part.strip()!r}")
+            mapping[raw] = name
+    return mapping
+
+
+def _find_auto_speakers_file(input_file: Path | str | None) -> Path | None:
+    """Find a candidate .speakers.txt file automatically.
+
+    Searches in order:
+    1. ``<stem>.speakers.txt`` in the input file's directory (e.g. ``video.speakers.txt``)
+    2. ``<filename>.speakers.txt`` in the input file's directory (e.g. ``video.mp4.speakers.txt``)
+    3. ``.speakers.txt`` in the input file's directory
+    4. ``.speakers.txt`` in the current working directory
+    """
+    candidates: list[Path] = []
+    if input_file:
+        in_p = Path(input_file).resolve()
+        candidates.append(in_p.with_suffix(".speakers.txt"))
+        candidates.append(in_p.parent / f"{in_p.name}.speakers.txt")
+        candidates.append(in_p.parent / ".speakers.txt")
+    candidates.append(Path.cwd() / ".speakers.txt")
+
+    seen: set[Path] = set()
+    for cand in candidates:
+        try:
+            resolved = cand.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            if cand.is_file():
+                return cand
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def _load_speakers_file(
+    path: str | Path | None = "auto",
+    input_file: Path | str | None = None,
+) -> dict[str, str]:
+    """Load speaker mapping from a text file.
+
+    - If ``path`` is ``"auto"`` (default): automatically search for a
+      matching speaker file (e.g. ``<stem>.speakers.txt``,
+      ``.speakers.txt``, etc.). If found, loads mapping;
+      otherwise silently returns ``{}``.
+    - If ``path`` is an off token (e.g. ``"off"``, ``"none"``, ``"false"``):
+      returns ``{}`` without searching.
+    - If ``path`` is empty or ``None``:
+      If ``input_file`` is given, behaves as ``"auto"``.
+      If neither is given, returns ``{}``.
+    - If ``path`` is an explicit path that is missing: logs a warning and
+      returns ``{}`` (never raises).
+    """
+    if path is not None:
+        val = str(path).strip().lower()
+        if val in _OFF_OUTPUT_TOKENS:
+            return {}
+        if val == "auto":
+            auto_file = _find_auto_speakers_file(input_file)
+            if not auto_file:
+                return {}
+            logging.getLogger(__name__).info(
+                "Auto detected .speakers file: %s", auto_file
+            )
+            p = auto_file
+        elif not val:
+            return {}
+        else:
+            p = Path(path)
+    else:
+        if input_file is not None:
+            auto_file = _find_auto_speakers_file(input_file)
+            if not auto_file:
+                return {}
+            logging.getLogger(__name__).info(
+                "Auto detected .speakers file: %s", auto_file
+            )
+            p = auto_file
+        else:
+            return {}
+
+    if not p.is_file():
+        logging.getLogger(__name__).warning(
+            "Speaker mapping file not found: %s. Ignoring.", path,
+        )
+        return {}
+    try:
+        content = p.read_text(encoding="utf-8")
+        return parse_speakers(content)
+    except (OSError, ValueError, UnicodeDecodeError) as exc:
+        logging.getLogger(__name__).warning(
+            "Failed to parse speaker mapping file %s: %s. Ignoring.", path, exc
+        )
+        return {}
+
 # Default chunk length per diarize mode. The user can still override via
 # ``chunk_secs``; these are only the fallbacks when the user doesn't specify.
 # The Gemini-3.5-transcribe API caps audio per call differently depending
@@ -263,6 +390,7 @@ def gemini_transcribe(
     request_interval_secs: float | None = None,
     max_chunk_secs: float | None = None,
     speakers: dict[str, str] | None = None,
+    speakers_txt_file: str | None = "auto",
     temp_path: str | None = "temp",
     custom_vocabulary: list[str] | None = None,
     custom_vocabulary_file: str | None = "auto",
@@ -403,6 +531,7 @@ def gemini_transcribe(
                 request_interval_secs=effective_interval,
                 max_chunk_secs=max_chunk_secs,
                 speakers=speakers,
+                speakers_txt_file=speakers_txt_file,
                 temp_path=temp_path,
                 custom_vocabulary=custom_vocabulary,
                 custom_vocabulary_file=custom_vocabulary_file,
@@ -450,6 +579,7 @@ def _process_one(
     max_chunk_secs: float | None,
     speakers: dict[str, str] | None,
     temp_path: str | None,
+    speakers_txt_file: str | None = "auto",
     custom_vocabulary: list[str] | None = None,
     custom_vocabulary_file: str | None = "auto",
     language_codes: list[str] | None = None,
@@ -518,11 +648,18 @@ def _process_one(
         request_interval_secs=request_interval_secs,
     )
 
+    # Load speaker mapping from file if configured, and merge with explicit dict
+    file_speakers = _load_speakers_file(speakers_txt_file, input_file=input_file)
+    combined_speakers = dict(file_speakers)
+    if speakers:
+        combined_speakers.update(speakers)
+    speakers = combined_speakers or None
+
     # speakers is meaningless without speaker diarization.
     if speakers and not diarized_enabled:
         logger.warning(
-            "--speakers was passed but --diarized-srt-file is disabled; "
-            "ignoring the speaker map. Enable --diarized-srt-file to use --speakers."
+            "--speakers / --speakers-txt-file was passed but --diarized-srt-file is disabled; "
+            "ignoring the speaker map. Enable --diarized-srt-file to use speaker mapping."
         )
         speakers = None
 
@@ -1091,40 +1228,50 @@ def _warn_unmapped_speakers(
         for w in r.words
         if w.speaker and w.speaker.startswith("spk:")
     }
-    unmapped = sorted([s for s in used if s not in speaker_map])
+
+    def _is_covered(s: str) -> bool:
+        tag = f"[{s}] "
+        return any(k in tag for k in speaker_map)
+
+    unmapped = sorted([s for s in used if not _is_covered(s)])
     if not unmapped:
         return
     # Full map display: mapped + unmapped (raw).
-    display = " ".join(f"{s}={speaker_map.get(s, s)}" for s in used)
+    display_parts = []
+    for s in used:
+        matching_k = next((k for k in speaker_map if k in f"[{s}] "), None)
+        if matching_k is not None:
+            display_parts.append(f"{matching_k}={speaker_map[matching_k]}")
+        else:
+            display_parts.append(f"{s}={s}")
+    display = " ".join(display_parts)
     logger.warning(
-        "Some speakers are not covered by --speakers mapping.\n"
+        "Some speakers are not covered by speaker mapping.\n"
         "  Speaker map: %s\n"
         "  Unmapped: %s",
         display,
         ", ".join(unmapped),
     )
     # Recommended command: delete the diarized SRT and re-render with a
-    # completed map, naming missing entries Name<index> for the user to edit.
-    # The target path is whatever the caller resolved (may be a custom path
-    # the user passed via --diarized-srt-file).
+    # completed map in a .speakers.txt file (or via --speakers-txt-file).
     parts = []
     for s in used:
-        if s not in speaker_map:
+        matching_k = next((k for k in speaker_map if k in f"[{s}] "), None)
+        if matching_k is None:
             n = s.rsplit(":", 1)[-1]
-            parts.append(f"{s}=Name{n}")
+            parts.append(f"[{s}]=Name{n}:")
         else:
-            parts.append(f"{s}={speaker_map[s]}")
+            parts.append(f"{matching_k}={speaker_map[matching_k]}")
     recommended = "; ".join(parts) + ";"
+    speakers_file = out_dir / f"{out_stem}.speakers.txt"
     logger.warning(
-        "To re-render with names, delete the diarized SRT and re-run with "
-        "--diarized-srt-file=%s --speakers '%s':\n"
-        "  rm '%s' && gemini-transcribe --diarized-srt-file='%s' "
-        "--speakers '%s' '%s'",
-        diarized_target,
+        "To re-render with names, save the mapping to '%s', delete the diarized SRT, and re-run:\n"
+        "  echo '%s' > '%s' && rm '%s' && gemini-transcribe --diarized-srt-file='%s' '%s'",
+        speakers_file.name,
         recommended,
+        speakers_file,
         diarized_target,
         diarized_target,
-        recommended,
         echo.input_file,
     )
 

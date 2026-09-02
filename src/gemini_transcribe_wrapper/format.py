@@ -337,17 +337,30 @@ def format_diarized_srt(
     """Format speaker-diarized subtitles as an .srt (media-player compatible).
 
     Standard SRT cue layout with a speaker tag prefix, e.g.:
-    `[궤도] 네. 이번 시간엔`. speaker_map maps raw speaker ids (e.g. "spk:0")
-    to display names; speakers missing from the map keep their raw id.
+    `[궤도] 네. 이번 시간엔`. speaker_map performs pure string replacement on the
+    initial speaker tag (e.g. `[spk:0] `). If the target is `spk:0`, it replaces
+    the name within the brackets (`[홍길동] 대사`); if `[spk:0]`, it replaces the
+    entire bracketed tag (`홍길동: 대사`); if `spk:0]`, it replaces up to the bracket
+    (`[홍길동: 대사`). Speakers missing from the map keep their raw id.
     """
     out: list[str] = []
+    sorted_keys = (
+        sorted(speaker_map.keys(), key=len, reverse=True) if speaker_map else []
+    )
     for i, cue in enumerate(cues, 1):
         lines = split_cue_text(cue.text)
         if not lines:
             continue
         raw = cue.speaker or ""
-        label = speaker_map.get(raw, raw) if speaker_map and raw else raw
-        speaker_tag = f"[{label}] " if label else ""
+        if raw:
+            speaker_tag = f"[{raw}] "
+            if speaker_map:
+                for k in sorted_keys:
+                    if k in speaker_tag:
+                        speaker_tag = speaker_tag.replace(k, speaker_map[k])
+                        break
+        else:
+            speaker_tag = ""
         out.append(str(i))
         out.append(f"{_fmt_ts(cue.start)} --> {_fmt_ts(cue.end)}")
         out.append(speaker_tag + ("\n".join(lines)))

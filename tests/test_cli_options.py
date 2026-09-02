@@ -287,7 +287,7 @@ def test_format_cli_command_custom_vocabulary_file():
 
 
 def test_speakers_allows_commas_in_names():
-    """--speakers uses ONLY semicolon so names may contain commas."""
+    """parse_speakers uses semicolon so names may contain commas."""
     from gemini_transcribe_wrapper.cli import parse_speakers
 
     mapping = parse_speakers("spk:0=Doe, John, Jr.;spk:1=Smith, Jane, Ph.D.;")
@@ -295,6 +295,53 @@ def test_speakers_allows_commas_in_names():
         "spk:0": "Doe, John, Jr.",
         "spk:1": "Smith, Jane, Ph.D.",
     }
+
+
+def test_parse_speakers_one_per_line_and_multiline():
+    """parse_speakers accepts one speaker per line as well as semicolon-separated entries."""
+    from gemini_transcribe_wrapper.cli import parse_speakers
+
+    text_lines = "# Comment\nspk:0=John Doe\nspk:1=Jane Doe\n"
+    assert parse_speakers(text_lines) == {
+        "spk:0": "John Doe",
+        "spk:1": "Jane Doe",
+    }
+
+    text_single_line = "spk:0=John Doe ; spk:1=Jane Doe"
+    assert parse_speakers(text_single_line) == {
+        "spk:0": "John Doe",
+        "spk:1": "Jane Doe",
+    }
+
+
+def test_speakers_cli_option_removed():
+    """--speakers option is removed and fails CLI parsing."""
+    with pytest.raises(SystemExit):
+        build_options(["--speakers", "spk:0=A", "input.mp4"])
+
+
+def test_speakers_txt_file_defaults_to_auto():
+    """--speakers-txt-file defaults to 'auto' and accepts custom values."""
+    opts_default = build_options(["input.mp4"])
+    assert opts_default.speakers_txt_file == "auto"
+
+    opts_custom = build_options(["--speakers-txt-file", "my_spk.txt", "input.mp4"])
+    assert opts_custom.speakers_txt_file == "my_spk.txt"
+
+    opts_off = build_options(["--speakers-txt-file", "off", "input.mp4"])
+    assert opts_off.speakers_txt_file == "off"
+
+
+def test_format_cli_command_speakers_txt_file():
+    """format_cli_command omits auto, but includes explicit speakers-txt-file."""
+    opts_auto = TranscribeOptions(path=["input.mp4"], speakers_txt_file="auto")
+    assert "--speakers-txt-file" not in format_cli_command("gtw", opts_auto)
+
+    opts_custom = TranscribeOptions(path=["input.mp4"], speakers_txt_file="my_spk.txt")
+    assert "--speakers-txt-file my_spk.txt" in format_cli_command("gtw", opts_custom)
+
+    opts_off = TranscribeOptions(path=["input.mp4"], speakers_txt_file="off")
+    assert "--speakers-txt-file off" in format_cli_command("gtw", opts_off)
 
 
 def test_txt_width_default_and_custom():

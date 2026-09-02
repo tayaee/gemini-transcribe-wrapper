@@ -48,7 +48,7 @@ def _make_opts(**overrides):
         "paragraph_interval_secs": 2.5,
         "request_interval_secs": 120.0,
         "max_chunk_secs": None,
-        "speakers": None,
+        "speakers_txt_file": "auto",
         "custom_vocabulary_file": "auto",
         "word_level_timestamps": True,
         "temp_path": "temp",

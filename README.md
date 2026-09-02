@@ -51,7 +51,7 @@ sample.txt
 
 - **Raw AI Output to Ready-to-Use Subtitles**: Converts JSON transcription output directly into formatted `.srt` (with natural timestamp alignment and line breaking), readable `.txt` paragraphs, and `.diarized.srt` files in a single run.
 - **Korean Transcription Error Correction**: Automatically post-processes common Gemini Korean misrecognitions (e.g. correcting erroneous romanized `"su"` into `"수"` in patterns like `"~할 su 있다/없다"`, `"~할 su밖에"`, `"~할 su도"`, `"~할 su가"` with proper Korean spacing and particle attachment).
-- **Fast Speaker Labeling**: Allows iterative speaker renaming (`--speakers 'spk:0=Host;spk:1=Guest'`) instantly without re-calling the API by reusing saved transcripts.
+- **Fast Speaker Labeling**: Allows iterative speaker renaming (`--speakers-txt-file`, automatically picking up `.speakers.txt`) instantly without re-calling the API by reusing saved transcripts.
 
 ### 2. Overcoming Free-Tier Limits & Constraints
 
