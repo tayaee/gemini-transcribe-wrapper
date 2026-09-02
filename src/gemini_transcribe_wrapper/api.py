@@ -289,6 +289,10 @@ def gemini_transcribe(
     if gemini_api_key and gemini_api_key.strip() and gemini_api_key.strip() not in merged_keys:
         merged_keys.append(gemini_api_key.strip())
 
+    from ._logging import silence_noisy_loggers
+
+    silence_noisy_loggers()
+
     effective_interval = (
         (0.0 if tier == "paid" else 120.0)
         if request_interval_secs is None

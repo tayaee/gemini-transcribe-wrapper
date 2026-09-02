@@ -238,3 +238,10 @@ def test_test_module_self_sanity():
     """Sanity: ``tests`` directory exists and is iterable; this test merely
     validates the JSON-encoding helper used by other tests in this file."""
     assert json.dumps({"ok": True}) == '{"ok": true}'
+
+
+def test_silence_noisy_loggers():
+    """silence_noisy_loggers sets third-party HTTP clients to WARNING level."""
+    gtw_logging.silence_noisy_loggers()
+    for name in ("httpx", "httpcore", "urllib3", "google"):
+        assert logging.getLogger(name).level >= logging.WARNING

@@ -202,7 +202,12 @@ def setup_file_logging(cache_root: Path | None = None) -> RotatingFileHandler | 
         for h in root.handlers
     ):
         handler.close()
-        return handler
-
     root.addHandler(handler)
+    silence_noisy_loggers()
     return handler
+
+
+def silence_noisy_loggers() -> None:
+    """Silence verbose third-party HTTP client loggers (httpx, httpcore, urllib3, google)."""
+    for name in ("httpx", "httpcore", "urllib3", "google", "google.genai"):
+        logging.getLogger(name).setLevel(logging.WARNING)

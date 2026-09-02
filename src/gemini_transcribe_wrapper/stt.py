@@ -271,6 +271,17 @@ def _extract_status_code(exc: Exception | None) -> int:
     return 500
 
 
+def _extract_error_description(exc: Exception | None) -> str:
+    """Extract a concise single-line error description from an exception."""
+    if exc is None:
+        return "OK"
+    msg = getattr(exc, "message", None) or str(exc)
+    msg = " ".join(msg.strip().splitlines())
+    if len(msg) > 160:
+        msg = msg[:157] + "..."
+    return msg or "Unknown error"
+
+
 def append_audit_log(
     input_file_path: str,
     audio_chunk_file_path: str,
@@ -909,10 +920,17 @@ class TranscribeClient:
                             generation_config=self._generation_config(),
                         )
                     except Exception as first_exc:
+                        status_code = _extract_status_code(first_exc)
+                        err_desc = _extract_error_description(first_exc)
+                        logger.info(  # nosemgrep: python-logger-credential-disclosure
+                            "api-key=%s HTTP %d: %s",
+                            api_key_tail(key),
+                            status_code,
+                            err_desc,
+                        )
                         # Non-quota errors (400/500): rotating keys won't
                         # help. Audit-log, log reference URL, re-raise.
                         if not _is_quota_error(first_exc):
-                            status_code = _extract_status_code(first_exc)
                             append_audit_log(
                                 input_file_path=effective_source_file,
                                 audio_chunk_file_path=effective_chunk_file,
@@ -987,6 +1005,11 @@ class TranscribeClient:
 
                     # Success on this key.
                     duration = time.monotonic() - attempt_start
+                    logger.info(  # nosemgrep: python-logger-credential-disclosure
+                        "api-key=%s HTTP 200 OK (%.1fs)",
+                        api_key_tail(key),
+                        duration,
+                    )
                     text = getattr(interaction, "output_text", None) or ""
                     words = _extract_words(interaction)
                     if text:

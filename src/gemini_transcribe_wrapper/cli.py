@@ -803,6 +803,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
     if not root.handlers:
         root.addHandler(handler)
     root.setLevel(log_level)
+    gtw_logging.silence_noisy_loggers()
 
     # Mirror console output to a rotating file (issue-005, spec §4.4).
     # Skipped under --no-file-log (CI runs, ephemeral containers, etc.)
