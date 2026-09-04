@@ -32,6 +32,7 @@ That's it. The wrapper:
 | Flag | Status | Behavior |
 | --- | --- | --- |
 | `--gemini-api-keys=K1;K2;...` | **Preferred** | Semicolon-separated list. Whitespace and blanks are stripped; duplicates are removed. |
+| `--gemini-api-keys-file=PATH` | **Preferred** | File with one key per line (blank lines and `#` comments ignored). Keys are appended *after* any `--gemini-api-keys` entries, in file order. Default `auto` picks up `./gemini-api-keys.txt` when present; `off` disables it. |
 | `--gemini-api-key=K1` | Deprecated | Logs a one-time `--gemini-api-key is deprecated; use --gemini-api-keys` warning, then behaves like `--gemini-api-keys=K1`. |
 | `$GEMINI_API_KEYS` (semicolon-separated) | Env fallback | Used when no CLI flag is provided. |
 | `$GEMINI_API_KEY` (single) | Env fallback | Used as a one-element list when neither CLI nor `$GEMINI_API_KEYS` is set. |
@@ -39,6 +40,28 @@ That's it. The wrapper:
 
 CLI flags always win over environment variables (no silent merging). To force
 a specific subset of keys, pass them explicitly on the command line.
+
+### Key file (`--gemini-api-keys-file`)
+
+Because the file holds secrets, on Linux/macOS it must be `chmod 600`.
+Anything looser aborts the run with the exact command to fix it:
+
+```
+API key file /path/to/gemini-api-keys.txt has unsafe permissions 0644 (expected 0600).
+Fix it with:
+    chmod 600 /path/to/gemini-api-keys.txt
+```
+
+Windows has no equivalent permission bit, so the check is skipped there.
+
+The file is **watched while the run is in progress**. Before each key pick the
+wrapper compares the file's mtime/size/content hash against what it loaded; on
+any change it re-reads *all* keys and rebuilds the live/cooldown pools from the
+new file order. Rotation then resumes at the key **following the last used one
+in the new file order** — so adding keys to the bottom of the file, or removing
+an exhausted key, takes effect without restarting a long batch. If the last used
+key is no longer in the file, rotation restarts from the top. An unreadable or
+empty file is logged as a warning and the previously loaded keys are kept.
 
 ## Python API
 
@@ -230,8 +253,10 @@ gtw --tier paid --gemini-api-key $PAID_KEY sample.mp4
 Continuous background job with a deep key pool (15–20 free-tier keys):
 
 ```bash
-# my_keys.txt: one key per line
-gtw --gemini-api-keys "$(tr '\n' ';' < my_keys.txt)" long_running/*.mp4
+# gemini-api-keys.txt: one key per line, chmod 600
+gtw --gemini-api-keys-file gemini-api-keys.txt long_running/*.mp4
+# Edit the file mid-run to add or retire keys — the rotation picks the
+# change up before the next key, no restart needed.
 # The active/cooldown pool keeps most keys warm; only the ones that hit
 # 429 in the last 10 minutes are skipped.
 ```

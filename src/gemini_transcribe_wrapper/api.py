@@ -375,6 +375,7 @@ def gemini_transcribe(
     output_dir: str | None = None,
     output_stem: str | None = None,
     gemini_api_keys: list[str] | None = None,
+    gemini_api_keys_file: str | Path | None = None,
     gemini_api_key: str | None = None,  # deprecated single-key alias
     srt_file: str | Path | bool | None = None,
     txt_file: str | Path | bool | None = None,
@@ -419,6 +420,11 @@ def gemini_transcribe(
             through to the next key until either one succeeds or all
             keys are exhausted. Each key's daily call count is tracked
             independently.
+        gemini_api_keys_file: Optional path to a file holding one API key
+            per line. The caller is expected to have already merged its
+            contents into ``gemini_api_keys``; the path is forwarded so
+            the rotation loop can watch it for changes and hot-reload the
+            key list mid-run.
         gemini_api_key: Deprecated single-key alias for ``gemini_api_keys``.
             If given, the key is appended to the list (after any explicit
             ``gemini_api_keys`` entries). Prefer ``gemini_api_keys``.
@@ -518,6 +524,7 @@ def gemini_transcribe(
                 output_dir=output_dir,
                 output_stem=output_stem,
                 gemini_api_keys=merged_keys,
+                gemini_api_keys_file=gemini_api_keys_file,
                 language_codes=language_codes,
                 srt_file=srt_file,
                 txt_file=txt_file,
@@ -570,6 +577,7 @@ def _process_one(
     output_dir: str | None,
     output_stem: str | None,
     gemini_api_keys: list[str] | None,
+    gemini_api_keys_file: str | Path | None,
     srt_file: str | Path | bool | None,
     txt_file: str | Path | bool | None,
     transcript_json_file: str | Path | bool | None,
@@ -861,6 +869,7 @@ def _process_one(
 
         client = TranscribeClient(
             api_keys=gemini_api_keys,
+            api_keys_file=gemini_api_keys_file,
             language_codes=language_codes,
             enable_diarization=diarized_enabled,
             request_interval_secs=request_interval_secs,

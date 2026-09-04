@@ -15,6 +15,7 @@ import click
 from click.testing import CliRunner
 
 from . import __version__
+from ._key_file import KeyFileError, load_keys_from_file, resolve_key_file
 from .api import QuotaExceededError, gemini_transcribe
 from .models import TranscribeStatus
 from .stt import MODEL_ID
@@ -30,6 +31,7 @@ class TranscribeOptions:
     output_dir: str | None = None
     output_stem: str | None = None
     gemini_api_keys: list[str] = field(default_factory=list)
+    gemini_api_keys_file: str | None = "auto"
     language_codes: list[str] = field(default_factory=list)
     model: str = MODEL_ID
     diarized_srt_file: str | Path | bool | None = None
@@ -60,6 +62,7 @@ class TranscribeOptions:
 
 _COMPACT_DESCRIPTIONS: dict[str, str] = {
     "gemini_api_keys": "Comma- or semicolon-separated Gemini API keys [default: $GEMINI_API_KEYS]",
+    "gemini_api_keys_file": "File with one Gemini API key per line, 'auto', or 'off' [default: auto]",
     "speakers_txt_file": "Speaker mapping file for .diarized.srt, or 'off' [default: auto]",
     "vocab_txt_file": "Vocabulary file for recognition bias, or 'off' [default: auto]",
     "audit_jsonl_file": "Path to JSONL audit log file, or 'off'",
@@ -93,7 +96,7 @@ _COMPACT_DESCRIPTIONS: dict[str, str] = {
 _OPTION_GROUPS: list[tuple[str, list[str]]] = [
     (
         "API Key",
-        ["gemini_api_keys"],
+        ["gemini_api_keys", "gemini_api_keys_file"],
     ),
     (
         "Input Files",
@@ -378,6 +381,22 @@ def _make_command() -> click.Command:
         ),
     )
     @click.option(
+        "--gemini-api-keys-file",
+        metavar="PATH",
+        default="auto",
+        help=(
+            "(Optional) Path to a file holding one Gemini API key per line "
+            "(blank lines and '#' comments are ignored). Keys from this file "
+            "are appended after any --gemini-api-keys entries, in file order. "
+            "On Linux/macOS the file must be chmod 600 or the run aborts. "
+            "While the run is in progress the file is watched: before picking "
+            "the next key the wrapper reloads it if it changed, and resumes "
+            "from the key that follows the last used one in the new file order. "
+            "'auto' (default) uses ./gemini-api-keys.txt when present; "
+            "'off' disables the file entirely."
+        ),
+    )
+    @click.option(
         "--gemini-api-key",
         "deprecated_gemini_api_key",
         default=None,
@@ -632,6 +651,7 @@ def _make_command() -> click.Command:
         output_dir: str | None,
         output_stem: str | None,
         gemini_api_keys: str | None,
+        gemini_api_keys_file: str | None,
         deprecated_gemini_api_key: str | None,
         language_codes: str,
         model: str,
@@ -710,6 +730,7 @@ def _make_command() -> click.Command:
                 output_dir=output_dir,
                 output_stem=output_stem,
                 gemini_api_keys=parsed_keys,
+                gemini_api_keys_file=gemini_api_keys_file,
                 language_codes=parsed_language_codes,
                 model=model,
                 diarized_srt_file=diarized_srt_file,
@@ -827,6 +848,9 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
 
         redacted = ";".join(_mask_key(k) for k in opts.gemini_api_keys)
         tokens.extend(["--gemini-api-keys", redacted])
+    if opts.gemini_api_keys_file and opts.gemini_api_keys_file != "auto":
+        # The path itself is not a secret, so it is logged verbatim.
+        tokens.extend(["--gemini-api-keys-file", str(opts.gemini_api_keys_file)])
     if opts.language_codes:
         tokens.extend(["--language-codes", ";".join(opts.language_codes)])
     if opts.model:
@@ -891,12 +915,15 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
     return shlex.join(tokens)
 
 
-def _resolve_api_keys(cli_keys: list[str]) -> list[str]:
+def _resolve_api_keys(
+    cli_keys: list[str], key_file: Path | None = None
+) -> list[str]:
     """Resolve the effective Gemini API key list.
 
     Precedence:
-      1. Explicit ``--gemini-api-keys`` (CLI wins, env vars are ignored
-         so users can intentionally pin a single key).
+      1. Explicit ``--gemini-api-keys`` followed by the contents of
+         ``--gemini-api-keys-file`` (CLI wins, env vars are ignored so
+         users can intentionally pin a specific set of keys).
       2. ``$GEMINI_API_KEYS`` (semicolon-separated).
       3. ``$GEMINI_API_KEY`` (single, treated as a one-element list).
       4. ``$GOOGLE_API_KEY`` (single, treated as a one-element list).
@@ -912,9 +939,12 @@ def _resolve_api_keys(cli_keys: list[str]) -> list[str]:
             seen.add(k_s)
             out.append(k_s)
 
-    # 1. CLI list — authoritative when present.
+    # 1. CLI list first, then the key file — authoritative when present.
     for k in cli_keys:
         _add(k)
+    if key_file is not None:
+        for k in load_keys_from_file(key_file):
+            _add(k)
     if out:
         return out
 
@@ -1025,7 +1055,14 @@ def cleanup_old_workdirs(
 
 def _run(opts: TranscribeOptions, prog: str) -> int:
     """Execute the parsed options. Returns exit code."""
-    effective_keys = _resolve_api_keys(opts.gemini_api_keys)
+    # Resolve --gemini-api-keys-file first: a missing explicit path or a
+    # world-readable key file aborts before any work starts.
+    try:
+        key_file = resolve_key_file(opts.gemini_api_keys_file)
+    except KeyFileError as exc:
+        logging.getLogger(__name__).error("%s", exc)
+        return 2
+    effective_keys = _resolve_api_keys(opts.gemini_api_keys, key_file)
     # For the -v summary line and the "no key configured" warning we
     # only need the first key (preserves the legacy single-key UX).
     effective_key = effective_keys[0] if effective_keys else None
@@ -1098,6 +1135,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                     output_dir=opts.output_dir,
                     output_stem=opts.output_stem,
                     gemini_api_keys=effective_keys,
+                    gemini_api_keys_file=key_file,
                     language_codes=opts.language_codes or None,
                     model=opts.model,
                     srt_file=opts.srt_file,

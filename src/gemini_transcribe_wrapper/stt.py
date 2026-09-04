@@ -19,6 +19,7 @@ from google.genai import errors
 from google.genai._gaos.types import interactions as _gaos_interactions
 from google.genai.types import HttpOptions, HttpRetryOptions
 
+from ._key_file import key_file_signature, load_keys_from_file
 from ._key_utils import (
     api_key_tail,
     load_last_used_api_key,
@@ -559,11 +560,46 @@ def _throttle_api_call(
         logger.info("Slow-down sleep finished; continuing with API call...")
 
 
+def _rr_index_after(
+    last_key: str | None, ordered_keys: list[str], live_pool: list[str]
+) -> int:
+    """Return the round-robin start index that follows ``last_key``.
+
+    ``ordered_keys`` is the full configured key list in its authoritative
+    order (CLI order, or file order when ``--gemini-api-keys-file`` is
+    used); ``live_pool`` is the subset currently eligible. The rule is
+    "respect the configured order, resume at the key after the last used
+    one":
+
+    * ``last_key`` is live → the next live key after it.
+    * ``last_key`` is configured but in cooldown → walk forward through
+      ``ordered_keys`` to the first key that is live.
+    * ``last_key`` is unknown (or absent) → start at index 0, falling
+      back to the process-global pointer when no last key was recorded.
+    """
+    if not live_pool:
+        return 0
+    if last_key and len(live_pool) > 1:
+        if last_key in live_pool:
+            return (live_pool.index(last_key) + 1) % len(live_pool)
+        if last_key in ordered_keys:
+            start = ordered_keys.index(last_key)
+            for step in range(1, len(ordered_keys)):
+                cand = ordered_keys[(start + step) % len(ordered_keys)]
+                if cand in live_pool:
+                    return live_pool.index(cand)
+        return 0
+    if not last_key and len(live_pool) > 1 and _GLOBAL_RR_INDEX > 0:
+        return _GLOBAL_RR_INDEX % len(live_pool)
+    return 0
+
+
 class TranscribeClient:
     def __init__(
         self,
         api_key: str | None = None,
         api_keys: list[str] | None = None,
+        api_keys_file: str | Path | None = None,
         language_codes: list[str] | None = None,
         enable_diarization: bool = True,
         request_interval_secs: float = 120.0,
@@ -593,6 +629,16 @@ class TranscribeClient:
                 seen.add(k)
                 deduped.append(k)
         self._api_keys: list[str] = deduped
+        # Optional watched key file (``--gemini-api-keys-file``). The
+        # signature is sampled once here and re-checked before each key
+        # pick so mid-run edits are picked up — see
+        # ``_maybe_reload_key_file``.
+        self._api_keys_file: Path | None = (
+            Path(api_keys_file) if api_keys_file else None
+        )
+        self._api_keys_file_sig: tuple[int, int, str] | None = (
+            key_file_signature(self._api_keys_file) if self._api_keys_file else None
+        )
         # Live pool: keys currently eligible for round-robin.
         # Dead pool: keys that hit 429 (daily quota), each with its own
         # ``cooldown_until`` epoch (monotonic clock). A key auto-recovers
@@ -615,27 +661,7 @@ class TranscribeClient:
             self._live_pool = list(deduped)
         if self._live_pool:
             last_key = load_last_used_api_key()
-            if last_key and len(self._live_pool) > 1:
-                if last_key in self._live_pool:
-                    last_idx = self._live_pool.index(last_key)
-                    self._rr_index = (last_idx + 1) % len(self._live_pool)
-                elif last_key in deduped:
-                    deduped_idx = deduped.index(last_key)
-                    found = False
-                    for step in range(1, len(deduped)):
-                        cand = deduped[(deduped_idx + step) % len(deduped)]
-                        if cand in self._live_pool:
-                            self._rr_index = self._live_pool.index(cand)
-                            found = True
-                            break
-                    if not found:
-                        self._rr_index = 0
-                else:
-                    self._rr_index = 0
-            elif not last_key and len(self._live_pool) > 1 and _GLOBAL_RR_INDEX > 0:
-                self._rr_index = _GLOBAL_RR_INDEX % len(self._live_pool)
-            else:
-                self._rr_index = 0
+            self._rr_index = _rr_index_after(last_key, deduped, self._live_pool)
             self.api_key: str | None = self._live_pool[self._rr_index]
         else:
             self._rr_index = 0
@@ -777,6 +803,80 @@ class TranscribeClient:
         extras = [k for k in current_and_recovered if k not in ordered]
         self._live_pool = ordered + extras
 
+    def _maybe_reload_key_file(self) -> bool:
+        """Reload ``--gemini-api-keys-file`` if it changed on disk.
+
+        Called right before the next key is picked, so an operator can
+        add, remove, or reorder keys mid-run without restarting. When the
+        file changed, *all* keys are re-read and the pools are rebuilt
+        from the new file order; the round-robin pointer then resumes at
+        the key that follows the last used one **in the new file order**
+        (:func:`_rr_index_after`). If the last used key is gone from the
+        file, rotation restarts at the top.
+
+        Returns ``True`` when a reload happened.
+        """
+        path = getattr(self, "_api_keys_file", None)
+        if path is None:
+            return False
+        sig = key_file_signature(path)
+        if sig is None or sig == getattr(self, "_api_keys_file_sig", None):
+            return False
+        try:
+            new_keys = load_keys_from_file(path)
+        except OSError as exc:
+            logger.warning(
+                "API key file %s changed but could not be read (%s); "
+                "keeping the previously loaded keys.",
+                path,
+                exc,
+            )
+            return False
+        # Record the new signature even if the content is unusable, so a
+        # broken file doesn't get re-read on every single chunk.
+        self._api_keys_file_sig = sig
+        if not new_keys:
+            logger.warning(
+                "API key file %s changed but contains no keys; "
+                "keeping the previously loaded keys.",
+                path,
+            )
+            return False
+        if new_keys == self._api_keys:
+            return False
+
+        removed = [k for k in self._api_keys if k not in new_keys]
+        added = [k for k in new_keys if k not in self._api_keys]
+        last_key = self.api_key or load_last_used_api_key()
+        self._api_keys = new_keys
+        # Drop cached clients for keys that no longer exist.
+        for k in removed:
+            self._clients.pop(k, None)
+        # Keep cooldowns only for keys still configured; everything else
+        # is live again, in file order.
+        self._dead_pool = {
+            k: until for k, until in self._dead_pool.items() if k in new_keys
+        }
+        self._live_pool = [k for k in new_keys if k not in self._dead_pool]
+        if not self._live_pool:
+            # Every reloaded key is in cooldown — clear so the caller's
+            # loop can keep making progress rather than sleeping on keys
+            # the operator just replaced.
+            self._dead_pool.clear()
+            self._live_pool = list(new_keys)
+        self._rr_index = _rr_index_after(last_key, new_keys, self._live_pool)
+        self.api_key = self._live_pool[self._rr_index]
+        logger.info(
+            "Reloaded %d API key(s) from %s (+%d added, -%d removed); "
+            "next key: %s",
+            len(new_keys),
+            path,
+            len(added),
+            len(removed),
+            mask_key(self.api_key),
+        )
+        return True
+
     def _generation_config(self) -> _gaos_interactions.GenerationConfig:
         transcription: dict[str, Any] = {}
         # ``language_codes`` (multi-language hint list). An empty/None
@@ -886,6 +986,9 @@ class TranscribeClient:
             #     sync, so sleeping 30 min for the slowest one wastes
             #     time on the fast ones.
             while True:
+                # Watch the key file (if any) before picking the next
+                # key so mid-run edits take effect immediately.
+                self._maybe_reload_key_file()
                 self._prune_dead_pool(now=time.monotonic())
                 active = list(self._live_pool)
                 dead = self._dead_pool
@@ -909,9 +1012,13 @@ class TranscribeClient:
                     if sleep_for > 0:
                         time.sleep(sleep_for)
                     self._dead_pool.clear()
-                    for k in keys:
+                    # Re-read ``self._api_keys`` rather than the ``keys``
+                    # snapshot taken before the loop: a mid-run key-file
+                    # reload may have replaced the configured list.
+                    reload_keys = list(self._api_keys) or keys
+                    for k in reload_keys:
                         _GLOBAL_DEAD_POOL.pop(k, None)
-                    self._live_pool = list(keys)
+                    self._live_pool = list(reload_keys)
                     self._rr_index = 0
                     continue  # prune + retry chunk with freshly reloaded keys
 
