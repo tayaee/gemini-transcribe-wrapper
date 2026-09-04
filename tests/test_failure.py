@@ -143,6 +143,71 @@ def test_extract_error_description_length():
     assert desc.startswith("x" * 497)
 
 
+def test_summarize_error_for_log_extracts_urls():
+    """Short 429-style summary must include all http(s) URLs found in the message."""
+    from gemini_transcribe_wrapper.stt import _summarize_error_for_log
+
+    quota_msg = (
+        "You exceeded your current quota, please check your plan and billing details. "
+        "For more information on this error, head to: "
+        "https://ai.google.dev/gemini-api/docs/rate-limits. "
+        "To monitor your current usage, head to: https://ai.dev/rate-limit. "
+        "\n* Quota exceeded for metric: "
+        "generativelanguage.googleapis.com/generate_content_free_tier_requests, "
+        "limit: 25, model: gemini-3.5-transcribe\nPlease retry in 52.639038235s."
+    )
+
+    class FakeQuotaExc(Exception):
+        code = 429
+        message = quota_msg
+
+    summary = _summarize_error_for_log(FakeQuotaExc())
+
+    # Status code surfaced, message body stripped of the multi-line JSON.
+    assert summary.startswith("Caught error 429 from API call. Head to ")
+    # Both URLs extracted; bare-domain metric name is NOT treated as a URL.
+    assert "https://ai.google.dev/gemini-api/docs/rate-limits" in summary
+    assert "https://ai.dev/rate-limit" in summary
+    assert "generativelanguage.googleapis.com" not in summary
+    # The trailing 'Head to' clause is comma-separated and in original order.
+    head_idx = summary.index("Head to ")
+    tail = summary[head_idx + len("Head to "):]
+    parts = [p.strip() for p in tail.split(",")]
+    assert parts == [
+        "https://ai.google.dev/gemini-api/docs/rate-limits",
+        "https://ai.dev/rate-limit",
+    ]
+
+
+def test_summarize_error_for_log_no_urls():
+    """When the message has no http(s) URL, omit the trailing 'Head to' clause."""
+    from gemini_transcribe_wrapper.stt import _summarize_error_for_log
+
+    err = RuntimeError("plain text error without any link")
+    assert _summarize_error_for_log(err) == "Caught error 500 from API call."
+
+
+def test_summarize_error_for_log_strips_trailing_punct():
+    """Trailing '.' or ',' glued to a URL by the upstream formatter must be stripped."""
+    from gemini_transcribe_wrapper.stt import _summarize_error_for_log
+
+    err = RuntimeError("see https://example.com/docs, and also https://example.com/faq).")
+    summary = _summarize_error_for_log(err)
+    assert summary == (
+        "Caught error 500 from API call. "
+        "Head to https://example.com/docs, https://example.com/faq"
+    )
+
+
+def test_summarize_error_for_log_dedupes_urls():
+    """Repeated URLs in the message must not be duplicated in the summary."""
+    from gemini_transcribe_wrapper.stt import _summarize_error_for_log
+
+    err = RuntimeError("see https://example.com/docs again https://example.com/docs.")
+    summary = _summarize_error_for_log(err)
+    assert summary.count("https://example.com/docs") == 1
+
+
 if __name__ == "__main__":
     test_failure_keeps_mp3()
     test_checkpoint_resume()

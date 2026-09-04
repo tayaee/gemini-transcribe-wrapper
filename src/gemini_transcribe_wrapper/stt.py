@@ -19,7 +19,12 @@ from google.genai import errors
 from google.genai._gaos.types import interactions as _gaos_interactions
 from google.genai.types import HttpOptions, HttpRetryOptions
 
-from ._key_utils import api_key_tail, load_last_used_api_key, save_last_used_api_key
+from ._key_utils import (
+    api_key_tail,
+    load_last_used_api_key,
+    mask_key,
+    save_last_used_api_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -280,6 +285,47 @@ def _extract_error_description(exc: Exception | None) -> str:
     if len(msg) > 500:
         msg = msg[:497] + "..."
     return msg or "Unknown error"
+
+
+# Matches ``http(s)://`` URLs. We intentionally avoid matching bare
+# domains like ``generativelanguage.googleapis.com/...`` because the
+# free-tier error message embeds such identifiers as metric names,
+# not as clickable links.
+_URL_RE = re.compile(r"https?://[^\s<>\"']+")
+
+
+def _summarize_error_for_log(exc: Exception | None) -> str:
+    """Return a short, fixed-shape error summary for INFO-level logging.
+
+    Format::
+
+        Caught error {status_code} from API call. Head to <url1>, <url2>, ...
+
+    All ``http(s)://`` URLs found in the original message are extracted
+    and appended after ``Head to`` so operators can click through to the
+    upstream documentation without scrolling through a multi-line JSON
+    payload. When no URLs are present the trailing ``Head to ...`` clause
+    is omitted.
+    """
+    if exc is None:
+        return "Caught error 200 from API call."
+    status_code = _extract_status_code(exc)
+    msg = getattr(exc, "message", None) or str(exc)
+    # Strip trailing punctuation that may be glued to the URL by the
+    # upstream formatter (e.g. ``...head to: https://... .``).
+    urls = [u.rstrip(".,);]") for u in _URL_RE.findall(msg)]
+    # De-duplicate while preserving first-seen order so the log line
+    # stays stable across runs with the same error.
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            deduped.append(u)
+    summary = f"Caught error {status_code} from API call."
+    if deduped:
+        summary += " Head to " + ", ".join(deduped)
+    return summary
 
 
 def append_audit_log(
@@ -896,14 +942,12 @@ class TranscribeClient:
                     save_last_used_api_key(key)
 
                     attempt_start = time.monotonic()
-                    api_call_name = "files.upload(...)"
                     try:
                         # Per-key session: upload + interactions.create
                         # under the same key. The Files API scopes URIs
                         # per key, so we cannot share an upload across
                         # multiple ``self.client`` instances.
                         uploaded = self.client.files.upload(file=str(chunk_mp3))
-                        api_call_name = "interactions.create(...)"
                         interaction = self.client.interactions.create(
                             model=self.model,
                             input=[
@@ -917,13 +961,10 @@ class TranscribeClient:
                         )
                     except Exception as first_exc:
                         status_code = _extract_status_code(first_exc)
-                        err_desc = _extract_error_description(first_exc)
                         logger.info(  # nosemgrep: python-logger-credential-disclosure
-                            "api-key=%s %s => HTTP %d: %s",
-                            api_key_tail(key),
-                            api_call_name,
-                            status_code,
-                            err_desc,
+                            "api-key=%s %s",
+                            mask_key(key),
+                            _summarize_error_for_log(first_exc),
                         )
                         # Non-quota errors (400/500): rotating keys won't
                         # help. Audit-log, log reference URL, re-raise.
