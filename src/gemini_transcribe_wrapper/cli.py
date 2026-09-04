@@ -28,7 +28,7 @@ class TranscribeOptions:
     path: list[str] = field(default_factory=list)
     version: bool = False
     output_dir: str | None = None
-    output_base: str | None = None
+    output_stem: str | None = None
     gemini_api_keys: list[str] = field(default_factory=list)
     language_codes: list[str] = field(default_factory=list)
     model: str = MODEL_ID
@@ -65,8 +65,8 @@ _COMPACT_DESCRIPTIONS: dict[str, str] = {
     "audit_jsonl_file": "Path to JSONL audit log file, or 'off'",
     "diarized_srt_file": "Output .diarized.srt path, 'auto', or 'off' [default: auto]",
     "metadata_json_file": "Output .metadata.json path, 'auto', or 'off' [default: off]",
-    "output_base": "Base name for output files [default: input stem]",
     "output_dir": "Directory for output files [default: alongside input]",
+    "output_stem": "Stem for output files [default: input stem]",
     "srt_file": "Output .srt path, 'auto', or 'off' [default: auto]",
     "temp_path": "Directory for intermediate temp files [default: temp]",
     "transcript_json_file": "Output transcript JSON path, 'auto', or 'off' [default: auto]",
@@ -106,8 +106,8 @@ _OPTION_GROUPS: list[tuple[str, list[str]]] = [
             "audit_jsonl_file",
             "diarized_srt_file",
             "metadata_json_file",
-            "output_base",
             "output_dir",
+            "output_stem",
             "srt_file",
             "temp_path",
             "transcript_json_file",
@@ -382,15 +382,15 @@ def _make_command() -> click.Command:
         help="(Optional) Path to output .metadata.json file, 'auto' for default name, or 'off' to disable (default: off).",
     )
     @click.option(
-        "--output-base",
-        default=None,
-        help="(Optional) Base name for output files (default: input stem)",
-    )
-    @click.option(
         "--output-dir",
         metavar="PATH",
         default=None,
         help="(Optional) Directory for output files (default: alongside input)",
+    )
+    @click.option(
+        "--output-stem",
+        default=None,
+        help="(Optional) Stem for output files (default: input stem)",
     )
     @click.option(
         "--srt-file",
@@ -574,7 +574,7 @@ def _make_command() -> click.Command:
         path: tuple[str, ...],
         version: bool,
         output_dir: str | None,
-        output_base: str | None,
+        output_stem: str | None,
         gemini_api_keys: str | None,
         deprecated_gemini_api_key: str | None,
         language_codes: str,
@@ -652,7 +652,7 @@ def _make_command() -> click.Command:
                 path=list(path),
                 version=version,
                 output_dir=output_dir,
-                output_base=output_base,
+                output_stem=output_stem,
                 gemini_api_keys=parsed_keys,
                 language_codes=parsed_language_codes,
                 model=model,
@@ -797,8 +797,8 @@ def format_cli_command(prog: str, opts: TranscribeOptions) -> str:
 
     if opts.output_dir is not None:
         tokens.extend(["--output-dir", str(opts.output_dir)])
-    if opts.output_base is not None:
-        tokens.extend(["--output-base", str(opts.output_base)])
+    if opts.output_stem is not None:
+        tokens.extend(["--output-stem", str(opts.output_stem)])
     if opts.temp_path is not None:
         tokens.extend(["--temp-path", str(opts.temp_path)])
     if opts.speakers_txt_file and opts.speakers_txt_file != "auto":
@@ -1039,7 +1039,7 @@ def _run(opts: TranscribeOptions, prog: str) -> int:
                 batch = gemini_transcribe(
                     input_file=pattern,
                     output_dir=opts.output_dir,
-                    output_base=opts.output_base,
+                    output_stem=opts.output_stem,
                     gemini_api_keys=effective_keys,
                     language_codes=opts.language_codes or None,
                     model=opts.model,

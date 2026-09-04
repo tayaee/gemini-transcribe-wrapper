@@ -33,7 +33,7 @@ def _make_opts(**overrides):
         "path": ["*.mp4"],
         "version": False,
         "output_dir": None,
-        "output_base": None,
+        "output_stem": None,
         "gemini_api_keys": ["kfake1234abcd"],
         "language_codes": [],
         "model": "gemini-3.5-transcribe",

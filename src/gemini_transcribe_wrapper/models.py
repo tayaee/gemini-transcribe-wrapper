@@ -23,7 +23,7 @@ class TranscribeInput(BaseModel):
 
     input_file: str = Field(..., description="Input media file path.")
     output_dir: str | None = Field(None, description="Directory for final outputs.")
-    output_base: str | None = Field(None, description="Output base name.")
+    output_stem: str | None = Field(None, description="Output file stem.")
     language_codes: list[str] | None = Field(
         None,
         description=(

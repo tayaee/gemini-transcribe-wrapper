@@ -300,30 +300,30 @@ TRANSCRIPT_SUFFIX_PLAIN = ".transcript.json"
 class WorkContext:
     input_file: Path
     output_dir: Path
-    output_base: str
+    output_stem: str
     work_dir: Path
     full_mp3: Path
     chunk_dir: Path
 
 
 def _setup_workdir(
-    input_file: Path, output_dir: Path, output_base: str, temp_path: str | None
+    input_file: Path, output_dir: Path, output_stem: str, temp_path: str | None
 ) -> WorkContext:
     if temp_path:
         base_dir = Path(temp_path)
         if not base_dir.is_absolute():
             base_dir = output_dir / base_dir
         base_dir.mkdir(parents=True, exist_ok=True)
-        work_dir = base_dir / f"{output_base}.gemini-work"
+        work_dir = base_dir / f"{output_stem}.gemini-work"
     else:
-        work_dir = output_dir / f".{output_base}.gemini-work"
+        work_dir = output_dir / f".{output_stem}.gemini-work"
     work_dir.mkdir(parents=True, exist_ok=True)
     full_mp3 = work_dir / "temp_audio.mp3"
     chunk_dir = work_dir / "chunks"
     return WorkContext(
         input_file=input_file,
         output_dir=output_dir,
-        output_base=output_base,
+        output_stem=output_stem,
         work_dir=work_dir,
         full_mp3=full_mp3,
         chunk_dir=chunk_dir,
@@ -373,7 +373,7 @@ def _resolve_transcript_path(
 def gemini_transcribe(
     input_file: str,
     output_dir: str | None = None,
-    output_base: str | None = None,
+    output_stem: str | None = None,
     gemini_api_keys: list[str] | None = None,
     gemini_api_key: str | None = None,  # deprecated single-key alias
     srt_file: str | Path | bool | None = None,
@@ -410,7 +410,7 @@ def gemini_transcribe(
     Args:
         input_file: Input file path or glob pattern.
         output_dir: Directory for final output files (default: input dir).
-        output_base: Base name for outputs (default: input stem).
+        output_stem: Stem for outputs (default: input stem).
         gemini_api_keys: Ordered list of Gemini API keys for round-robin
             usage and 429 fallback (default: $GEMINI_API_KEYS, or
             $GEMINI_API_KEY / $GOOGLE_API_KEY as a single-key fallback).
@@ -516,7 +516,7 @@ def gemini_transcribe(
             _process_one(
                 input_path=path,
                 output_dir=output_dir,
-                output_base=output_base,
+                output_stem=output_stem,
                 gemini_api_keys=merged_keys,
                 language_codes=language_codes,
                 srt_file=srt_file,
@@ -568,7 +568,7 @@ def _is_explicit_output_path(value: object) -> bool:
 def _process_one(
     input_path: str,
     output_dir: str | None,
-    output_base: str | None,
+    output_stem: str | None,
     gemini_api_keys: list[str] | None,
     srt_file: str | Path | bool | None,
     txt_file: str | Path | bool | None,
@@ -596,7 +596,7 @@ def _process_one(
 ) -> TranscribeResult:
     input_file = Path(input_path)
 
-    out_stem = Path(output_base) if output_base else Path(input_file.stem)
+    out_stem = Path(output_stem) if output_stem else Path(input_file.stem)
     out_dir = Path(output_dir) if output_dir else input_file.parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -641,7 +641,7 @@ def _process_one(
     echo = TranscribeInput(
         input_file=str(input_file),
         output_dir=str(out_dir) if output_dir else None,
-        output_base=out_stem.name,
+        output_stem=out_stem.name,
         language_codes=list(language_codes) if language_codes else None,
         srt_file=str(srt_file) if srt_file is not None else None,
         txt_file=str(txt_file) if txt_file is not None else None,
@@ -881,19 +881,19 @@ def _process_one(
             request_interval_secs=request_interval_secs,
         )
 
-        srt_tmp = ctx.work_dir / f"{ctx.output_base}.srt.tmp"
+        srt_tmp = ctx.work_dir / f"{ctx.output_stem}.srt.tmp"
         # Only generate the diarized SRT tmp when diarized_srt_file is on;
         # otherwise the tmp/final pair would be created and immediately
         # unlinked by commit_outputs, wasting a write.
         diarized_srt_tmp: Path | None = None
         if diarized_enabled:
-            diarized_srt_tmp = ctx.work_dir / f"{ctx.output_base}.diarized.srt.tmp"
-        txt_tmp = ctx.work_dir / f"{ctx.output_base}.txt.tmp"
+            diarized_srt_tmp = ctx.work_dir / f"{ctx.output_stem}.diarized.srt.tmp"
+        txt_tmp = ctx.work_dir / f"{ctx.output_stem}.txt.tmp"
         align_and_build(
             results,
             chunk_secs=plan.chunk_secs,
             full_mp3=ctx.full_mp3,
-            out_base=ctx.work_dir / ctx.output_base,
+            out_base=ctx.work_dir / ctx.output_stem,
             srt_tmp=srt_tmp,
             diarized_srt_tmp=diarized_srt_tmp,
             txt_tmp=txt_tmp,
@@ -953,7 +953,7 @@ def _process_one(
             targets["diarized_srt"] = (True, diarized_target)
             tmp_paths["diarized_srt"] = diarized_srt_tmp
         if metadata_enabled:
-            metadata_tmp = ctx.work_dir / f"{ctx.output_base}.metadata.json.tmp"
+            metadata_tmp = ctx.work_dir / f"{ctx.output_stem}.metadata.json.tmp"
             metadata_tmp.write_text(
                 build_metadata_json(results, plan.chunk_secs, model=model), encoding="utf-8"
             )

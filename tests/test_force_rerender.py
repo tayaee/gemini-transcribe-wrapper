@@ -60,7 +60,7 @@ def test_render_from_transcript_respects_force(tmp_path):
     echo = TranscribeInput(
         input_file=str(tmp_path / "input.mp4"),
         output_dir=str(out_dir),
-        output_base=out_stem,
+        output_stem=out_stem,
         model="gemini-3.5-transcribe",
     )
     api._render_from_transcript(
@@ -144,7 +144,7 @@ def test_render_from_transcript_without_force_skips_when_fresh(tmp_path):
     echo = TranscribeInput(
         input_file=str(tmp_path / "input.mp4"),
         output_dir=str(out_dir),
-        output_base=out_stem,
+        output_stem=out_stem,
         model="gemini-3.5-transcribe",
     )
     common = {

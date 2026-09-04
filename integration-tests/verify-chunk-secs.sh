@@ -27,10 +27,10 @@ cleanup() {
 cleanup
 
 echo "=== 1) Standard transcription (single chunk) ==="
-gtw "$INPUT" --output-base "$(basename "$BASE_STD")" --force --request-interval-secs 0
+gtw "$INPUT" --output-stem "$(basename "$BASE_STD")" --force --request-interval-secs 0
 
 echo "=== 2) Chunked transcription (--chunk-secs 60 -> 3 chunks) ==="
-gtw "$INPUT" --output-base "$(basename "$BASE_CHUNK")" --force --request-interval-secs 0 --chunk-secs 60
+gtw "$INPUT" --output-stem "$(basename "$BASE_CHUNK")" --force --request-interval-secs 0 --chunk-secs 60
 
 echo "=== 3) Compare transcript.json timestamps ==="
 python3 - "${BASE_STD}.transcript.json" "${BASE_CHUNK}.transcript.json" <<'PY'

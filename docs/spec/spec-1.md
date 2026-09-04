@@ -152,7 +152,7 @@ from gemini_transcribe_wrapper.models import BatchTranscribeResult
 def gemini_transcribe(
     input_file: str,
     output_dir: str | None = None,
-    output_base: str | None = None,
+    output_stem: str | None = None,
     gemini_api_keys: list[str] | None = None,
     language: str = "ko-KR",
     diarize: bool = False,
