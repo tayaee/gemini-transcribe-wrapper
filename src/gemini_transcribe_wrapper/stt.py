@@ -825,7 +825,7 @@ class TranscribeClient:
         try:
             new_keys = load_keys_from_file(path)
         except OSError as exc:
-            logger.warning(
+            logger.warning(  # nosemgrep: python-logger-credential-disclosure - only the path and OS error are logged
                 "API key file %s changed but could not be read (%s); "
                 "keeping the previously loaded keys.",
                 path,
@@ -836,7 +836,7 @@ class TranscribeClient:
         # broken file doesn't get re-read on every single chunk.
         self._api_keys_file_sig = sig
         if not new_keys:
-            logger.warning(
+            logger.warning(  # nosemgrep: python-logger-credential-disclosure - only the path is logged
                 "API key file %s changed but contains no keys; "
                 "keeping the previously loaded keys.",
                 path,
@@ -866,9 +866,9 @@ class TranscribeClient:
             self._live_pool = list(new_keys)
         self._rr_index = _rr_index_after(last_key, new_keys, self._live_pool)
         self.api_key = self._live_pool[self._rr_index]
-        logger.info(
+        logger.info(  # nosemgrep: python-logger-credential-disclosure - key is masked via mask_key
             "Reloaded %d API key(s) from %s (+%d added, -%d removed); "
-            "next key: %s",
+            "next key tail: %s",
             len(new_keys),
             path,
             len(added),
