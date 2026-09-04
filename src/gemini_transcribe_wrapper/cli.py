@@ -86,8 +86,7 @@ _COMPACT_DESCRIPTIONS: dict[str, str] = {
     "request_interval_secs": "Delay between API calls [default: 120.0 free, 0.0 paid]",
     "tier": "Gemini API pricing tier [default: free]",
     "version": "Show version and exit",
-    "help": "Show compact help and exit",
-    "help_all": "Show full detailed help and exit",
+    "help": "Show compact help and exit; pass 'all' (--help all) for full descriptions",
     "log_level": "Logging level (default: info; use 'debug' for verbose)",
 }
 
@@ -144,18 +143,71 @@ _OPTION_GROUPS: list[tuple[str, list[str]]] = [
         [
             "version",
             "help",
-            "help_all",
             "log_level",
         ],
     ),
 ]
 
 
-def _help_all_callback(ctx: click.Context, param: click.Parameter, value: bool) -> None:
-    if value and not ctx.resilient_parsing:
-        ctx.meta["help_all"] = True
-        click.echo(ctx.get_help(), color=ctx.color)
-        ctx.exit()
+class _HelpOption(click.Option):
+    """``--help`` option that supports ``--help all`` for full descriptions.
+
+    ``--help`` (or ``-h``) alone shows compact 1-line descriptions.
+    ``--help all`` (or ``-h all``) shows the full detailed descriptions,
+    replacing the previous ``--help-all`` flag. Detection of the
+    ``all`` qualifier happens in :func:`_normalize_help_argv` (called
+    from ``main``/``build_options`` before Click sees the argv) because
+    Click would otherwise consume ``all`` into the ``path`` positional
+    argument before this callback runs.
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("is_flag", True)
+        kwargs.setdefault("expose_value", False)
+        kwargs.setdefault("is_eager", True)
+        kwargs.setdefault("flag_value", True)
+        kwargs.setdefault("default", False)
+        super().__init__(*args, **kwargs)
+
+    def handle_parse_result(self, ctx: click.Context, opts, args):
+        if opts.get(self.name) and not ctx.resilient_parsing:
+            if _HELP_ALL_REQUESTED:
+                ctx.meta["help_all"] = True
+            click.echo(ctx.get_help(), color=ctx.color)
+            ctx.exit()
+        return super().handle_parse_result(ctx, opts, args)
+
+
+# Module-level flag set by ``_normalize_help_argv`` before Click parses
+# argv. ``_HelpOption.handle_parse_result`` reads it to decide between
+# compact (default) and full descriptions.
+_HELP_ALL_REQUESTED: bool = False
+
+
+def _normalize_help_argv(argv: list[str]) -> list[str]:
+    """Rewrite ``--help all`` (or ``-h all``) to ``--help`` and record intent.
+
+    Click would otherwise bind the trailing ``all`` to the variadic
+    ``path`` positional argument (``nargs=-1``), so detection must
+    happen before Click's parser runs. The function mutates
+    ``_HELP_ALL_REQUESTED`` and returns a rewritten argv with the
+    trailing ``all`` stripped.
+    """
+    global _HELP_ALL_REQUESTED
+    _HELP_ALL_REQUESTED = False
+    out: list[str] = []
+    skip_next = False
+    for i, token in enumerate(argv):
+        if skip_next:
+            skip_next = False
+            continue
+        if token in ("--help", "-h") and i + 1 < len(argv) and argv[i + 1] == "all":
+            _HELP_ALL_REQUESTED = True
+            out.append(token)
+            skip_next = True
+        else:
+            out.append(token)
+    return out
 
 
 def _term_len(text: str) -> int:
@@ -206,11 +258,11 @@ class _GTWCommand(click.Command):
             if rec:
                 name = param.name
                 opts = getattr(param, "opts", [])
-                if any(o in ("-h", "--help") for o in opts) and "--help-all" not in opts:
+                if any(o in ("-h", "--help") for o in opts):
                     name = "help"
                 records[name] = rec
 
-        is_full = bool(ctx.meta.get("help_all", False) or ("--help-all" in getattr(sys, "argv", [])))
+        is_full = bool(ctx.meta.get("help_all", False))
 
         all_group_data: list[tuple[str, list[tuple[str, str]]]] = []
         max_opt_len = 0
@@ -291,7 +343,9 @@ def _make_command() -> click.Command:
     @click.command(
         cls=_GTWCommand,
         context_settings={
-            "help_option_names": ["-h", "--help"],
+            # Disable Click's default --help flag so our custom _HelpOption
+            # can accept a following ``all`` argument (``--help all``).
+            "help_option_names": [],
             "max_content_width": 240,
         },
     )
@@ -303,12 +357,14 @@ def _make_command() -> click.Command:
         help="Show version and exit",
     )
     @click.option(
-        "--help-all",
-        is_flag=True,
-        is_eager=True,
-        expose_value=False,
-        callback=_help_all_callback,
-        help="Show full detailed help and exit",
+        "-h",
+        "--help",
+        "help_mode",
+        cls=_HelpOption,
+        help=(
+            "Show this message and exit. Pass 'all' (as ``--help all``) "
+            "for full detailed descriptions."
+        ),
     )
     @click.option(
         "--gemini-api-keys",
@@ -695,6 +751,7 @@ _LAST_OPTIONS: list[TranscribeOptions] = []
 def build_options(argv: list[str] | None = None) -> TranscribeOptions:
     """Parse argv into a TranscribeOptions without running the main logic. For testability."""
     argv_list = list(argv) if argv is not None else []
+    argv_list = _normalize_help_argv(argv_list)
     runner = CliRunner()
     _LAST_OPTIONS.clear()
     result = runner.invoke(
@@ -1141,6 +1198,7 @@ def main(argv: list[str] | None = None) -> int:
         pass
 
     argv_list = list(argv) if argv is not None else sys.argv[1:]
+    argv_list = _normalize_help_argv(argv_list)
     prog_name = Path(sys.argv[0]).name or "gemini-transcribe"
 
     runner = CliRunner()

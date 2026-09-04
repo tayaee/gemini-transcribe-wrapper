@@ -351,7 +351,7 @@ def test_format_cli_command_speakers_txt_file():
 
 
 def test_help_compact_and_help_all(capsys):
-    """-h provides compact 1-line descriptions, while --help-all provides full descriptions."""
+    """-h provides compact 1-line descriptions, while --help all provides full descriptions."""
     from gemini_transcribe_wrapper import cli
 
     # Test -h compact
@@ -363,7 +363,10 @@ def test_help_compact_and_help_all(capsys):
     assert "Input Files:" in compact_out
     assert "Output Files:" in compact_out
     assert "Help:" in compact_out
-    assert "--help-all" in compact_out
+    # Compact help advertises the full-help form
+    assert "'all'" in compact_out
+    assert "--help" in compact_out
+    assert "--help-all" not in compact_out
     assert "--log-level {debug|info|error}" in compact_out
     assert "--color {auto|always|never}" in compact_out
     assert "--tier {free|paid}" in compact_out
@@ -373,15 +376,28 @@ def test_help_compact_and_help_all(capsys):
     # Full help details should not be in compact help
     assert "cooldown pool" not in compact_out
 
-    # Test --help-all full
+    # Test --help all full (replaces the legacy --help-all flag)
     with pytest.raises(SystemExit) as exc_all:
-        cli.main(["--help-all"])
+        cli.main(["--help", "all"])
     assert exc_all.value.code == 0
     all_out = capsys.readouterr().out
     assert "API Key:" in all_out
     assert "Help:" in all_out
     assert "(Optional)" in all_out
     assert "cooldown pool" in all_out
+
+    # The -h all shortcut should also produce full help
+    with pytest.raises(SystemExit) as exc_h_all:
+        cli.main(["-h", "all"])
+    assert exc_h_all.value.code == 0
+    h_all_out = capsys.readouterr().out
+    assert "(Optional)" in h_all_out
+    assert "cooldown pool" in h_all_out
+
+    # Legacy --help-all flag should now be rejected
+    with pytest.raises(SystemExit) as exc_legacy:
+        cli.main(["--help-all"])
+    assert exc_legacy.value.code != 0
 
     # Test that warning and critical are still accepted at runtime
     opts_warn = build_options(["--log-level", "warning", "input.mp4"])
