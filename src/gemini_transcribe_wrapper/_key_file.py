@@ -1,9 +1,11 @@
 """Loading Gemini API keys from a plain-text file (``--gemini-api-keys-file``).
 
-The file holds one API key per line. Blank lines and ``#`` comment lines
-are ignored; order is preserved and duplicates are dropped so the
-round-robin pointer math in :mod:`gemini_transcribe_wrapper.stt` can rely
-on a stable, file-order key list.
+The file holds one API key per line. Blank lines and comment lines (any
+line whose first non-whitespace character is ``#``, ``,``, or ``;``) are
+ignored; surrounding whitespace is stripped from each kept line. Order is
+preserved and duplicates are dropped so the round-robin pointer math in
+:mod:`gemini_transcribe_wrapper.stt` can rely on a stable, file-order key
+list.
 
 Because the file holds secrets, POSIX platforms require ``0600``
 permissions — anything looser aborts the run with the exact ``chmod``
@@ -68,14 +70,16 @@ def check_key_file_permissions(path: Path) -> None:
 def load_keys_from_file(path: Path) -> list[str]:
     """Return the keys in ``path``, one per line, in file order.
 
-    Blank lines and ``#`` comments are skipped, whitespace is stripped,
-    and duplicates are dropped (first occurrence wins).
+    Blank lines and comment lines (any line whose first non-whitespace
+    character is ``#``, ``,``, or ``;``) are skipped; surrounding
+    whitespace is stripped from each kept line, and duplicates are
+    dropped (first occurrence wins).
     """
     keys: list[str] = []
     seen: set[str] = set()
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
-        if not line or line.startswith("#"):
+        if not line or line[0] in {"#", ",", ";"}:
             continue
         if line not in seen:
             seen.add(line)

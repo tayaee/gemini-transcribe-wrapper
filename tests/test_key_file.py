@@ -31,6 +31,16 @@ def test_load_keys_skips_blanks_comments_and_dupes(tmp_path: Path) -> None:
     assert load_keys_from_file(f) == ["key-a", "key-b"]
 
 
+def test_load_keys_recognizes_comma_and_semicolon_comments(tmp_path: Path) -> None:
+    """Lines starting with ``,`` or ``;`` (after trimming) are treated as comments."""
+    f = _write_key_file(
+        tmp_path / "keys.txt",
+        ", comment with comma\n; comment with semicolon\n   # indented hash\n\n"
+        "  key-a  \n, key-a,inline-trick\nkey-b\n",
+    )
+    assert load_keys_from_file(f) == ["key-a", "key-b"]
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits only")
 def test_loose_permissions_abort_with_chmod_hint(tmp_path: Path) -> None:
     f = tmp_path / "keys.txt"
