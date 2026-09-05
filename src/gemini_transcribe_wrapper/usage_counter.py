@@ -182,19 +182,6 @@ def _mask_key(key: str | None) -> str:
     return mask_key(key)
 
 
-def _key_tail(key: str | None) -> str:
-    """Return ``[redacted]<last 4>`` for the API key (or ``unset`` if empty).
-
-    Used in the free-tier summary line so the user can confirm at a glance
-    which key the daily count belongs to without exposing the full key.
-    Format matches :func:`mask_key` for consistency across every
-    user-visible log line.
-    """
-    from ._key_utils import mask_key
-
-    return mask_key(key)
-
-
 def _format_hours_minutes(hours: int, minutes: int) -> str:
     """Format hours and minutes with proper singular/plural suffixes."""
     h_str = f"{hours} hour" if hours == 1 else f"{hours} hours"
@@ -217,19 +204,18 @@ def usage_summary_line(
     """One-line usage summary for the active tier.
 
     Free tier (default) — points at the Google AI dev dashboard and rate
-    limit docs, names the API key by its tail, and tells the user how long
-    until the daily free-tier quota resets at PT midnight.
+    limit docs, and tells the user how long until the daily free-tier
+    quota resets at PT midnight. The line names no key: it is identical
+    for every key, so it carries no secret material.
 
     Paid tier — keeps the legacy ``API call attempts today ...`` format so
     existing scripts/users see the same line.
     """
     if tier == "free":
-        tail = _key_tail(api_key)
         hours, minutes = _hours_minutes_until_midnight()
         time_left = _format_hours_minutes(hours, minutes)
         return (
-            f"Find your free-tier usage at https://ai.dev for your API key "
-            f"ending with '{tail}' and rate limits at "
+            f"Find your free-tier usage at https://ai.dev and rate limits at "
             f"https://ai.google.dev/gemini-api/docs/rate-limits. "
             f"Your free tier limits will reset at midnight PT "
             f"({time_left} left)."

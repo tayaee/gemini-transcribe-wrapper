@@ -57,7 +57,7 @@ def test_other_days_count_separately(cache):
 
 
 def test_summary_line_free_tier_format(cache, monkeypatch):
-    """Free-tier default: usage dashboard link + key tail + reset countdown."""
+    """Free-tier default: usage dashboard link + reset countdown."""
     from datetime import datetime
 
     base = datetime(2026, 8, 30, 19, 40, 0, tzinfo=usage_counter.PT)  # 4h20m to midnight
@@ -70,8 +70,8 @@ def test_summary_line_free_tier_format(cache, monkeypatch):
     assert "midnight PT" in line
     # 4h 20m remaining (plural)
     assert "4 hours 20 minutes left" in line
-    # No key set -> 'unset'
-    assert "ending with 'unset'" in line
+    # The line is key-agnostic, so it never names a key.
+    assert "ending with" not in line
 
 
 def test_summary_line_singular_hour_and_minute(cache, monkeypatch):
@@ -91,16 +91,19 @@ def test_summary_line_singular_hour_and_minute(cache, monkeypatch):
     assert "(1 hour 1 minute left)" in line2
 
 
-def test_summary_line_free_tier_with_key_tail(cache):
-    """When a key is set, only the 8-char key tail is exposed."""
+def test_summary_line_free_tier_names_no_key(cache):
+    """Even with a key set, the free-tier line exposes nothing about it."""
     key = "AIzaSyD-1234567890abcdef"
     for _ in range(5):
         usage_counter.increment_today(cache, api_key=key)
     line = usage_counter.usage_summary_line(cache, api_key=key)
     print("summary line:", line)
-    assert "ending with '[redacted]90abcdef'" in line
-    # Whole key must NOT leak
+    # Neither the whole key nor its tail may appear.
     assert "AIzaSyD" not in line
+    assert "90abcdef" not in line
+    assert "ending with" not in line
+    # The line is identical whether or not a key was supplied.
+    assert line == usage_counter.usage_summary_line(cache)
 
 
 def test_summary_line_paid_tier_keeps_legacy_format(cache):
