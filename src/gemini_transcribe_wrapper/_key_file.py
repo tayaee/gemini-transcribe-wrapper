@@ -12,6 +12,10 @@ skipped there.
 
 The rotation loop re-checks :func:`key_file_signature` before picking the
 next key, so edits to the file take effect mid-run without a restart.
+
+With the option left at ``auto`` the file is looked up as
+``./gemini-api-keys.txt`` first, then
+``~/.config/gemini-transcribe-wrapper/gemini-api-keys.txt``.
 """
 
 from __future__ import annotations
@@ -21,9 +25,17 @@ import os
 import stat
 from pathlib import Path
 
-# Filename looked up in the current working directory when the option is
-# left at its ``auto`` default.
+# Filename looked up when the option is left at its ``auto`` default --
+# first in the current working directory, then in :func:`config_dir`.
 DEFAULT_KEY_FILENAME = "gemini-api-keys.txt"
+
+
+def config_dir() -> Path:
+    """~/.config/gemini-transcribe-wrapper (GTW_CONFIG_DIR overrides for tests)."""
+    override = os.environ.get("GTW_CONFIG_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".config" / "gemini-transcribe-wrapper"
 
 
 class KeyFileError(Exception):
@@ -90,8 +102,11 @@ def resolve_key_file(option_value: str | None) -> Path | None:
     """Resolve the ``--gemini-api-keys-file`` value to a concrete path.
 
     * ``off`` / ``none`` / empty → ``None`` (feature disabled).
-    * ``auto`` (default) → ``./gemini-api-keys.txt`` if it exists, else
-      ``None``. A missing auto file is not an error.
+    * ``auto`` (default) → the first of ``./gemini-api-keys.txt`` and
+      ``~/.config/gemini-transcribe-wrapper/gemini-api-keys.txt`` that
+      exists, else ``None``. The cwd copy wins so a project can override
+      the shared home-directory key list. A missing auto file is not an
+      error.
     * Anything else → that path, which must exist.
 
     Permissions are validated for every path actually returned.
@@ -102,10 +117,15 @@ def resolve_key_file(option_value: str | None) -> Path | None:
     if not value or value.lower() in {"off", "none", "false", "no", "0"}:
         return None
     if value.lower() == "auto":
-        candidate = Path.cwd() / DEFAULT_KEY_FILENAME
-        if not candidate.exists():
+        for candidate in (
+            Path.cwd() / DEFAULT_KEY_FILENAME,
+            config_dir() / DEFAULT_KEY_FILENAME,
+        ):
+            if candidate.exists():
+                path = candidate
+                break
+        else:
             return None
-        path = candidate
     else:
         path = Path(value).expanduser()
         if not path.exists():

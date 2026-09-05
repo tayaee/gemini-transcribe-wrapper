@@ -392,7 +392,8 @@ def _make_command() -> click.Command:
             "While the run is in progress the file is watched: before picking "
             "the next key the wrapper reloads it if it changed, and resumes "
             "from the key that follows the last used one in the new file order. "
-            "'auto' (default) uses ./gemini-api-keys.txt when present; "
+            "'auto' (default) uses ./gemini-api-keys.txt when present, "
+            "otherwise ~/.config/gemini-transcribe-wrapper/gemini-api-keys.txt; "
             "'off' disables the file entirely."
         ),
     )

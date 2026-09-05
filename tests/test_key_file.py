@@ -49,14 +49,39 @@ def test_mode_600_passes(tmp_path: Path) -> None:
 
 def test_resolve_off_and_missing_auto(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GTW_CONFIG_DIR", str(tmp_path / "config"))
     assert resolve_key_file("off") is None
     assert resolve_key_file("auto") is None  # no gemini-api-keys.txt present
 
 
 def test_resolve_auto_picks_up_default_filename(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GTW_CONFIG_DIR", str(tmp_path / "config"))
     _write_key_file(tmp_path / "gemini-api-keys.txt", "key-a\n")
     assert resolve_key_file("auto") == tmp_path / "gemini-api-keys.txt"
+
+
+def test_resolve_auto_falls_back_to_config_dir(tmp_path: Path, monkeypatch) -> None:
+    """With no cwd copy, ``auto`` picks up the one in the config directory."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "config"
+    config.mkdir()
+    monkeypatch.setenv("GTW_CONFIG_DIR", str(config))
+    _write_key_file(config / "gemini-api-keys.txt", "key-home\n")
+    assert resolve_key_file("auto") == config / "gemini-api-keys.txt"
+
+
+def test_resolve_auto_prefers_cwd_over_config_dir(tmp_path: Path, monkeypatch) -> None:
+    """A project-local key file overrides the shared home-directory one."""
+    cwd = tmp_path / "project"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    config = tmp_path / "config"
+    config.mkdir()
+    monkeypatch.setenv("GTW_CONFIG_DIR", str(config))
+    _write_key_file(config / "gemini-api-keys.txt", "key-home\n")
+    _write_key_file(cwd / "gemini-api-keys.txt", "key-local\n")
+    assert resolve_key_file("auto") == cwd / "gemini-api-keys.txt"
 
 
 def test_resolve_explicit_missing_path_errors(tmp_path: Path) -> None:
