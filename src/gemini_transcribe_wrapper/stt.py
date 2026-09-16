@@ -372,10 +372,111 @@ def append_audit_log(
     line = json.dumps(record, ensure_ascii=False) + "\n"
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        with open(target, "a", encoding="utf-8") as f:
-            f.write(line)
+        # Inter-process / inter-thread safety: several workers may
+        # transcribe chunks concurrently with the same key, so guard
+        # the read-modify-write (and plain appends) with a sidecar
+        # lock. Best-effort — a lock failure must never break
+        # transcription.
+        try:
+            from filelock import FileLock
+
+            with FileLock(str(target) + ".lock"):
+                with open(target, "a", encoding="utf-8") as f:
+                    f.write(line)
+        except Exception:
+            with open(target, "a", encoding="utf-8") as f:
+                f.write(line)
     except Exception as exc:  # noqa: BLE001
         logger.debug("Failed to append audit log to %s: %s", target, exc)
+
+
+def resolve_audit_log_target(
+    api_key: str | None = None,
+    log_path: Path | str | bool | None = None,
+) -> Path | None:
+    """Resolve the audit JSONL file for ``api_key``/``log_path``.
+
+    Mirrors the routing inside :func:`append_audit_log` so readers count
+    from the same file writers append to. Returns ``None`` when auditing
+    is disabled (``log_path is False``).
+    """
+    if log_path is False:
+        return None
+    if isinstance(log_path, (str, Path)):
+        return Path(log_path)
+    return get_audit_log_path(api_key=api_key)
+
+
+def _audit_timestamp_pt_date(timestamp: str | None) -> str | None:
+    """Map an audit-record ``timestamp`` to its PT date (``YYYY-MM-DD``).
+
+    Records are written with :meth:`datetime.astimezone` (local tz), so a
+    tz-aware value is converted to Pacific Time before taking the date.
+    Naive values are assumed to already be PT wall time. Returns ``None``
+    when the value is missing or unparseable — the caller skips it.
+    """
+    if not timestamp:
+        return None
+    try:
+        from .usage_counter import PT
+
+        dt = datetime.fromisoformat(str(timestamp))
+        if dt.tzinfo is None:
+            return dt.strftime("%Y-%m-%d")
+        return dt.astimezone(PT).strftime("%Y-%m-%d")
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def count_success_today_from_audit(
+    api_key: str | None = None,
+    log_path: Path | str | bool | None = None,
+) -> int:
+    """Count today's (PT) HTTP-200 records in the per-key audit JSONL.
+
+    The audit log is the durable source of truth: unlike the in-memory
+    state it survives restarts, and unlike the ``usage-*.json`` counter
+    it can be rebuilt by replaying the file. Non-200 records, corrupt
+    lines, and other-day records are ignored. Returns 0 when auditing
+    is disabled or the file is missing/unreadable.
+    """
+    from .usage_counter import pt_date
+
+    target = resolve_audit_log_target(api_key=api_key, log_path=log_path)
+    if target is None:
+        return 0
+    try:
+        try:
+            from filelock import FileLock
+
+            lock = FileLock(str(target) + ".lock")
+            with lock:
+                text = target.read_text(encoding="utf-8")
+        except Exception:
+            text = target.read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    today = pt_date()
+    count = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        try:
+            status = int(record.get("api_http_status_code", -1))
+        except (TypeError, ValueError):
+            continue
+        if status != 200:
+            continue
+        if _audit_timestamp_pt_date(record.get("timestamp")) == today:
+            count += 1
+    return count
 
 
 MODEL_REF_URL = "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-transcribe"
@@ -1043,9 +1144,6 @@ class TranscribeClient:
                     # top of ``transcribe_chunk``.
                     self.client = self._client_for(key)
                     self.api_key = key
-                    from .usage_counter import increment_today
-
-                    increment_today(api_key=key)
                     save_last_used_api_key(key)
 
                     attempt_start = time.monotonic()
@@ -1148,10 +1246,44 @@ class TranscribeClient:
 
                     # Success on this key.
                     duration = time.monotonic() - attempt_start
+                    # Durable first: the audit JSONL is the source of truth
+                    # that survives restarts. It is appended under a sidecar
+                    # FileLock (see append_audit_log) so concurrent workers
+                    # sharing a key cannot interleave lines.
+                    audit_target = getattr(self, "audit_jsonl_file", None)
+                    append_audit_log(
+                        input_file_path=effective_source_file,
+                        audio_chunk_file_path=effective_chunk_file,
+                        audio_chunk_playtime_s=chunk_dur,
+                        api_processing_time_s=duration,
+                        api_http_status_code=200,
+                        api_key=key,
+                        timestamp=iso_ts,
+                        log_path=audit_target,
+                    )
+                    from .usage_counter import (
+                        ensure_at_least_today,
+                        increment_today,
+                        pt_date,
+                    )
+
+                    file_count = increment_today(api_key=key)
+                    # Reconcile with the audit log: after a restart the
+                    # counter file may be missing/stale while audit.jsonl
+                    # still holds today's successes. Never decrease.
+                    audit_count = count_success_today_from_audit(
+                        api_key=key, log_path=audit_target
+                    )
+                    usage = file_count
+                    if audit_count > file_count:
+                        usage = ensure_at_least_today(audit_count, api_key=key)
+                    day = pt_date()
                     logger.info(  # nosemgrep: python-logger-credential-disclosure
-                        "api-key=%s interactions.create(...) => HTTP 200 OK (%.1fs)",
+                        "api-key=%s interactions.create(...) => HTTP 200 OK (%.1fs), date=%s (PST), usage=%d",
                         api_key_tail(key),
                         duration,
+                        day,
+                        usage,
                     )
                     text = getattr(interaction, "output_text", None) or ""
                     words = _extract_words(interaction)
@@ -1196,16 +1328,6 @@ class TranscribeClient:
 
                     self._log_api_call(
                         chunk_index, 1, started_at, duration, "success"
-                    )
-                    append_audit_log(
-                        input_file_path=effective_source_file,
-                        audio_chunk_file_path=effective_chunk_file,
-                        audio_chunk_playtime_s=chunk_dur,
-                        api_processing_time_s=duration,
-                        api_http_status_code=200,
-                        api_key=key,
-                        timestamp=iso_ts,
-                        log_path=getattr(self, "audit_jsonl_file", None),
                     )
                     return TranscriptionResult(text=text, words=words)
 

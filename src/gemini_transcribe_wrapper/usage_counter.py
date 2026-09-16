@@ -101,6 +101,40 @@ def _save(path: Path, data: dict[str, int]) -> None:
     os.replace(tmp, path)
 
 
+def ensure_at_least_today(
+    count: int, cache: Path | None = None, api_key: str | None = None
+) -> int:
+    """Raise today's (PT) count to at least ``count`` and return today's count.
+
+    Backfill hook for audit-log reconciliation: after a restart the
+    ``usage-<hash>.json`` counter file may be missing/stale while the
+    per-key ``audit.jsonl`` still holds today's success records. The
+    caller counts successes from the audit log and calls this to restore
+    the counter without ever decreasing it.
+
+    Best-effort like :func:`increment_today`: a write failure is logged
+    and the current in-file count is returned so transcription never
+    breaks. ``count <= 0`` is a no-op read.
+    """
+    if count <= 0:
+        return count_today(cache, api_key)
+    path = _usage_file(cache, api_key)
+    try:
+        lock = FileLock(str(path) + ".lock")
+        with lock:
+            data = _load(path)
+            day = pt_date()
+            current = data.get(day, 0)
+            if count > current:
+                data[day] = int(count)
+                _save(path, data)
+                return data[day]
+            return current
+    except Exception:  # counter must never break transcription
+        logger.exception("Failed to reconcile usage counter at %s", path)
+        return count_today(cache, api_key)
+
+
 def _usage_file(cache: Path | None = None, api_key: str | None = None) -> Path:
     """Return the counter file for ``api_key`` under ``cache``.
 
