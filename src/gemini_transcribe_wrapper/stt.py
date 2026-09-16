@@ -1454,7 +1454,7 @@ def transcribe_chunks_sequential(
         except Exception:  # noqa: BLE001
             dur = 0.0
         logger.info(  # nosemgrep: python-logger-credential-disclosure - only 8-char tail is logged
-            "api-key=%s Chunk %d/%d: transcribing %s (%.1fs)",
+            "api-key=%s Chunk %d/%d: transcribing %s (length=%.1fs)",
             key_tail,
             idx + 1,
             len(chunks),
