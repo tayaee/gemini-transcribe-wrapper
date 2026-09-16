@@ -380,10 +380,11 @@ def append_audit_log(
         try:
             from filelock import FileLock
 
-            with FileLock(str(target) + ".lock"):
-                with open(target, "a", encoding="utf-8") as f:
-                    f.write(line)
-        except Exception:
+            with FileLock(str(target) + ".lock"), open(
+                target, "a", encoding="utf-8"
+            ) as f:
+                f.write(line)
+        except Exception:  # noqa: BLE001 - lock fallback to plain append, best-effort
             with open(target, "a", encoding="utf-8") as f:
                 f.write(line)
     except Exception as exc:  # noqa: BLE001
@@ -452,7 +453,7 @@ def count_success_today_from_audit(
             lock = FileLock(str(target) + ".lock")
             with lock:
                 text = target.read_text(encoding="utf-8")
-        except Exception:
+        except Exception:  # noqa: BLE001 - lock fallback to plain read, best-effort
             text = target.read_text(encoding="utf-8")
     except OSError:
         return 0
