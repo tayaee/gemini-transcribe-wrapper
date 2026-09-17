@@ -1280,11 +1280,11 @@ class TranscribeClient:
                         usage = ensure_at_least_today(audit_count, api_key=key)
                     day = pt_date()
                     logger.info(  # nosemgrep: python-logger-credential-disclosure
-                        "api-key=%s interactions.create(...) => HTTP 200 OK (%.1fs), date=%s (PST), usage=%d",
+                        "api-key=%s date=%s (PST) usage=%d interactions.create(...) => HTTP 200 OK (%.1fs)",
                         api_key_tail(key),
-                        duration,
                         day,
                         usage,
+                        duration,
                     )
                     text = getattr(interaction, "output_text", None) or ""
                     words = _extract_words(interaction)
@@ -1576,9 +1576,20 @@ def transcribe_chunks_sequential(
             dur = probe_duration_secs(chunk) if chunk.exists() else 0.0
         except Exception:  # noqa: BLE001
             dur = 0.0
+        from .usage_counter import count_today, pt_date
+
+        _day = pt_date()
+        _audit_target = getattr(client, "audit_jsonl_file", None)
+        _usage_before = count_today(api_key=chunk_key)
+        _audit_before = count_success_today_from_audit(
+            api_key=chunk_key, log_path=_audit_target
+        )
+        _usage_before = max(_usage_before, _audit_before)
         logger.info(  # nosemgrep: python-logger-credential-disclosure - only 8-char tail is logged
-            "api-key=%s Chunk %d/%d: transcribing %s (length=%.1fs)",
+            "api-key=%s date=%s (PST) usage=%d Chunk %d/%d: transcribing %s (length=%.1fs)",
             key_tail,
+            _day,
+            _usage_before,
             idx + 1,
             len(chunks),
             chunk.name,
