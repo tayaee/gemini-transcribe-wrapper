@@ -1176,8 +1176,8 @@ class TranscribeClient:
                             api_key=key, log_path=_audit_target
                         )
                         _usage_before = max(_usage_before, _audit_before)
-                        logger.info(  # nosemgrep: python-logger-credential-disclosure - only 8-char tail is logged
-                            "api-key=%s date=%s (PST) usage=%d Got error %d, see https://ai.dev/rate-limit",
+                        logger.warning(  # nosemgrep: python-logger-credential-disclosure - only 8-char tail is logged
+                            "api-key=%s date=%s (PST) usage=%d HTTP %d Error. See https://ai.dev/rate-limit",
                             api_key_tail(key),
                             _day,
                             _usage_before,
@@ -1291,11 +1291,12 @@ class TranscribeClient:
                         usage = ensure_at_least_today(audit_count, api_key=key)
                     day = pt_date()
                     logger.info(  # nosemgrep: python-logger-credential-disclosure
-                        "api-key=%s date=%s (PST) usage=%d interactions.create(...) => HTTP 200 OK (%.1fs)",
+                        "api-key=%s date=%s (PST) usage=%d HTTP 200 OK (%.1fs)",
                         api_key_tail(key),
                         day,
                         usage,
                         duration,
+                        extra={"color": "green"},
                     )
                     text = getattr(interaction, "output_text", None) or ""
                     words = _extract_words(interaction)
