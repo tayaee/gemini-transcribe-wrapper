@@ -848,7 +848,7 @@ def _process_one(
             total_secs,
             max_chunk_secs=effective_max_chunk_secs,
         )
-        logger.info("Split plan: %s", _format_split_plan(plan))
+        logger.info("%s", _format_split_plan(plan))
 
         extract_audio(input_file, ctx.full_mp3, force=(force or force_all))
         chunks = split_chunks(ctx.full_mp3, ctx.chunk_dir, plan)
@@ -1478,21 +1478,12 @@ def _cleanup_workdir(ctx: WorkContext, keep_chunks: bool) -> None:
 def _format_split_plan(plan) -> str:
     """Render the split plan for human-readable logging.
 
-    Single chunk:    "1 chunk: 3833.5s"
-    Multiple chunks: "2 chunks: 1 full (3600.0s), last chunk 233.5s"
-    Three or more:   "3 chunks: 2 full (1800.0s each), last chunk 1400.0s"
+    Examples:
+        "Input will be processed in 1 chunk: [3833s]"
+        "Input will be processed in 3 chunks: [1800s, 1800s, 530s]"
     """
     n = plan.num_chunks
     sizes = list(plan.chunk_secs)
-    if n == 1:
-        return f"1 chunk: {sizes[0]:.1f}s"
-    full = sizes[:-1]
-    last = sizes[-1]
-    full_size = full[0] if full else 0.0
-    if all(abs(s - full_size) < 0.01 for s in full):
-        full_desc = f"{len(full)} full ({full_size:.1f}s each)"
-    else:
-        full_desc = (
-            f"{len(full)} front-loaded (" + ", ".join(f"{s:.1f}s" for s in full) + ")"
-        )
-    return f"{n} chunks: {full_desc}, last chunk {last:.1f}s"
+    chunk_word = "chunk" if n == 1 else "chunks"
+    sizes_str = ", ".join(f"{s:.0f}s" for s in sizes)
+    return f"Input will be processed in {n} {chunk_word}: [{sizes_str}]"

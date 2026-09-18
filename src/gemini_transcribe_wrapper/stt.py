@@ -1167,10 +1167,21 @@ class TranscribeClient:
                         )
                     except Exception as first_exc:
                         status_code = _extract_status_code(first_exc)
-                        logger.info(  # nosemgrep: python-logger-credential-disclosure
-                            "api-key=%s %s",
-                            mask_key(key),
-                            _summarize_error_for_log(first_exc),
+                        from .usage_counter import count_today, pt_date
+
+                        _day = pt_date()
+                        _audit_target = getattr(self, "audit_jsonl_file", None)
+                        _usage_before = count_today(api_key=key)
+                        _audit_before = count_success_today_from_audit(
+                            api_key=key, log_path=_audit_target
+                        )
+                        _usage_before = max(_usage_before, _audit_before)
+                        logger.info(  # nosemgrep: python-logger-credential-disclosure - only 8-char tail is logged
+                            "api-key=%s date=%s (PST) usage=%d Got error %d, see https://ai.dev/rate-limit",
+                            api_key_tail(key),
+                            _day,
+                            _usage_before,
+                            status_code,
                         )
                         # Non-quota errors (400/500): rotating keys won't
                         # help. Audit-log, log reference URL, re-raise.
